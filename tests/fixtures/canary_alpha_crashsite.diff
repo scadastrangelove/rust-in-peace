@@ -1,0 +1,11 @@
+--- a/entry.c	2026-04-27 23:49:04.122781793 +0000
++++ b/entry.c	2026-04-27 23:49:04.132781783 +0000
+@@ -22,7 +22,7 @@
+     unsigned char *out = malloc(8);
+     if (!out) return;
+     // Bug: trusts claimed length without bounding to allocation size.
+-    memcpy(out, buf + 1, claimed);
++    if (claimed < 64) memcpy(out, buf + 1, claimed);
+     // Use the buffer so the write isn't dead-code-eliminated.
+     printf("alpha: first=%u\n", out[0]);
+     free(out);

@@ -1,0 +1,40 @@
+# Copyright 2026 Anthropic PBC
+# SPDX-License-Identifier: Apache-2.0
+image_tag: vuln-pipeline-alsa:latest
+github_url: https://github.com/alsa-project/alsa-lib
+commit: 63a981865a1c7d9501ae556e28ae3bb53d015b61
+binary_path: /work/entry
+source_root: /work/src
+build_command: >-
+  cd /work/src && make -j$(nproc) &&
+  gcc -O1 -g -fsanitize=address -fno-omit-frame-pointer -I/work/src/include
+  -o /work/entry /work/entry.c
+  /work/src/src/topology/.libs/libatopology.a /work/src/src/.libs/libasound.a
+  -lm -ldl -lpthread
+attack_surface: 'ALSA topology subsystem. Two parsing surfaces exercised by the entry:
+
+  (1) binary topology decoder — snd_tplg_decode() walks a sequence of
+
+  ASoC-magic-headed blocks and dispatches by block type (manifest, mixer
+
+  controls, enum controls, DAPM widgets, PCM/DAI configs, private data),
+
+  populating in-memory template structs; (2) text config loader —
+
+  snd_tplg_load() wraps the ALSA config parser (snd_config) on a
+
+  SectionXXX/attribute text format. Real attack surface: any caller that
+
+  compiles or inspects untrusted topology files — e.g. audio firmware
+
+  packaging, driver verification tooling, the alsatplg CLI. The binary
+
+  format is the compiled output loaded by kernel sound drivers. Source
+
+  lives under src/topology/ (decoder path in decoder.c, per-block-type
+
+  parsing in ctl.c / dapm.c / pcm.c / data.c / channel.c).
+
+  '
+known_bugs: []
+focus_areas: []

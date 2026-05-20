@@ -1,0 +1,10 @@
+--- a/entry.c	2026-04-27 23:49:04.122781793 +0000
++++ b/entry.c	2026-04-27 23:52:18.242624817 +0000
+@@ -11,6 +11,7 @@
+ #include <stdio.h>
+ #include <stdlib.h>
+ #include <string.h>
++// noop
+ 
+ // ─── Parser A: heap-buffer-overflow ──────────────────────────────────────────
+ // Allocates a small fixed buffer, then copies an input-controlled length into

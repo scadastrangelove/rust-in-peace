@@ -1,0 +1,22 @@
+.venv/
+uv.lock
+__pycache__/
+*.pyc
+*.egg-info/
+.pytest_cache/
+.ruff_cache/
+results/
+build/
+dist/
+
+# Skill checkpoint state (scratch, per-run)
+.threat-model-state/
+.triage-state/
+.patch-state/
+VULN-FINDINGS.md
+VULN-FINDINGS.json
+TRIAGE.md
+TRIAGE.json
+PATCHES/
+PATCHES.md
+PATCHES.json

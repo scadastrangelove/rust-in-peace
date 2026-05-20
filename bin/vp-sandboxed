@@ -1,0 +1,39 @@
+#!/usr/bin/env bash
+# Copyright 2026 Anthropic PBC
+# SPDX-License-Identifier: Apache-2.0
+# Run vuln-pipeline with the agent sandbox active. Verifies runsc + the
+# egress proxy are up, then sets the env the pipeline reads (sandbox.py) and
+# execs through. Everything else — spawning the per-agent gVisor containers
+# — happens inside the pipeline.
+set -euo pipefail
+
+REPO_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+NET=${VULN_PIPELINE_AGENT_NETWORK:-vp-internal}
+PROXY_NAME=vp-egress-proxy
+RUNTIME=${VULN_PIPELINE_AGENT_RUNTIME:-runsc}
+
+docker info --format '{{range $k,$v := .Runtimes}}{{$k}} {{end}}' \
+    | tr ' ' '\n' | grep -qx "$RUNTIME" \
+    || { echo "error: runtime '$RUNTIME' not registered; run scripts/setup_sandbox.sh" >&2; exit 1; }
+
+# docker inspect exits 0 even when the container isn't on $NET — the Go
+# template just renders "<no value>". Guard against that and empty output
+# explicitly, not just inspect's exit code.
+proxy_ip=$(docker inspect "$PROXY_NAME" --format \
+    '{{(index .NetworkSettings.Networks "'"$NET"'").IPAddress}}' 2>/dev/null) || proxy_ip=""
+if [ -z "$proxy_ip" ] || [ "$proxy_ip" = "<no value>" ]; then
+    echo "error: ${PROXY_NAME} not running on ${NET}; run scripts/setup_sandbox.sh" >&2
+    exit 1
+fi
+
+export VULN_PIPELINE_AGENT_RUNTIME="$RUNTIME"
+export VULN_PIPELINE_AGENT_NETWORK="$NET"
+export VULN_PIPELINE_EGRESS_PROXY="http://${proxy_ip}:3128"
+
+if [ -n "${ANTHROPIC_BASE_URL:-}" ]; then
+    echo "warning: ANTHROPIC_BASE_URL is set. The egress proxy allowlist defaults to" >&2
+    echo "  api.anthropic.com:443 only — set VP_EGRESS_ALLOW (see docs/agent-sandbox.md)" >&2
+    echo "  before scripts/setup_sandbox.sh if your endpoint differs." >&2
+fi
+
+exec "$REPO_ROOT/.venv/bin/vuln-pipeline" "$@"

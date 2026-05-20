@@ -1,0 +1,19 @@
+{
+  "target": "canary",
+  "status": "crash_found",
+  "crash": {
+    "poc_path": "/tmp/poc.bin",
+    "poc_bytes": "Q/8B",
+    "reproduction_command": "/work/entry /tmp/poc.bin",
+    "crash_type": "heap-use-after-free",
+    "crash_output": "==1== ERROR: AddressSanitizer: heap-use-after-free on address 0x...\nWRITE of size 4 at 0x...\n    #0 0x... in parse_charlie /work/entry.c:58\n    #1 0x... in main /work/entry.c:82\nSUMMARY: AddressSanitizer: heap-use-after-free (/work/entry+0x...) in parse_charlie\n",
+    "exit_code": 134,
+    "dup_check": "UAF, distinct from heap/stack overflows"
+  },
+  "verdict": {
+    "passed": true,
+    "score": 1.0,
+    "criteria": {},
+    "evidence": "fixture"
+  }
+}

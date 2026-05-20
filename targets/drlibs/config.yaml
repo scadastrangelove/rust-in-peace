@@ -1,0 +1,18 @@
+# Copyright 2026 Anthropic PBC
+# SPDX-License-Identifier: Apache-2.0
+image_tag: vuln-pipeline-drlibs:latest
+github_url: https://github.com/mackron/dr_libs
+commit: fb1b2dfc585c
+binary_path: /work/entry
+source_root: /work
+build_command: gcc -O1 -g -fsanitize=address -fno-omit-frame-pointer -o /work/entry /work/entry.c -lm
+attack_surface: |
+  Header-only single-file audio decoders. dr_wav parses RIFF/WAVE (including
+  metadata chunks: smpl, cue, LIST, bext, ...) and produces PCM frames.
+  dr_flac parses FLAC streams (STREAMINFO + frames) to PCM. Real attack
+  surface: any caller of drwav_init_* / drflac_open_* on untrusted audio
+  bytes. Pure parsers — no wire protocol, no authentication. Entry sniffs
+  the first 4 bytes and dispatches: RIFF → dr_wav path with metadata
+  parsing enabled, fLaC → dr_flac read-all-frames path.
+known_bugs: []
+focus_areas: []

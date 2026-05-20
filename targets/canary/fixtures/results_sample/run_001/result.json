@@ -1,0 +1,19 @@
+{
+  "target": "canary",
+  "status": "crash_found",
+  "crash": {
+    "poc_path": "/tmp/poc.bin",
+    "poc_bytes": "Qnh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4eHh4",
+    "reproduction_command": "/work/entry /tmp/poc.bin",
+    "crash_type": "stack-buffer-overflow",
+    "crash_output": "==1== ERROR: AddressSanitizer: stack-buffer-overflow on address 0x...\nWRITE of size 32 at 0x...\n    #0 0x... in __asan_memcpy\n    #1 0x... in parse_bravo /work/entry.c:38\n    #2 0x... in main /work/entry.c:81\nSUMMARY: AddressSanitizer: stack-buffer-overflow (/work/entry+0x...) in __asan_memcpy\n",
+    "exit_code": 134,
+    "dup_check": "different crash type and frame than run_000"
+  },
+  "verdict": {
+    "passed": true,
+    "score": 1.0,
+    "criteria": {},
+    "evidence": "fixture"
+  }
+}

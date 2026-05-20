@@ -1,0 +1,26 @@
+# Copyright 2026 Anthropic PBC
+# SPDX-License-Identifier: Apache-2.0
+image_tag: vuln-pipeline-htslib:latest
+github_url: https://github.com/samtools/htslib
+commit: 86e74e065e39749d25636f8454773d9d898c5eb3
+binary_path: /work/entry
+source_root: /work/src
+build_command: >-
+  cd /work/src && make -j$(nproc) libhts.a &&
+  gcc -O1 -g -fsanitize=address -fno-omit-frame-pointer -I/work/src
+  -o /work/entry /work/entry.c /work/src/libhts.a
+  -lz -lbz2 -llzma -lm -lpthread
+attack_surface: |
+  Bioinformatics file-format library. Two parsing surfaces exercised by the
+  entry: (1) BGZF index loader — bgzf_index_load() opens a .gzi file (8-byte
+  record count followed by pairs of 64-bit compressed/uncompressed offsets)
+  into a BGZF handle; (2) SAM/BAM/CRAM alignment reader — sam_open() +
+  sam_read1() auto-detects format and iterates records. CRAM is a complex
+  container format with per-record codec dispatch (BYTE_ARRAY_LEN,
+  BYTE_ARRAY_STOP, VARINT, CONST, XPACK, XRLE, ...) and compressed sub-blocks
+  (bgzf, bzip2, lzma). Real attack surface: any caller that opens untrusted
+  sequence data or index files — e.g. genome browsers, variant-calling
+  pipelines, htslib-backed tools (samtools, bcftools). Core parsing in bgzf.c
+  (BGZF+GZI) and cram/ directory (CRAM container + codecs).
+known_bugs: []
+focus_areas: []

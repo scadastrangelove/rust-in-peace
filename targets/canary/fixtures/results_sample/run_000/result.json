@@ -1,0 +1,19 @@
+{
+  "target": "canary",
+  "status": "crash_found",
+  "crash": {
+    "poc_path": "/tmp/poc.bin",
+    "poc_bytes": "QUBBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFBQUFB",
+    "reproduction_command": "/work/entry /tmp/poc.bin",
+    "crash_type": "heap-buffer-overflow",
+    "crash_output": "==1== ERROR: AddressSanitizer: heap-buffer-overflow on address 0x...\nWRITE of size 64 at 0x...\n    #0 0x... in __asan_memcpy\n    #1 0x... in parse_alpha /work/entry.c:25\n    #2 0x... in main /work/entry.c:80\nSUMMARY: AddressSanitizer: heap-buffer-overflow (/work/entry+0x...) in __asan_memcpy\n",
+    "exit_code": 134,
+    "dup_check": "first crash, no priors"
+  },
+  "verdict": {
+    "passed": true,
+    "score": 1.0,
+    "criteria": {},
+    "evidence": "fixture"
+  }
+}

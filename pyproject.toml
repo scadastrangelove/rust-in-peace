@@ -1,0 +1,24 @@
+[project]
+name = "vuln-pipeline"
+version = "0.2.1"
+description = "Execution-verified vulnerability discovery pipeline for C/C++ targets"
+requires-python = ">=3.11"
+license = {file = "LICENSE"}
+dependencies = [
+    "pyyaml>=6.0",
+]
+
+[project.optional-dependencies]
+dev = [
+    "pytest>=8.0",
+]
+
+[project.scripts]
+vuln-pipeline = "harness.cli:main"
+
+[build-system]
+requires = ["setuptools>=61.0"]
+build-backend = "setuptools.build_meta"
+
+[tool.setuptools.packages.find]
+include = ["harness*"]

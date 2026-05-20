@@ -1,0 +1,10 @@
+--- a/entry.c	2026-04-27 23:49:04.122781793 +0000
++++ b/entry.c	2026-04-27 23:49:04.122781793 +0000
+@@ -19,6 +19,7 @@
+ static void parse_alpha(const unsigned char *buf, size_t len) {
+     if (len < 2) return;
+     size_t claimed = buf[0];  // length field from input, 0-255
++    if (claimed > 8) claimed = 8;
+     unsigned char *out = malloc(8);
+     if (!out) return;
+     // Bug: trusts claimed length without bounding to allocation size.
