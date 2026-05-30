@@ -1,50 +1,46 @@
-# Patching: closing the loop
+# Patching
 
 The pipeline's `patch` stage takes a verified crash from a `vuln-pipeline run`
 results directory and produces a fix that passes an executable verification
-ladder. The same two-container trust boundary as find↔grade applies: the
-patch agent works in one container, a fresh grader container verifies the
-diff, and only the diff bytes cross.
+"ladder".
 
-This is the natural step after [triage](triage.md): you have a queue of
-verified, ranked crashes; this turns each one into a candidate fix you can
-review and upstream.
+This is the natural step after [triage](triage.md). You have a queue of
+verified, ranked crashes, and this stage turns each into a candidate fix
+you can review and upstream.
 
-> **Two front doors, one output shape.** The `/patch` skill accepts
-> `TRIAGE.json`, `VULN-FINDINGS.json`, or a pipeline results directory and
-> writes `PATCHES/bug_NN/{patch.diff, patch_result.json}`. On pipeline input
-> it delegates to the `vuln-pipeline patch` CLI documented below; on static
-> findings (no PoC) it runs the [campaign-style
-> flow](#campaign-style-patching-the-patch-skill-static-mode). The
-> `verified` field in `patch_result.json` tells you which path produced the
-> diff: `ladder_passed` / `ladder_failed` (executable oracle) vs
-> `static_review_only` (agent review). The rest of this document covers the
-> execution-verified ladder; everything in
-> [§Reviewing generated patches](#reviewing-generated-patches) applies to
-> both.
+> The `/patch` skill accepts either static findings (`TRIAGE.json` or 
+> `VULN-FINDINGS.json`) or results from a pipeline run. On static findings 
+> (which don't include a proof of concept), it runs the
+> [campaign-style flow](#campaign-style-patching-the-patch-skill-static-mode).
+> On pipeline results, it delegates to the `bin/vp-sandboxed patch` CLI.
+>
+> The majority of this document covers the CLI, but 
+> [Reviewing generated patches](#reviewing-generated-patches) applies to
+> static findings as well.
 
 > ⚠️ **The patch grader executes target code and applies model-generated
-> diffs to it.** Same isolation requirements as the find stage apply; see
-> [security.md](security.md). And see [§Reviewing generated patches](#reviewing-generated-patches)
-> below before upstreaming anything; the verification ladder proves the
-> crash is fixed, not that the diff is free of new problems.
+> diffs to it.** Apply the same isolation as other steps of the pipeline. See
+> [security.md](security.md) for more details.
 
-## Install and first run
+> ⚠️ See [Reviewing generated patches](#reviewing-generated-patches)
+> below before upstreaming any changes. The verification ladder described
+> in this step does its best to validate that the crash is fixed, but does
+> not guarantee the patch is free of new problems.
 
-The patch stage ships with the pipeline; no extra install. Your target's
-`config.yaml` needs a `build_command` (the in-container rebuild step after
-applying a diff) and optionally a `test_command` (the regression suite for
-the regress tier). The four shipped targets already have these.
+## Getting started
+
+The patch stage ships with the pipeline. No extra install is needed.
+
+Your target's `config.yaml` needs a `build_command` and optionally a 
+`test_command` for use in the verification ladder. The four targets included
+with this repo already have these.
 
 ```bash
-# After a find run has produced results/<target>/<ts>/:
-vuln-pipeline patch results/<target>/<ts>/ --model <model>
+# After a pipeline run has produced results/<target>/<ts>/
+bin/vp-sandboxed patch results/<target>/<ts>/ --model <model>
 
-# Or try it standalone on the pre-baked canary fixture (no find run needed):
-vuln-pipeline patch targets/canary/fixtures/results_sample --model <model>
-
-# One bug, more iterations, skip re-attack for speed while iterating on prompts:
-vuln-pipeline patch results/<target>/<ts>/ --bug 0 --max-iterations 8 --no-reattack
+# Or try it standalone on the pre-baked canary fixture (no pipeline run needed)
+bin/vp-sandboxed patch targets/canary/fixtures/results_sample --model <model>
 ```
 
 Output lands in `<results_dir>/reports/bug_NN/{patch.diff, patch_result.json}`
@@ -52,235 +48,173 @@ alongside the existing exploitability report. Transcripts stream to
 `patch_transcript_itN.jsonl` and `reattack_transcript_itN.jsonl` per
 iteration.
 
-## Architecture
+## How the patch loop works
 
-**Dedup and order.** The CLI walks `result.json` files under the results dir,
-groups by crash signature, and orders them the same way `report` does, so
-`bug_NN` here is the same `bug_NN` the report stage wrote.
+A patch agent runs in a sandboxed container (see 
+[agent-sandbox.md](agent-sandbox.md) for details) with the source, the
+proof of concept, the reproduction command, and the ASAN trace. Its prompt
+pushes it to fix the root cause rather than narrowly address the crash site,
+to look for sibling call sites with the same bug, and to keep the diff as 
+minimal as possible.
 
-**Patch agent** (container A, in the agent sandbox: gVisor + `vp-internal`
-egress-only network, see [agent-sandbox.md](agent-sandbox.md)). Gets the
-source tree, the PoC at `/tmp/poc.bin`, the reproduction command, and the
-ASAN trace. The agent's prompt (`harness/prompts/patch_prompt.py`) walks
-seven steps: reproduce the crash; trace backward from the crash site to the
-root cause and fix there; grep for sibling call sites with the same pattern
-(variant hunt); produce the smallest diff that fixes the root cause; an
-adversarial self-check ("name one input variation that reaches the same bad
-state without tripping your check; if you can, your fix is at the wrong
-layer"); rebuild and re-run the PoC; emit a `git diff` from a baseline
-commit. The agent also emits `<variants_checked>` and `<bypass_considered>`
-tags so you can see what it considered.
+A grader agent then runs in a second container, created fresh from the same 
+image. The only thing that crosses over from the first container is the diff. 
+The grader never sees the patch agent's reasoning, so it can't be talked into
+approving a bad fix. It applies the diff and climbs the verification ladder
+described below, stopping if any tier fails.
 
-**Grade** (container B, same sandbox, fresh from the same image). Only the
-diff bytes cross from A to B. Walks the verification ladder, short-circuiting
-on the first failing tier. Re-attack snapshots container B as a temporary
-image (`docker commit`) and runs a fresh find-agent against that.
-
-**Iterate.** A failing verdict's evidence (compiler error, ASAN trace, test
-output, or the re-attack crash) is fed back into the next patch-agent
-iteration's prompt. Up to `--max-iterations` (default 5). Each iteration
-overwrites `patch.diff` / `patch_result.json` so the last attempt is what's on
-disk.
+If a tier fails, the evidence of the failure (e.g., compiler error, ASAN trace)
+goes into the next attempt's prompt, and the patch loop runs again, up to
+`--max-iterations` times.
 
 ## The verification ladder
 
-Every gating tier is an **executable oracle**: compiler, sanitizer, or test
-runner. No tier that decides pass/fail is an LLM judgment.
+During the patch loop, the grader agent runs four checks in order, stopping
+on the first failure. Each check is an *executable oracle*, i.e., it runs
+something and makes a pass / fail decision based on the result. No patch fails
+based on model judgment.
 
-| Tier | Question | Oracle | Field in `patch_result.json` |
-|---|---|---|---|
-| **Build** | Does the patched tree compile? | `git apply` + `build_command` exit code | `t0_builds` |
-| **Reproduce** | Is the original crash gone? | Exit 0 AND no `AddressSanitizer:` in output | `t1_poc_stops` |
-| **Regress** | Did it break existing behavior? | `test_command` exit code (skipped if none) | `t2_tests_pass` |
-| **Re-attack** | Root cause gone, or just this input? | A fresh 50-turn find-agent attacks the patched binary; ASAN decides | `re_attack_clean` |
-| Style | Would a maintainer accept it? | LLM judge 0-10; **advisory only, never gates** | `t3_style_score` |
+There is a fifth, optional step (enabled with `--style`) that uses a model to 
+review the patch's style, but it is only advisory.
+
+| Tier          | Question                             | Oracle                                                              | Field in `patch_result.json` |
+|---------------|--------------------------------------|---------------------------------------------------------------------|------------------------------|
+| **Build**     | Does the patched tree compile?       | `git apply` + `build_command` exit code                             | `t0_builds`                  |
+| **Reproduce** | Is the original crash gone?          | Exit 0 AND no `AddressSanitizer:` in output                         | `t1_poc_stops`               |
+| **Regress**   | Did it break existing behavior?      | `test_command` exit code (skipped if none)                          | `t2_tests_pass`              |
+| **Re-attack** | Root cause gone, or just this input? | A fresh 50-turn find-agent attacks the patched binary; ASAN decides | `re_attack_clean`            |
+| **Style**     | Would a maintainer accept it?        | LLM judge 0-10; **advisory only, never gates**                      | `t3_style_score`             |
 
 A patch passes when build, reproduce, regress (or no suite), and re-attack are
 all clean.
 
-**Why re-attack matters.** A patch that compiles and stops the specific PoC is
-the easy part: published evaluations of model-generated security patches
-show roughly 60% clearing build-and-reproduce checks, but under 15% surviving
+**Why re-attack?** A patch that compiles and stops the specific PoC is
+generally easy. Published evals of model-generated security patches
+show ~60% succeed on build-and-reproduce checks, but <15% survive
 fuzzing and differential testing. The dominant failure mode is a bounds check
-at the crash site (the `memcpy` ASAN flagged) that leaves the bad value
-reachable from a slightly different input. Re-attack is the mechanical guard
-against that: a fresh find-agent gets 50 turns against the *patched* binary,
-scoped to the original crash's code path. Any crash it lands fails the
-verdict; the agent generates the attack, ASAN decides whether it succeeded.
+at the crash site that leaves the bad value reachable from a slightly different 
+input. The re-attack step guards against that failure mode.
 
-**Sensitivity caveat.** Treat a re-attack pass as "no bypass found in 50
-turns," not "root cause proven fixed." It discriminates well when a bypass
-input is constructible inside the turn budget; it can miss wrong-layer fixes
-whose bypass requires hard-to-construct preconditions. On failure the
-iteration loop feeds the bypass crash back to the patch agent, which
-typically widens the fix.
+> Treat a re-attack pass as helpful signal, but not "root cause proven fixed." 
+> It discriminates well when a bypass input is constructible within 50 turns, but
+> can miss wrong-layer fixes whose bypass inputs are harder to construct.
 
 ## Reviewing generated patches
 
-The verification ladder proves the crash is fixed. It does **not** prove the
-diff introduces no new problems. Build, reproduce, and regress are
-correctness checks against the *original* behavior; re-attack hunts for
-variants of the *original* bug. None of them is a semantic review of the diff
-for new vulnerabilities, logic changes outside the fix, or anything a
-maintainer would reject on sight.
+The verification ladder proves the specific crash is fixed, but does **not** prove 
+the root cause is addressed or that the diff didn't introduce new problems. The
+ladder doesn't semantically review the diff to check for new vulnerabilities,
+breaking logic changes outside of the fix, or any other issues.
 
-Treat `patch.diff` as a strong draft that needs a human read before it goes
-anywhere. Things to look for:
+You should treat `patch.diff` as a strong draft that needs a human read before it 
+goes anywhere. Common issues include:
 
-- **Scope creep:** changes to files or functions unrelated to the crash path.
-- **Suppression instead of fix:** `try/except: pass`, early-return on the
+- Scope creep: changes to files or functions unrelated to the crash path.
+- Suppression instead of fix: `try/except: pass`, early-return on the
   exact PoC value, disabling the assertion that fired.
-- **New attack surface:** added parsing, new size fields trusted from input,
+- New attack surface: new parsing logic, new size fields trusted from input,
   weakened validation elsewhere to make the fix "work."
-- **Correct diagnosis, wrong fix.** The model often identifies exactly which
-  module needs to change but proposes a narrow patch that breaks something
-  else (e.g. fixes the type at the call site instead of the callee, or
-  hardcodes the PoC's value). Expect to sometimes keep the analysis but
-  rewrite the diff.
+- Correct diagnosis, wrong fix: correct identification of which module needs
+  to change, but a narrow patch that breaks something else.
 
-Two things worth doing with a fresh agent before upstreaming, because
-neither the patch agent's in-loop self-check nor the ladder gives you them:
+Before upstreaming a change, there are two relatively easy steps you can take:
 
-- **Re-run the adversarial self-check out of context.** The patch agent
-  already asks itself *"name one input variation that reaches the same bad
-  state without tripping your check"* (step 5 of its prompt), but it's
-  grading a diff it just wrote, with its own reasoning in context, a
-  classic anchoring problem. Run the same question against the final
-  `patch.diff` in a fresh context. If the fresh agent names a bypass the
-  original missed, the fix is at the wrong layer.
-- **Simplify in a fresh context.** The agent is prompted for a minimal
-  diff, but its idea of minimal is anchored to the change it just reasoned
-  through. Generated patches often still carry refactors, drive-by
-  cleanups, or reformatting, which make them harder to review and more
-  likely to introduce new bugs. A fresh-context pass asked only for "the
-  smallest change that fixes the root cause" reliably trims them.
+1. Re-run an adversarial validation (*"name one input variation that reaches the 
+same bad state without tripping the patch's checks"*) in a fresh session. The
+patch agent already asks a similar question to itself, but running it against the
+final `patch.diff` in a fresh context is more likely to find a gap in the fix.
+2. Ask to simplify in a fresh session. The patch agent is prompted to produce
+a minimal diff, but its idea of minimal is anchored to the finding it just
+reasoned through. A fresh-context pass asked only to *"simplify to the
+smallest change that fixes the root cause"* reliably trims the diff.
 
-If the diff is sound but you can't apply it directly (different repo, style
-conventions the model doesn't know, an editing-restricted environment), a
-pattern that works well is to have the model emit a precise *prompt*
-describing the logical change (what the control flow should be, which
-invariant to enforce, where) and hand that to whatever agent or developer
-owns the codebase. The find-side model has the security context; the
-apply-side has the project context. A human reviews the logical change in
-between.
-
-For complex fixes, give the patch agent an explicit bailout: if the change
-touches more than N files, or the agent's own confidence is low, escalate to
-a human with the analysis instead of emitting a diff.
-
-The optional `--style` flag runs the advisory style judge and writes a 0-10
-score into `patch_result.json`. It's a hint, not a clearance.
-
-The patch agent's prompt reads target-derived data (the ASAN trace, the
-exploitability report, and on retry the build/test output). The pipeline fences
-those with per-call random delimiters and instructs the agent to treat them
-as data, not instructions. But prompt-level fencing is a mitigation, not a
-guarantee. If you're running against third-party code you don't fully trust,
-the diff review is where a poisoned target's influence would surface. See
-[security.md](security.md#prompt-injection) for the broader threat model.
+> ⚠️ The patch agent's prompt reads target-derived data (the ASAN trace, the
+> exploitability report, and on retry the build / test output). The pipeline fences
+> those with per-call random delimiters and instructs the agent to treat them
+> as data, not instructions. But prompt-level fencing is a mitigation, not a
+> guarantee. If you're running against third-party code you don't fully trust,
+> a poisoned target's influence may surface in diff generation and review. See
+> [security.md](security.md#prompt-injection) for the broader threat model.
 
 ## CLI reference
 
 ```bash
-vuln-pipeline patch <results_dir> --model <m>           # all unique bugs
-vuln-pipeline patch <results_dir> --bug N               # only bug_NN
-vuln-pipeline patch <results_dir> --parallel            # run patch agents concurrently
-vuln-pipeline patch <results_dir> --no-reattack         # build/reproduce/regress only (faster, weaker)
-vuln-pipeline patch <results_dir> --style               # also run advisory style judge
-vuln-pipeline patch <results_dir> --max-iterations N    # fix↔grade cap (default 5)
-vuln-pipeline patch <results_dir> --max-turns N         # per-iteration agent budget (default 200)
-vuln-pipeline patch <results_dir> --engagement-context <file>   # org-specific auth block
+bin/vp-sandboxed patch <results_dir> --model <m>                   # patch all unique bugs
+bin/vp-sandboxed patch <results_dir> --bug N                       # patch only bug_NN
+bin/vp-sandboxed patch <results_dir> --parallel                    # run patch agents concurrently
+bin/vp-sandboxed patch <results_dir> --no-reattack                 # skip the reattack step in the ladder (faster, but weaker)
+bin/vp-sandboxed patch <results_dir> --style                       # run the optional, advisory style judge
+bin/vp-sandboxed patch <results_dir> --max-iterations N            # maximum number of patch loops (default 5)
+bin/vp-sandboxed patch <results_dir> --max-turns N                 # per-iteration agent budget (default 200)
 ```
 
 ## Harness-driven re-attack
 
-For targets that can't be driven as `./binary < input` (anything that needs
-a launcher, environment setup, multi-process orchestration, or a non-file
-input channel), set `reattack_harness: <path>` in the target's
-`config.yaml`. The re-attack find-agent then writes PoCs to `/poc/` and runs
-that script instead of invoking the binary directly. The output contract
-(`<poc_path>`, `<reproduction_command>`, `<crash_output>`, `<dup_check>`) is
-identical to the default mode, so the grader and dedup are unchanged.
-Leaving `reattack_harness` unset keeps the default `./binary < input`
-behavior.
+Re-attack normally drives the target by running the binary on an input file
+(`./binary <input>`). For targets that can't be driven that way (anything that
+needs a launcher, environment setup, multi-process orchestration, or a non-file
+input channel), you can provide the driver yourself. Write a script that knows
+how to run your target, ship it in the target's Docker image, and point 
+`reattack_harness:` in the target's `config.yaml` at it. During re-attack,
+the find agent writes its candidate PoCs as files under `/poc/` and runs your
+script. The rest of the patch loop is unchanged.
 
-The image must provide the harness script with this exit-code contract:
-runs every file under `/poc/` against the instrumented target (fresh state
-per PoC; sanitizer output captured), exits 1 with the trace on first crash,
-0 if all pass, 2 on launch failure. Any target-specific driver goes inside
-that script; the find-agent only depends on the exit codes.
-
-## Customizing for your codebase
-
-This implementation is the C/C++ memory-safety shape: ASAN as the reproduce
-oracle, `git diff -- '*.c' '*.h'` as the patch format. For other languages and
-vulnerability classes the *ladder* generalizes (apply, rebuild, reproduce,
-regress, re-attack) but the per-tier oracles change. The
-[`/customize`](customizing.md) skill walks through porting; the short version
-is `harness/patch_grade.py:_t1_passes()` (what counts as "the bug is gone")
-and `harness/prompts/patch_prompt.py` (how to ask for the fix) are the two
-files that encode the domain.
+Your script is the only thing that needs to understand the target. The agent
+and pipeline rely on the script's exit code. It must:
+- run every file under `/poc/` against the instrumented target (with a fresh
+state for each PoC) and capture the sanitizer output for each
+- exit `1` if any PoC crashes the target, printing the sanitizer trace
+- exit `0` if every PoC ran without crashing
+- exit `2` if the target couldn't be launched at all
 
 ## Campaign-style patching: the `/patch` skill static mode
 
-The `vuln-pipeline patch` flow assumes the pipeline's own crash artifacts as
-input: a PoC file, an ASAN trace, a reproduction command. If your findings
-come from elsewhere (a separate scanner, manual review, a prose-only report
-without a runnable PoC), or you're patching a class of bugs across many call
-sites rather than one crash at a time, that input contract doesn't fit.
+The `bin/vp-sandboxed patch` command relies on the outputs of 
+`bin/vp-sandboxed run`. It won't work if your findings came from 
+elsewhere (a separate scanner, manual review, a prose-only report), or
+if you're patching a class of bugs across many call sites rather than one 
+crash at a time.
 
 The `/patch` skill's static mode handles this case directly:
 
 ```bash
+# Draft fixes for the 5 highest-severity confirmed findings in TRIAGE.json
 > /patch ./TRIAGE.json --repo ./my-service --top 5
-# → PATCHES/bug_NN/{patch.diff, patch_result.json}, PATCHES.md
 ```
 
-For each finding it spawns a fresh-context patch agent (root-cause-first,
-variant hunt, minimal diff, regression test emitted as part of the diff) and
-a separate reviewer agent that sees only `{file, line, category}` plus the
-diff bytes (never the scanner's prose) and judges scope, suppression, and
-new attack surface. The skill never applies a diff; output is inert text in
-`./PATCHES/` for human review. Every result is labeled
-`verified: "static_review_only"` so it cannot be confused with a
-ladder-passed fix.
+For each finding, the skill runs two agents. A patch agent reads the relevant
+code and writes a candidate fix as a diff. A reviewer agent then judges that
+diff from a clean context, evaluating scope, effectiveness, and new attack
+surfaces introduced (without executing any code). 
 
-With no PoC, there is no reproduce tier, so the regression test the patch
-agent emits is the only executable oracle you have. **Write the test before
-the patch**: have the agent emit a test that reproduces the bug, confirm it
-fails, write the fix, confirm it passes. A patch without a failing-then-
-passing test is unverifiable; it can silently regress and you can't prove
-the bug was ever real. Don't merge a static-mode patch whose test doesn't
-fail on the unpatched tree.
+Nothing is applied directly to your repo. Generated diffs land in `./PATCHES/`
+for your review, and every result is labeled `verified: static_review_only`
+to disambiguate from those that went through the verification ladder.
 
-The fuller reference architecture this is drawn from, for migrations large
-enough to need worktrees and per-ticket PRs:
+In static mode, there is no PoC to re-run, so a regression test is the only
+actually executable check. Have the patch agent write a test that
+reproduces the bug before it writes the patch. Run it and confirm it fails
+on the current code, then apply the fix and confirm it passes. Without a
+failing-then-passing test, you can't prove the bug was ever real, and the
+fix can quietly regress later.
 
-1. **Research.** An agent reads the finding plus the codebase and produces a
-   migration plan: which sink pattern is unsafe, what the safe replacement
-   API is, where the call sites are.
-2. **Spec as tests.** Encode the plan as a failing test suite (one test per
-   call site) that passes when the migration is done. This is the executable
-   oracle that replaces ASAN.
-3. **Tickets.** Split the test suite into independently mergeable units of
-   work, each small enough to review.
-4. **Patch in parallel.** One worker subagent per ticket, in its own git
-   worktree, looping fix↔verify against its slice of the test suite plus the
-   project's existing tests.
-5. **Gate.** Each worker's diff passes a four-prong gate before it opens a
-   PR: the oracle tests, an independent bug sweep, a no-tools code reviewer,
-   and any project-specific extra checks. Human review at the PR.
+### When the fix is really a migration
 
-The trust-boundary principle is the same: the verifier runs in fresh
-context the patch author never touched. The oracle changes from "ASAN says
-clean" to "the test suite I wrote before touching the code now passes." The
-`/patch` skill ships steps 1, 4, and a read-only variant of 5; for the full
-worktree-per-ticket orchestration see the [other use
-cases](other-use-cases.md#vulnerability-patching) discussion.
+Sometimes the finding isn't one bug, but a pattern - the same unsafe call at
+dozens of call sites, too much for a single PR. In that case, you can run the
+following workflow:
 
----
-
-See [pipeline.md](pipeline.md) for the find/grade/report stages this builds on,
-[customizing.md](customizing.md) to port the ladder to another domain, and
-[best-practices.md](best-practices.md) for the iterate-until-clean loop after
-patching.
+1. **Research.** An agent reads the finding and the codebase and writes a
+   migration plan: which pattern is unsafe, what the safe replacement is, 
+   and where the call sites are.
+2. **Turn the plan into tests.** Write one test per call site that fails now
+   and passes once that call site is migrated. This suite plays the role ASAN
+   plays in the pipeline, i.e., the check that decides when you're done.
+3. **Split into tickets.** Group the tests into chunks that can be merged
+   independently, each small enough to review.
+4. **Patch in parallel.** Spin up one worker subagent per ticket, in its own 
+   git worktree, looping on its chunk until both its tests and the project's
+   existing tests pass.
+5. **Gate before the PR.** Each worker's diff has to pass the tests, an
+   independent bug sweep, and code review by an agent given no tools (plus
+   whatever checks your project already requires). A human reviews the PR itself.

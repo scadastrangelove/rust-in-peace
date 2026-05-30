@@ -96,7 +96,7 @@ Full expected-results table and run notes in
 > outbound HTTPS to fetch the target source. After that, the find/grade/patch
 > agents run with egress locked to `api.anthropic.com`; they never see the
 > network. This is the setup → attack isolation split described in
-> [`docs/security.md`](../docs/security.md#setup-attack-isolation).
+> [`docs/security.md`](../docs/security.md#separating-setup-and-attack-phases).
 
 ### Run (step by step)
 

@@ -6,106 +6,78 @@ engineering can act on.
 
 ## What it does
 
-Four jobs, in one pass:
+The skill does four things in a single pass:
 
 1. **Verify.** Adversarially checks each finding against the source code
-   (read-only, no execution). Drops the ones that aren't real.
+   (read-only, does not execute code), and drops the ones that aren't real.
 2. **Deduplicate.** Collapses the same root cause reported N times across
    parallel runs or multiple scanners.
 3. **Re-rank.** Derives severity from preconditions and your stated trust
-   boundary, not from whatever the scanner claimed. A "HIGH" behind one or
-   two preconditions and authenticated access becomes a MEDIUM; three or
-   more becomes a LOW.
-4. **Route.** Tags each survivor with a component owner so it lands on the
-   right desk.
+   boundary. For example, a "HIGH" behind one or two preconditions and 
+   authenticated access becomes a MEDIUM.
+4. **Route.** Tags each survivor with a component owner so it can be routed
+   appropriately.
 
-Output: `TRIAGE.md` (human-readable, ranked) + `TRIAGE.json`
-(machine-readable, for your tracker).
+It outputs `TRIAGE.md` (a human-readable, ranked list of findings) and 
+`TRIAGE.json` (a machine-readable list of findings, for your tracker or
+other downstream use).
 
-## Dedup: by root cause, not symptom
+## The rules it applies
 
-You can't hash LLM output to deduplicate it; the phrasing always changes.
-The rule that works: **two findings are duplicates if fixing one fixes the
-other.** Apply it in two passes: a cheap deterministic pass first (same
-file, same category, line numbers within ten), then an LLM pass for what
-remains, using these semantic rules:
+- **Duplicates.** Two findings are duplicates if fixing one fixes the other.
+  The skill attempts to identify those cases using two passes. First, a
+  cheap deterministic pass that checks if two findings are in the same file,
+  have the same category, and reference line numbers within ten lines. Second,
+  an LLM pass that asks the model to use semantic reasoning to identify
+  duplicates.
+- **Severity.** Based on what an attacker would actually have to do to exploit
+  the finding. The verifier lists preconditions first, then maps the count to
+  a score - none, with unauthenticated remote access = High; one or two, or an
+  authenticated path = Medium; three or more, or local-only = Low. You can swap
+  in your own scoring standard when the skill asks at the start of a run.
 
-- **Duplicate:** same root cause worded differently; a shared vulnerable
-  helper reported at every call site; a missing global protection (like an
-  auth check) reported per-endpoint; a cause and its consequence flagged in
-  the same path.
-- **Distinct:** different bug types in the same file block; different
-  variables reaching different sinks; two independent bugs inside one
-  helper; two endpoints missing a check where each requires its own fix.
-
-## Severity: rate by preconditions
-
-Labeling every SQL injection "high" teaches engineers to ignore your alerts.
-Base severity on what an attacker actually has to do:
-
-- **Reachability.** Can a real entry point reach the code, or is it a test
-  artifact? Reachability is your sharpest filter: excluding anything
-  unreachable from a real entry point drastically shrinks the queue, and a
-  working PoC is the strongest reachability signal you can get.
-- **Attacker control.** Does untrusted input actually reach the sink, or is
-  it sanitized upstream?
-- **Preconditions.** What state must exist first: a specific flag, prior
-  auth, a race window?
-- **Authentication.** The jump from pre-auth to post-auth or admin-only is
-  usually your largest severity multiplier.
-- **Read vs. write.** Writes escalate; reads leak but don't corrupt.
-- **Blast radius.** One user vs. all users, one tenant vs. the platform,
-  userland vs. kernel.
-
-Force the model to list preconditions *before* mapping the count to a score.
-Zero preconditions with unauthenticated remote access: high. One or two, or
-an authenticated path: medium. Three or more, or local-only: low. Tune
-thresholds to your system.
-
-Verification and triage are independent. Verification says "this is real";
-triage says "this is worth your next sprint." A confirmed Low is still a
-Low; don't let verified status inflate priority, and keep a human on
-everything rated high or above.
+To see the full reasoning behind both, read the [blog post's triage section](blog-post.md#5-triage-deduplicate-by-root-cause-rank-by-preconditions-and-impact).
 
 ## Run it
 
 ```bash
-# On pipeline output:
+# On pipeline output
 > /triage results/<target>/<timestamp>/ --repo ./path/to/source
 
-# On skill output:
+# On /vuln-scan output
 > /triage ./VULN-FINDINGS.json --repo ./path/to/source
 
-# Non-interactive, higher confidence (5 verifier votes per finding):
+# Non-interactive, with more verifier votes per finding (default is 3)
 > /triage ./findings/ --auto --votes 5 --repo ./path/to/source
+
+# With org-specific false-positive rules (see customizing.md)
+> /triage ./VULN-FINDINGS.json --repo ./src --fp-rules .claude/fp-rules.txt
 ```
 
-By default it **interviews you first**: trust boundary, threat model,
-scoring standard (HIGH/MED/LOW vs. CVSS vs. your org bug-bar), and whether
-to bias toward precision or recall on split votes. These answers shape
+By default, the skill **interviews you first** about your trust boundary, 
+your threat model, your scoring standard (HIGH/MED/LOW vs. CVSS vs. your org bug-bar), 
+and whether to bias toward precision or recall on split votes. These answers shape
 verification and ranking. Pass `--auto` to skip the interview and use
 precision-biased defaults.
 
-## When to reach for it vs. fixing the pipeline
+## When to use triage
 
-- **You have a noisy batch right now:** run `/triage`. It's the operational
-  fix and cleans up what's on disk today.
-- **Every batch is noisy:** fix it at the source. See
-  [best-practices.md #11](best-practices.md#judge)
-  (add a skeptical judge agent) and
-  [troubleshooting.md: Duplicate findings](troubleshooting.md#duplicate-findings)
-  (seed `known_bugs` so agents don't re-converge).
+The pipeline's own grade, judge, and dedup stages already apply some of these
+principles. `/triage` is the cross-run, cross-scanner layer on top, and it works on
+*any* findings file, not just pipeline output. Use it if you have a pile of findings
+in front of you right now (a fresh `/vuln-scan` output, overlapping results from
+several pipeline runs, or an old backlog from earlier tools), and you want it verified,
+collapsed, and ranked.
 
-The pipeline's own grade/judge/dedup stages already do some of this inline;
-`/triage` is the cross-run, cross-scanner layer on top, and it works on
-*any* findings file, not just pipeline output.
+If pipeline runs are consistently noisy, it's better to look into improving the pipeline 
+itself. Ensure you're using `--stream` so a judge agent gates what gets reported (see
+[pipeline.md](pipeline.md)) and seed the target's `known_bugs` so agents stop
+re-converging on the same crashes (see 
+[troubleshooting.md's duplicate findings](troubleshooting.md#duplicate-findings)).
 
 ## After triage: patch
 
-Work the top of `TRIAGE.md`. For pipeline-produced crashes (PoC + ASAN
-trace), `vuln-pipeline patch` generates and verifies a fix per crash with a
-build → reproduce → regress → re-attack ladder; see
-[patching.md](patching.md). For findings without a runnable PoC, see
+For pipeline-produced crashes (which include a PoC and ASAN trace), `bin/vp-sandboxed patch`
+generates and verifies a fix per crash. See [patching.md](patching.md).
+For findings without a runnable PoC, see
 [patching.md's static mode](patching.md#campaign-style-patching-the-patch-skill-static-mode).
-
-Skill source: `.claude/skills/triage/SKILL.md`
