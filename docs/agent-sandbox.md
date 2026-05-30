@@ -1,55 +1,68 @@
 # Agent sandbox
 
-Each find/grade/report/recon agent runs as `claude -p` *inside* a gVisor
-container alongside the target binary and source. The agent's `Read`,
-`Write`, and `Bash` tools see only that container's filesystem; gVisor's
-userspace kernel intercepts every syscall, so an unexpected agent action is
-confined to the guest. The orchestrator (`vuln-pipeline`) stays on the
-trusted host and manages container lifecycle, transcript streaming, and PoC
-extraction via `docker exec cat`.
+> This document describes the sandboxing implementation details for
+> this reference harness. For general sandboxing recommendations and best
+> practices, see the [blog post's sandboxing section](blog-post.md#2-sandbox-run-agents-safely-and-verify-exploitability).
+
+The reference pipeline consists of both deterministic orchestration code and
+non-deterministic agents. The orchestration code (the `vuln-pipeline` process
+itself) is trusted and never runs target code or model-chosen commands. As such,
+it can run unsandboxed. The agents run as `claude -p` processes and can execute 
+arbitrary commands. For that reason, the agent claude processes run *inside* a
+gVisor container alongside the target binary and source.
 
 ## What's isolated
 
-| Surface | Without sandbox | With sandbox |
-| --- | --- | --- |
-| Agent `Read`/`Write` | host filesystem | container filesystem only |
-| Agent `Bash` | host shell | container shell only (gVisor netstack/kernel) |
-| Network egress | whatever the host has | `api.anthropic.com:443` only |
-| Host coupling | full | `docker exec cat` PoC out, `-v found_bugs.jsonl:ro` in |
+| Surface              | Without sandbox       | With sandbox                                           |
+| -------------------- | --------------------- | ------------------------------------------------------ |
+| Agent `Read`/`Write` | host filesystem       | container filesystem only                              |
+| Agent `Bash`         | host shell            | container shell only (gVisor netstack/kernel)          |
+| Network egress       | whatever the host has | `api.anthropic.com:443` only                           |
+| Host coupling        | full                  | `docker exec cat` PoC out, `-v found_bugs.jsonl:ro` in |
 
-**Where each property is enforced:** gVisor provides the syscall and
-filesystem boundary (the agent's `Read`/`Write`/`Bash` see only the
-container). Egress policy is enforced by docker's `--internal` bridge (no
-default route out) plus the allowlist proxy: gVisor's netstack carries the
-traffic but the proxy decides what gets through. The verification commands
-below demonstrate both.
+gVisor provides the isolation between the agent and your machine. The agent's
+`Read`, `Write`, and `Bash` tools run inside the container, and that container
+runs on gVisor's own kernel rather than your host's. So, if the agent (or the
+target code it's running) does something unexpected, any effects stay inside
+the container.
 
-## Setup (one-time, idempotent)
+The container network setup provides the isolation between the agent and the internet.
+Agent containers are attached to a Docker network (`vp-internal`) that has no
+connection to the internet. The egress route is through a small proxy container
+on the same network, which only forwards traffic to the model API.
+
+## One-time setup
+
+Run this once per machine. It needs `sudo` (to install a new Docker runtime
+and edit `/etc/docker/daemon.json`) and is safe to re-run.
 
 ```bash
 ./scripts/setup_sandbox.sh
 ```
 
-Installs `runsc`, registers it as a docker runtime, creates the
-`vp-internal` `--internal` network plus the `vp-egress-proxy` allowlist
-sidecar, builds the target images and the `+claude` agent layer for each,
-and runs the verification checks below. Needs `sudo` for the runtime
-install and `/etc/docker/daemon.json`.
+This script sets up:
+- gVisor: Downloads `runsc` (the gVisor runtime) and registers it with
+Docker, so containers can run on gVisor's kernel instead of your host's.
+- The locked-down network: Creates the `vp-internal` Docker network,
+which has no route to the internet, and starts the allowlist proxy to
+support model API traffic.
+- Images: Builds each target's Docker image, plus a copy of each with
+the Claude Code CLI installed (for running the agent).
+- Checks: Runs the verification commands shown below.
 
-**Platform:** gVisor requires a Linux host (x86_64 or aarch64). On macOS or
-Windows, run the pipeline inside a Linux VM, or use
-`--dangerously-no-sandbox` (plain runc, no syscall isolation; see
-[Opting out](#opting-out)).
+gVisor only runs on Linux. On macOS or Windows, run the pipeline
+inside a Linux VM or use `--dangerously-no-sandbox` (see 
+[Opting out](#opting-out) for details on what you lose).
 
-**Egress allowlist:** the proxy permits `api.anthropic.com:443` only by
-default. If you use a non-default `ANTHROPIC_BASE_URL`, set
-`VP_EGRESS_ALLOW=host1:443,host2:443` before running `setup_sandbox.sh`; the
-script passes it to the proxy container's environment, where
-`egress_proxy.py` reads it at startup. Re-run `setup_sandbox.sh` to pick up
-a changed value (it recreates the proxy container).
+The proxy only allows traffic to `api.anthropic.com:443` by default,
+so if your API traffic goes elsewhere (i.e., you use a non-default
+`ANTHROPIC_BASE_URL`) it will be blocked. To override the default, set 
+`VP_EGRESS_ALLOW=host-1:443,host-2:443` (as a comma separated list)
+before running the script. If you need to change this allowlist later,
+re-run the script to create the proxy with the new value.
 
-**Pinning gVisor:** `setup_sandbox.sh` downloads a pinned `runsc` release;
-override with `RUNSC_RELEASE=<yyyymmdd>` to pin a different one.
+The script downloads a pinned `runsc` release. Set `RUNSC_RELEASE=<yyyymmdd>`
+to use a different one.
 
 ## Run
 
@@ -58,32 +71,42 @@ export ANTHROPIC_API_KEY=...
 bin/vp-sandboxed run drlibs --model <model-id> --runs 3 --parallel --stream
 ```
 
-`bin/vp-sandboxed` checks `runsc` is registered and the proxy is up, sets
-`VULN_PIPELINE_AGENT_RUNTIME`/`..._EGRESS_PROXY`/`..._AGENT_NETWORK`, and
-execs the pipeline. From there each agent container is spawned with
-`--runtime=runsc --network=vp-internal -e HTTPS_PROXY=...`.
+`bin/vp-sandboxed` is a small wrapper around the normal `vuln-pipeline`
+command. It checks that gVisor is registered and the proxy is running. If 
+either is missing, it stops and tells you to run setup, rather than falling
+back to run unsandboxed. If both are running correctly, it launches the 
+pipeline with the isolation described above.
 
 ## Verifying isolation yourself
 
 ```bash
-# gVisor active: guest kernel differs from host
+# 1. Is gVisor actually in use? Confirm the two lines print different kernel versions
 docker run --rm --runtime=runsc vuln-pipeline-drlibs-latest-agent:latest uname -r
 uname -r
 
-# host filesystem unreachable
+# 2. Is the host filesystem unreachable? Confirm the cat fails with "No such file or directory"
 echo host > /tmp/probe-$$; \
   docker run --rm --runtime=runsc vuln-pipeline-drlibs-latest-agent:latest cat /tmp/probe-$$
 
-# egress: API reachable, anything else refused
-docker run --rm --runtime=runsc --network=vp-internal -e HTTPS_PROXY=http://<proxy-ip>:3128 \
+# 3. Can the model API be reached? Confirm any HTTP status code is printed
+docker run --rm --runtime=runsc --network=vp-internal -e HTTPS_PROXY=http://<proxy_ip>:3128 \
   vuln-pipeline-drlibs-latest-agent:latest sh -c 'curl -sI https://api.anthropic.com/ -o /dev/null -w "%{http_code}\n"'
+
+# 4. Can another host be reached? Confirm connection is refused
+docker run --rm --runtime=runsc --network=vp-internal -e HTTPS_PROXY=http://<proxy_ip>:3128 \
+  vuln-pipeline-drlibs-latest-agent:latest sh -c 'curl -sI https://example.com/ -o /dev/null -w "%{http_code}\n"'
 ```
 
 ## Opting out
 
-`--dangerously-no-sandbox` skips the sandbox guard. Agents still run in a
-container (the prompt expects local paths), but under plain runc with bridge
-networking: no syscall interception, full outbound network, and the agent's
-credential env var shares that container with the target binary. The
-auto-mode permission classifier stays on as the remaining guard. Development
-on a throwaway VM only.
+`--dangerously-no-sandbox` runs the pipeline without the sandbox. The agents
+still run inside Docker containers, but:
+
+- Containers run on your host's kernel, so any unexpected agent actions or
+malicious target code have a much shorter path to the host.
+- Containers get normal Docker networking with full internet access.
+- The agent's credentials are in the same container as the target it's compiling
+and crashing.
+
+Use of this flag is not recommended and should be done with caution, for
+development, on a throwaway VM.
