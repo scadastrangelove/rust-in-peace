@@ -44,15 +44,17 @@ fi
 step "Docker runtime (runsc)"
 # --overlay2=none: agent-written PoC files must be visible to the orchestrator's
 # `docker exec cat`; the default in-sandbox tmpfs overlay would hide them.
-# --ignore-cgroups only when the host can't delegate cgroups (probe).
+# --ignore-cgroups: added by the verification probe below when runsc can't
+# manage cgroups with dockerd's credentials (rootless or nested docker).
+# Re-runs keep the flag once detected, so the daemon config doesn't churn.
 RUNSC_ARGS=(--overlay2=none)
-cg=/sys/fs/cgroup; [ -f "$cg/cgroup.controllers" ] || cg="$cg/memory"
-if ! sudo sh -c 'd="$1/runsc-probe-$$" && mkdir "$d" 2>/dev/null && rmdir "$d"' _ "$cg"; then
-    warn "cgroups not writable; --memory cap not enforced under runsc"
+if [ -f "$DAEMON_JSON" ] && grep -q 'ignore-cgroups' "$DAEMON_JSON"; then
     RUNSC_ARGS=(--ignore-cgroups "${RUNSC_ARGS[@]}")
 fi
-rc=0
-sudo python3 - "$DAEMON_JSON" "$RUNSC_BIN" "${RUNSC_ARGS[@]}" <<'PY' || rc=$?
+
+register_runsc() {
+    rc=0
+    sudo python3 - "$DAEMON_JSON" "$RUNSC_BIN" "${RUNSC_ARGS[@]}" <<'PY' || rc=$?
 import json, pathlib, shutil, sys, time
 path, runsc = pathlib.Path(sys.argv[1]), sys.argv[2]
 want = {"path": runsc, "runtimeArgs": sys.argv[3:]}
@@ -66,17 +68,19 @@ cfg.setdefault("runtimes", {})["runsc"] = want
 path.write_text(json.dumps(cfg, indent=4) + "\n")
 sys.exit(10)
 PY
-case "$rc" in
-    0)  ok "runsc already registered" ;;
-    10) sudo kill -HUP "$(pgrep -xo dockerd)" || die "dockerd not running"
-        for _ in $(seq 10); do
-            docker info 2>/dev/null | grep -q 'runsc' && break
-            sleep 1
-        done
-        docker info 2>/dev/null | grep -q 'runsc' || die "runtime reload failed"
-        ok "runsc registered + reloaded" ;;
-    *)  die "daemon.json update failed (exit $rc)" ;;
-esac
+    case "$rc" in
+        0)  ok "runsc already registered (${RUNSC_ARGS[*]})" ;;
+        10) sudo kill -HUP "$(pgrep -xo dockerd)" || die "dockerd not running"
+            for _ in $(seq 10); do
+                docker info 2>/dev/null | grep -q 'runsc' && break
+                sleep 1
+            done
+            docker info 2>/dev/null | grep -q 'runsc' || die "runtime reload failed"
+            ok "runsc registered + reloaded (${RUNSC_ARGS[*]})" ;;
+        *)  die "daemon.json update failed (exit $rc)" ;;
+    esac
+}
+register_runsc
 
 # ── 3. Egress-only network + proxy ──────────────────────────────────────────
 step "Egress-only network (${NET}) + proxy"
@@ -113,7 +117,30 @@ step "Verification"
 # (e.g. vuln-pipeline-canary-latest-agent:latest). Hardcoding drifts.
 ATAG=$(.venv/bin/python3 -c 'import sys, yaml; from harness.agent_image import agent_tag; t=agent_tag(yaml.safe_load(open(sys.argv[1]))["image_tag"]); print(t.rsplit(":", 1)[0] + ":latest")' targets/canary/config.yaml)
 host_kver=$(uname -r)
-guest_kver=$(docker run --rm --runtime=runsc "$ATAG" uname -r)
+
+# The first container doubles as a cgroup probe. runsc writes cgroup files
+# with dockerd's credentials, which no host-side static check can simulate
+# (e.g. rootless docker's "root" is an unprivileged host uid; nested docker
+# hits cgroup delegation limits). If cgroup setup is the only failure, fall
+# back to --ignore-cgroups: container --memory caps are not enforced under
+# runsc, but syscall, network, and filesystem isolation are unaffected.
+if ! guest_kver=$(docker run --rm --runtime=runsc "$ATAG" uname -r 2>&1); then
+    if [[ " ${RUNSC_ARGS[*]} " == *--ignore-cgroups* ]] || \
+       ! echo "$guest_kver" | grep -qi cgroup; then
+        die "runsc container failed: $guest_kver"
+    fi
+    warn "runsc can't manage cgroups here (rootless/nested docker); re-registering with --ignore-cgroups (no --memory cap under runsc)"
+    RUNSC_ARGS=(--ignore-cgroups "${RUNSC_ARGS[@]}")
+    register_runsc
+    recovered=
+    for _ in $(seq 10); do  # SIGHUP config reload is async; retry briefly
+        if guest_kver=$(docker run --rm --runtime=runsc "$ATAG" uname -r 2>&1); then
+            recovered=1; break
+        fi
+        sleep 1
+    done
+    [ -n "$recovered" ] || die "runsc still failing with --ignore-cgroups: $guest_kver"
+fi
 [ "$guest_kver" != "$host_kver" ] || die "guest kernel == host kernel; gVisor not active"
 ok "gVisor active (guest $guest_kver, host $host_kver)"
 
