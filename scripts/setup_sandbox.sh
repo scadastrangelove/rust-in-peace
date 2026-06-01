@@ -124,23 +124,39 @@ host_kver=$(uname -r)
 # hits cgroup delegation limits). If cgroup setup is the only failure, fall
 # back to --ignore-cgroups: container --memory caps are not enforced under
 # runsc, but syscall, network, and filesystem isolation are unaffected.
-if ! guest_kver=$(docker run --rm --runtime=runsc "$ATAG" uname -r 2>&1); then
+#
+# The probe's stderr goes to a separate file: docker can emit warnings even
+# on a successful run, and any stderr text mixed into guest_kver would let
+# the guest-vs-host kernel check below pass vacuously.
+probe_err=$(mktemp)
+if ! guest_kver=$(docker run --rm --runtime=runsc "$ATAG" uname -r 2>"$probe_err"); then
     if [[ " ${RUNSC_ARGS[*]} " == *--ignore-cgroups* ]] || \
-       ! echo "$guest_kver" | grep -qi cgroup; then
-        die "runsc container failed: $guest_kver"
+       ! grep -qi cgroup "$probe_err"; then
+        die "runsc container failed: $(cat "$probe_err")"
     fi
     warn "runsc can't manage cgroups here (rootless/nested docker); re-registering with --ignore-cgroups (no --memory cap under runsc)"
+    orig_args=("${RUNSC_ARGS[@]}")
     RUNSC_ARGS=(--ignore-cgroups "${RUNSC_ARGS[@]}")
     register_runsc
     recovered=
     for _ in $(seq 10); do  # SIGHUP config reload is async; retry briefly
-        if guest_kver=$(docker run --rm --runtime=runsc "$ATAG" uname -r 2>&1); then
+        if guest_kver=$(docker run --rm --runtime=runsc "$ATAG" uname -r 2>"$probe_err"); then
             recovered=1; break
         fi
         sleep 1
     done
-    [ -n "$recovered" ] || die "runsc still failing with --ignore-cgroups: $guest_kver"
+    if [ -z "$recovered" ]; then
+        # The flag didn't fix it. Roll it back out of daemon.json: the
+        # persistence check above would otherwise hand it to every future
+        # run, which then skips the probe and never enforces --memory caps.
+        err=$(cat "$probe_err")
+        warn "--ignore-cgroups did not help; restoring previous runsc registration"
+        RUNSC_ARGS=("${orig_args[@]}")
+        register_runsc
+        die "runsc still failing with --ignore-cgroups: $err"
+    fi
 fi
+rm -f "$probe_err"
 [ "$guest_kver" != "$host_kver" ] || die "guest kernel == host kernel; gVisor not active"
 ok "gVisor active (guest $guest_kver, host $host_kver)"
 
