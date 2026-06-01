@@ -64,6 +64,13 @@ re-run the script to create the proxy with the new value.
 The script downloads a pinned `runsc` release. Set `RUNSC_RELEASE=<yyyymmdd>`
 to use a different one.
 
+Some Docker setups (rootless Docker, or Docker nested inside another
+container) don't let runsc manage cgroups. The script detects this during
+verification and re-registers runsc with `--ignore-cgroups`. Isolation is
+unaffected — gVisor's kernel, the network allowlist, and filesystem
+confinement all still apply; the only loss is that per-container `--memory`
+caps aren't enforced.
+
 ## Run
 
 ```bash
