@@ -19,7 +19,7 @@ _CLOSING_TAG = re.compile(r"</\s*untrusted_data", re.IGNORECASE)
 
 def make_nonce() -> str:
     """Per-prompt random delimiter id for <untrusted_data> blocks."""
-    return secrets.token_hex(4)
+    return secrets.token_hex(16)
 
 
 def sanitize_untrusted(text: str) -> str:

@@ -28,7 +28,7 @@ def _bare_close_tags(prompt: str) -> list[str]:
 
 
 def _nonces(prompt: str) -> set[str]:
-    return set(re.findall(r'<untrusted_data id="([0-9a-f]{8})">', prompt))
+    return set(re.findall(r'<untrusted_data id="([0-9a-f]{32})">', prompt))
 
 
 # ── helpers ──────────────────────────────────────────────────────────────────
@@ -108,7 +108,7 @@ def test_judge_prompt_wraps_asan_in_nonce_blocks():
          "report_text": "<primitive>Confirmed WRITE.</primitive>"},
     ]
     p = build_judge_prompt(
-        asan_excerpt=BREAKOUT, dup_check="novel",
+        asan_excerpt=BREAKOUT, dup_check="novel\n" + BREAKOUT,
         grade_status="crash_found", grade_score=1.0, poc_size=47,
         manifest_entries=entries,
     )
