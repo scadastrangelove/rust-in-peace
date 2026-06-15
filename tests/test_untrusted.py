@@ -8,8 +8,9 @@ import re
 
 from harness.prompts.find_prompt import build_find_prompt
 from harness.prompts.grade_prompt import build_grade_prompt
-from harness.prompts.judge_prompt import build_judge_prompt
-from harness.prompts.patch_prompt import build_patch_prompt
+from harness.prompts.judge_prompt import build_compare_prompt, build_judge_prompt
+from harness.prompts.patch_prompt import build_patch_prompt, build_style_judge_prompt
+from harness.prompts.report_grader_prompt import build_report_grader_prompt
 from harness.prompts.report_prompt import build_report_prompt
 from harness.prompts.untrusted import make_nonce, sanitize_untrusted, untrusted_block
 
@@ -155,6 +156,39 @@ def test_grade_prompt_wraps_find_claims_in_nonce_block():
     nonce = nonces.pop()
     assert f'</untrusted_data id="{nonce}">' in p
     assert "exit_code=134" in p
+
+
+def test_report_grader_prompt_wraps_report_in_nonce_block():
+    p = build_report_grader_prompt("<primitive>WRITE of 17 bytes.</primitive>\n" + BREAKOUT)
+    assert not _bare_close_tags(p)
+    nonces = _nonces(p)
+    assert len(nonces) == 1
+    assert f'</untrusted_data id="{nonces.pop()}">' in p
+    assert "WRITE of 17 bytes" in p
+
+
+def test_compare_prompt_wraps_both_reports_in_nonce_blocks():
+    p = build_compare_prompt(
+        report_a="<primitive>Old analysis.</primitive>\n" + BREAKOUT,
+        report_b="<primitive>New analysis.</primitive>\n" + BREAKOUT,
+    )
+    assert not _bare_close_tags(p)
+    nonces = _nonces(p)
+    assert len(nonces) == 1
+    nonce = nonces.pop()
+    assert p.count(f'<untrusted_data id="{nonce}">') == p.count(
+        f'</untrusted_data id="{nonce}">'
+    )
+    assert "Old analysis" in p and "New analysis" in p
+
+
+def test_style_judge_prompt_wraps_diff_in_nonce_block():
+    p = build_style_judge_prompt("--- a/x.c\n+++ b/x.c\n+ if (n > cap) return -1;\n" + BREAKOUT)
+    assert not _bare_close_tags(p)
+    nonces = _nonces(p)
+    assert len(nonces) == 1
+    assert f'</untrusted_data id="{nonces.pop()}">' in p
+    assert "if (n > cap) return -1;" in p
 
 
 def test_judge_prompt_nonce_differs_per_call():
