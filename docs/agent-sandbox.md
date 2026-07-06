@@ -86,8 +86,16 @@ environment with `eval $(aws configure export-credentials --format env)`
 session credentials keep the role session's TTL, so start from a session
 that will outlive the run.
 
-Model IDs use Bedrock's format, e.g.
-`--model us.anthropic.claude-opus-4-6-v1`. The egress allowlist is
+Model IDs use Bedrock's format with a cross-region inference-profile prefix —
+`us.`, `eu.`, `apac.`, or `global.` — e.g.
+`--model us.anthropic.claude-opus-4-6-v1`. The prefix must match your
+deployment's region group, not default to `us.`: a Korean deployment
+(`ap-northeast-2`) needs `apac.anthropic.claude-sonnet-4-5-...`, not
+`us.anthropic....`. A bare foundation-model ID (starting with `anthropic.`)
+usually fails on the first call with
+`ValidationException: Invocation of model ID anthropic.... with on-demand
+throughput isn't supported...` — the pipeline prints a preflight warning when
+it sees one. The egress allowlist is
 auto-derived as `bedrock-runtime.<region>.amazonaws.com:443`; re-run
 `setup_sandbox.sh` after changing provider or region so the proxy is rebuilt
 with the right host.

@@ -8,6 +8,7 @@ from harness.auth import (
     check_egress_satisfied,
     required_egress_hosts,
     resolve_auth_env,
+    warn_bedrock_model,
 )
 
 
@@ -139,6 +140,63 @@ def test_vertex(monkeypatch):
         "ANTHROPIC_VERTEX_PROJECT_ID": "proj",
         "CLOUD_ML_REGION": "us-central1",
     }
+
+
+# ── warn_bedrock_model ──────────────────────────────────────────────────────
+
+def test_warn_bedrock_model_bare_id_warns(monkeypatch, capsys):
+    monkeypatch.setenv("CLAUDE_CODE_USE_BEDROCK", "1")
+    warn_bedrock_model("anthropic.claude-sonnet-4-5-v1")
+    err = capsys.readouterr().err
+    assert "WARNING" in err
+    for prefix in ("us.", "eu.", "apac.", "global."):
+        assert prefix in err
+
+
+def test_warn_bedrock_model_prefixed_id_silent(monkeypatch, capsys):
+    monkeypatch.setenv("CLAUDE_CODE_USE_BEDROCK", "1")
+    warn_bedrock_model("apac.anthropic.claude-sonnet-4-5-v1")
+    assert capsys.readouterr().err == ""
+
+
+def test_warn_bedrock_model_arn_silent(monkeypatch, capsys):
+    monkeypatch.setenv("CLAUDE_CODE_USE_BEDROCK", "1")
+    warn_bedrock_model(
+        "arn:aws:bedrock:us-east-1:123456789012:inference-profile/"
+        "us.anthropic.claude-sonnet-4-5-v1")
+    assert capsys.readouterr().err == ""
+
+
+def test_warn_bedrock_model_off_bedrock_silent(capsys):
+    warn_bedrock_model("anthropic.claude-sonnet-4-5-v1")
+    assert capsys.readouterr().err == ""
+
+
+def test_warn_bedrock_model_none_or_empty_silent(monkeypatch, capsys):
+    monkeypatch.setenv("CLAUDE_CODE_USE_BEDROCK", "1")
+    warn_bedrock_model(None)
+    warn_bedrock_model("")
+    assert capsys.readouterr().err == ""
+
+
+def test_warn_bedrock_model_example_apac(monkeypatch, capsys):
+    monkeypatch.setenv("CLAUDE_CODE_USE_BEDROCK", "1")
+    monkeypatch.setenv("AWS_REGION", "ap-northeast-2")
+    warn_bedrock_model("anthropic.claude-sonnet-4-5-v1")
+    assert "(e.g. apac.anthropic.claude-sonnet-4-5-v1)" in capsys.readouterr().err
+
+
+def test_warn_bedrock_model_example_eu(monkeypatch, capsys):
+    monkeypatch.setenv("CLAUDE_CODE_USE_BEDROCK", "1")
+    monkeypatch.setenv("AWS_REGION", "eu-central-1")
+    warn_bedrock_model("anthropic.claude-sonnet-4-5-v1")
+    assert "(e.g. eu.anthropic.claude-sonnet-4-5-v1)" in capsys.readouterr().err
+
+
+def test_warn_bedrock_model_example_defaults_us(monkeypatch, capsys):
+    monkeypatch.setenv("CLAUDE_CODE_USE_BEDROCK", "1")
+    warn_bedrock_model("anthropic.claude-sonnet-4-5-v1")
+    assert "(e.g. us.anthropic.claude-sonnet-4-5-v1)" in capsys.readouterr().err
 
 
 # ── required_egress_hosts ───────────────────────────────────────────────────

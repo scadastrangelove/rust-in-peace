@@ -79,6 +79,26 @@ def resolve_auth_env() -> dict[str, str] | None:
     return None
 
 
+def warn_bedrock_model(model: str | None) -> None:
+    """Non-fatal preflight: on Bedrock, a bare foundation-model ID
+    (``anthropic.…``) usually fails with a ValidationException because
+    on-demand invocation goes through a cross-region inference profile,
+    whose ID carries a region-group prefix. ARNs and other formats are
+    deliberately not flagged (too many valid shapes to false-positive on)."""
+    if os.environ.get("CLAUDE_CODE_USE_BEDROCK") != "1":
+        return
+    if not model or not model.startswith("anthropic."):
+        return
+    region = os.environ.get("AWS_REGION", "")
+    group = region.split("-", 1)[0]
+    example = {"us": "us.", "ca": "us.", "sa": "us.", "mx": "us.",
+               "eu": "eu.", "ap": "apac."}.get(group, "us.")
+    print(f"WARNING: {model!r} looks like a bare Bedrock foundation-model ID; "
+          "on-demand invocation usually needs a cross-region inference-profile "
+          "prefix matching your region group — us., eu., apac., or global. "
+          f"(e.g. {example}{model})", file=sys.stderr)
+
+
 def required_egress_hosts() -> list[str]:
     """host:port entries the current provider needs on the proxy allowlist.
     Called from setup_sandbox.sh / vp-sandboxed via ``python3 -c``; exits

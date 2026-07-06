@@ -55,7 +55,11 @@ from .patch import run_patch, PATCH_MAX_TURNS, DEFAULT_MAX_ITERATIONS
 from .recon import run_recon, RECON_MAX_TURNS
 from .report import run_report, REPORT_MAX_TURNS
 from .prompts.system_prompt import build_system_prompt
-from .auth import resolve_auth_env as _resolve_auth_env, NO_AUTH_MSG  # noqa: F401
+from .auth import (  # noqa: F401
+    resolve_auth_env as _resolve_auth_env,
+    warn_bedrock_model as _warn_bedrock_model,
+    NO_AUTH_MSG,
+)
 
 
 def _resolve_target_dir(target: str) -> Path:
@@ -942,6 +946,7 @@ def _cmd_run(args) -> int:
     if not args.model:
         print("error: --model required (or set VULN_PIPELINE_MODEL)", file=sys.stderr)
         return 1
+    _warn_bedrock_model(args.model)
 
     print(f"Target: {target.name}")
     print(f"  image_tag:   {target.image_tag}")
@@ -1009,6 +1014,7 @@ def _cmd_recon(args) -> int:
     if not args.model:
         print("error: --model required (or set VULN_PIPELINE_MODEL)", file=sys.stderr)
         return 1
+    _warn_bedrock_model(args.model)
 
     print(color(f"[build] Building {target.image_tag} ...", "dim", sys.stderr), file=sys.stderr)
     try:
@@ -1189,6 +1195,7 @@ def _cmd_report(args) -> int:
     if not args.model:
         print("error: --model required (or set VULN_PIPELINE_MODEL)", file=sys.stderr)
         return 1
+    _warn_bedrock_model(args.model)
 
     groups = dedup(root)
     if not groups:
@@ -1283,6 +1290,7 @@ def _cmd_patch(args) -> int:
     if not args.model:
         print("error: --model required (or set VULN_PIPELINE_MODEL)", file=sys.stderr)
         return 1
+    _warn_bedrock_model(args.model)
 
     groups = dedup(root)
     if not groups:
