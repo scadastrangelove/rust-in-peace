@@ -77,6 +77,15 @@ the credentials are visible to the agent process inside the sandbox.
 credential files), so credentials must be in the environment. For multi-hour
 batch runs, use long-lived keys or session tokens with ≥12h TTL.
 
+Instance-profile/IMDS credentials are deliberately not supported: the agent
+container has no route to `169.254.169.254` and no STS egress, by design, so
+hostile target code cannot steal the instance role or pivot via AssumeRole.
+On a machine that only has role credentials, materialize them into the
+environment with `eval $(aws configure export-credentials --format env)`
+(use a principal scoped to `bedrock:InvokeModel*`) — note the exported
+session credentials keep the role session's TTL, so start from a session
+that will outlive the run.
+
 Model IDs use Bedrock's format, e.g.
 `--model us.anthropic.claude-opus-4-6-v1`. The egress allowlist is
 auto-derived as `bedrock-runtime.<region>.amazonaws.com:443`; re-run

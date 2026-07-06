@@ -112,7 +112,12 @@ def test_bedrock_no_creds_returns_none(monkeypatch, capsys):
     monkeypatch.setenv("CLAUDE_CODE_USE_BEDROCK", "1")
     monkeypatch.setenv("AWS_REGION", "us-east-1")
     assert resolve_auth_env() is None
-    assert "no credentials in env" in capsys.readouterr().err
+    err = capsys.readouterr().err
+    assert "no credentials in env" in err
+    # IMDS/instance-profile is a deliberate non-feature, not a gap: the
+    # message must say so and point at the export-credentials escape hatch.
+    assert "IMDS" in err and "deliberately not supported" in err
+    assert "aws configure export-credentials" in err
 
 
 def test_precedence_bedrock_over_api_key(monkeypatch):

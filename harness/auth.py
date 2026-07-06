@@ -50,7 +50,14 @@ def resolve_auth_env() -> dict[str, str] | None:
         if "AWS_BEARER_TOKEN_BEDROCK" not in env and "AWS_ACCESS_KEY_ID" not in env:
             print("error: CLAUDE_CODE_USE_BEDROCK=1 but no credentials in env "
                   "(need AWS_BEARER_TOKEN_BEDROCK or AWS_ACCESS_KEY_ID; "
-                  "AWS_PROFILE / ~/.aws are not forwarded into the sandbox)",
+                  "AWS_PROFILE / ~/.aws are not forwarded into the sandbox). "
+                  "Instance-profile/IMDS credentials are deliberately not "
+                  "supported: the agent container has no route to "
+                  "169.254.169.254 and no STS egress, so hostile target code "
+                  "cannot steal the instance role or pivot via AssumeRole. "
+                  "Materialize credentials into the environment instead, e.g. "
+                  "`eval $(aws configure export-credentials --format env)`, "
+                  "using a principal scoped to bedrock:InvokeModel*.",
                   file=sys.stderr)
             return None
         return _with_small_fast_model(env)
