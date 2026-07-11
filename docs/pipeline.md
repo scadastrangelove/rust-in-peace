@@ -173,3 +173,27 @@ before the run is marked as failed. Even then, you can restart the run
 using `bin/vp-sandboxed run <target> --resume <results-dir>`.
 
 We recommend carrying over similar logic if you build your own pipeline.
+
+## Usage marker
+
+Outbound API requests from pipeline agents carry a declared usage marker so
+runbook usage is attributable in Anthropic's request telemetry: an
+`x-cyber-runbook: pipeline` header plus a `cyber-runbook/<version>` leading
+token in the User-Agent (the pinned `claude-cli` version stays in the
+parenthetical). Interactive skill sessions in this repo set only the header —
+`x-cyber-runbook: skills`, via `.claude/settings.json` — and leave the
+User-Agent untouched.
+
+The marker is structural metadata only: static strings, no request content,
+no identifiers beyond what the API request already carries. Pipeline agents
+apply it only when authenticating directly to the Anthropic API (API key or
+OAuth) — on Bedrock/Vertex the provider rewrites the User-Agent and does not
+forward custom headers to Anthropic, so pipeline agents send no marker there.
+The interactive-session header is provider-agnostic; on Bedrock it is
+SigV4-signed like any other header and stays between you and AWS. It is
+telemetry, not enforcement — to remove it, set `VULN_PIPELINE_NO_TELEMETRY=1`
+(pipeline) or override `ANTHROPIC_CUSTOM_HEADERS` in your gitignored
+`.claude/settings.local.json` (skills). An ambient `ANTHROPIC_CUSTOM_HEADERS`
+in the operator's environment is deliberately not forwarded to the agents —
+a Claude Code session in this repo injects the `skills` value into that
+variable, which would mislabel pipeline traffic.
