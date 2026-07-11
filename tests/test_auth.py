@@ -1,7 +1,11 @@
 # Copyright 2026 Anthropic PBC
 # SPDX-License-Identifier: Apache-2.0
 """harness.auth — provider/auth resolution and egress derivation."""
+import re
+
 import pytest
+
+from harness.agent_image import CLAUDE_CODE_VERSION
 
 from harness.auth import (
     NO_AUTH_MSG,
@@ -25,6 +29,8 @@ AUTH_VARS = (
     "ANTHROPIC_API_KEY",
     "CLAUDE_CODE_OAUTH_TOKEN",
     "ANTHROPIC_SMALL_FAST_MODEL",
+    "ANTHROPIC_CUSTOM_HEADERS",
+    "VULN_PIPELINE_NO_TELEMETRY",
 )
 
 
@@ -38,18 +44,24 @@ def _clear_auth(monkeypatch):
 
 def test_api_key(monkeypatch):
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-x")
-    assert resolve_auth_env() == {"ANTHROPIC_API_KEY": "sk-ant-x"}
+    env = resolve_auth_env()
+    assert env and env["ANTHROPIC_API_KEY"] == "sk-ant-x"
+    assert set(env) == {"ANTHROPIC_API_KEY", "ANTHROPIC_CUSTOM_HEADERS"}
 
 
 def test_oauth_token(monkeypatch):
     monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "tok")
-    assert resolve_auth_env() == {"CLAUDE_CODE_OAUTH_TOKEN": "tok"}
+    env = resolve_auth_env()
+    assert env and env["CLAUDE_CODE_OAUTH_TOKEN"] == "tok"
+    assert set(env) == {"CLAUDE_CODE_OAUTH_TOKEN", "ANTHROPIC_CUSTOM_HEADERS"}
 
 
 def test_precedence_api_key_over_oauth(monkeypatch):
     monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-x")
     monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "tok")
-    assert resolve_auth_env() == {"ANTHROPIC_API_KEY": "sk-ant-x"}
+    env = resolve_auth_env()
+    assert env and env["ANTHROPIC_API_KEY"] == "sk-ant-x"
+    assert "CLAUDE_CODE_OAUTH_TOKEN" not in env
 
 
 def test_none():
@@ -140,6 +152,49 @@ def test_vertex(monkeypatch):
         "ANTHROPIC_VERTEX_PROJECT_ID": "proj",
         "CLOUD_ML_REGION": "us-central1",
     }
+
+
+# ── usage marker ────────────────────────────────────────────────────────────
+
+def _marker(env):
+    assert env is not None
+    return env.get("ANTHROPIC_CUSTOM_HEADERS", "")
+
+
+def test_marker_on_api_key(monkeypatch):
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-x")
+    lines = _marker(resolve_auth_env()).splitlines()
+    # Exactly two header lines; the UA leads with the marker token and pins
+    # the CLI version to the agent-image pin.
+    assert len(lines) == 2
+    assert lines[0] == "x-cyber-runbook: pipeline"
+    assert re.fullmatch(
+        r"User-Agent: cyber-runbook/\S+ "
+        rf"\(claude-cli/{re.escape(CLAUDE_CODE_VERSION)}\)", lines[1])
+
+
+def test_marker_identical_on_oauth(monkeypatch):
+    monkeypatch.setenv("CLAUDE_CODE_OAUTH_TOKEN", "tok")
+    oauth = _marker(resolve_auth_env())
+    monkeypatch.delenv("CLAUDE_CODE_OAUTH_TOKEN")
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-x")
+    assert oauth == _marker(resolve_auth_env())
+
+
+def test_marker_opt_out(monkeypatch):
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-x")
+    monkeypatch.setenv("VULN_PIPELINE_NO_TELEMETRY", "1")
+    assert resolve_auth_env() == {"ANTHROPIC_API_KEY": "sk-ant-x"}
+
+
+def test_marker_replaces_ambient_headers(monkeypatch):
+    # The `skills` value .claude/settings.json injects into operator env must
+    # not survive into pipeline agents (docs/pipeline.md#usage-marker).
+    monkeypatch.setenv("ANTHROPIC_API_KEY", "sk-ant-x")
+    monkeypatch.setenv("ANTHROPIC_CUSTOM_HEADERS", "x-cyber-runbook: skills")
+    headers = _marker(resolve_auth_env())
+    assert "x-cyber-runbook: pipeline" in headers
+    assert "skills" not in headers
 
 
 # ── warn_bedrock_model ──────────────────────────────────────────────────────

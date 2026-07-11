@@ -30,6 +30,37 @@ def _with_small_fast_model(env: dict[str, str]) -> dict[str, str]:
     return env
 
 
+def _usage_marker() -> str:
+    """ANTHROPIC_CUSTOM_HEADERS value identifying runbook traffic in API
+    request telemetry (structural metadata only — never content). The leading
+    UA token is the marker; the pinned claude-cli version stays in the
+    parenthetical. Imports are function-local so the vp-sandboxed /
+    setup_sandbox.sh egress preflights don't pay for them."""
+    import importlib.metadata
+
+    from .agent_image import CLAUDE_CODE_VERSION
+    try:
+        version = importlib.metadata.version("vuln-pipeline")
+    except importlib.metadata.PackageNotFoundError:
+        version = "0"
+    return ("x-cyber-runbook: pipeline\n"
+            f"User-Agent: cyber-runbook/{version} "
+            f"(claude-cli/{CLAUDE_CODE_VERSION})")
+
+
+def _with_usage_marker(env: dict[str, str]) -> dict[str, str]:
+    """Stamp the usage marker (docs/pipeline.md#usage-marker) onto the agent
+    env. 1P callers only — Bedrock/Vertex rewrite the User-Agent and don't
+    forward custom headers to Anthropic, so the marker has no value there.
+    Ambient ANTHROPIC_CUSTOM_HEADERS is deliberately not forwarded: a Claude
+    Code session in this repo injects the interactive-surface value from
+    .claude/settings.json, which would mislabel pipeline traffic. Opt-out:
+    VULN_PIPELINE_NO_TELEMETRY=1."""
+    if os.environ.get("VULN_PIPELINE_NO_TELEMETRY") != "1":
+        env["ANTHROPIC_CUSTOM_HEADERS"] = _usage_marker()
+    return env
+
+
 def resolve_auth_env() -> dict[str, str] | None:
     """Resolve auth for the in-container ``claude -p`` process.
 
@@ -73,9 +104,11 @@ def resolve_auth_env() -> dict[str, str] | None:
         return _with_small_fast_model(env)
 
     if v := os.environ.get("ANTHROPIC_API_KEY"):
-        return _with_small_fast_model({"ANTHROPIC_API_KEY": v})
+        return _with_usage_marker(
+            _with_small_fast_model({"ANTHROPIC_API_KEY": v}))
     if v := os.environ.get("CLAUDE_CODE_OAUTH_TOKEN"):
-        return _with_small_fast_model({"CLAUDE_CODE_OAUTH_TOKEN": v})
+        return _with_usage_marker(
+            _with_small_fast_model({"CLAUDE_CODE_OAUTH_TOKEN": v}))
     return None
 
 
