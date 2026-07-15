@@ -19,7 +19,7 @@ from . import docker_ops, sandbox
 from .agent import run_agent, parse_xml_tag, AgentResult
 from .artifacts import CrashArtifact, ReportVerdict
 from .config import TargetConfig
-from .prompts.report_prompt import build_report_prompt
+from .profiles import get_profile
 from .prompts.report_grader_prompt import build_report_grader_prompt
 
 
@@ -70,7 +70,7 @@ async def run_report(
         with open(os.path.join(workspace_dir, "poc.bin"), "wb") as f:
             f.write(crash.poc_bytes)
 
-        prompt = build_report_prompt(
+        prompt = get_profile(target.profile).build_report_prompt(
             github_url=target.github_url,
             commit=target.commit,
             source_root=target.source_root,

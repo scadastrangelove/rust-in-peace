@@ -44,7 +44,7 @@ from pathlib import Path
 from . import docker_ops, sandbox
 from .agent import color
 from .artifacts import CrashArtifact, RunResult
-from .asan import asan_excerpt, crash_reason, top_frame
+from .profiles import detector_for_output
 from .config import TargetConfig
 from .dedup import dedup
 from .find import run_find, DEFAULT_FIND_MAX_TURNS
@@ -188,7 +188,7 @@ def _write_result(out_dir: Path, result: RunResult) -> None:
     # operation. Sits alongside the agent-emitted crash_type so downstream
     # consumers can cross-check (the agent tag is free-text and fragments).
     if result.crash:
-        slim["crash"]["reason"] = crash_reason(result.crash.crash_output)
+        slim["crash"]["reason"] = detector_for_output(result.crash.crash_output).crash_reason(result.crash.crash_output)
     with open(out_dir / "result.json", "w") as f:
         json.dump(slim, f, indent=2)
 
@@ -374,7 +374,7 @@ async def _stream_dispatch(
     happens outside the lock (the slow part)."""
     reports_root: Path = ctx["reports_root"]
     reports_root.mkdir(parents=True, exist_ok=True)
-    excerpt = asan_excerpt(crash.crash_output)
+    excerpt = detector_for_output(crash.crash_output).asan_excerpt(crash.crash_output)
 
     async with ctx["lock"]:
         manifest = _read_manifest(reports_root)
@@ -385,6 +385,7 @@ async def _stream_dispatch(
             poc_size=len(crash.poc_bytes),
             manifest_entries=manifest,
             model=model, image_tag=target.image_tag, agent_env=agent_env,
+            profile=target.profile,
             container_name=f"judge_{target.name}_{run_idx}",
             transcript_path=str(reports_root / f"judge_run{run_idx:03d}.jsonl"),
             progress_prefix=f"[judge:{run_idx}]",
@@ -474,7 +475,7 @@ async def _stream_report(
         except (OSError, json.JSONDecodeError):
             old_report_text = None
 
-    frame = top_frame(crash.crash_output) or ""
+    frame = detector_for_output(crash.crash_output).top_frame(crash.crash_output) or ""
     crash_file = crash_file_from_frame(frame)
     log = None
     if novelty:
@@ -525,6 +526,7 @@ async def _stream_report(
         winner, reasoning, _cr, c_elapsed = await run_compare(
             report_a=old_report_text, report_b=report_text,
             model=model, image_tag=target.image_tag, agent_env=agent_env,
+            profile=target.profile,
             container_name=f"compare_{target.name}_{run_idx}",
             transcript_path=str(out_dir / f"compare_run{run_idx:03d}.jsonl"),
             progress_prefix=f"[compare:{run_idx}→bug_{bug_id:02d}]",
@@ -562,7 +564,7 @@ def _append_found(path: Path, crash: CrashArtifact, run_idx: int) -> None:
     # variance, free-text agent tags all fragmented the dedup).
     entry = {
         "run_idx": run_idx,
-        "asan_excerpt": asan_excerpt(crash.crash_output),
+        "asan_excerpt": detector_for_output(crash.crash_output).asan_excerpt(crash.crash_output),
     }
     with open(path, "a") as f:
         f.write(json.dumps(entry) + "\n")

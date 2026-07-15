@@ -24,7 +24,8 @@ PIPELINE_PREAMBLE = """\
 This agent is part of the vuln-pipeline security-research tool. The target
 under test is built at a pinned commit and runs alongside this agent inside
 a gVisor sandbox with no network egress beyond the API. The agent analyzes
-the target, crafts inputs, and observes sanitizer output. Scope is narrow by
+the target, crafts inputs, and observes detector output (sanitizer reports,
+Miri undefined-behavior diagnostics, panic/abort traces, or hangs). Scope is narrow by
 construction: one target, one commit, one focus area per agent, inside a
 sandboxed environment.
 """
@@ -33,7 +34,7 @@ DEFAULT_ENGAGEMENT_CONTEXT = """\
 ## Engagement context
 
 This is authorized security research conducted as a defensive security
-assessment on an open-source C/C++ target. Findings are collected for
+assessment on an open-source target. Findings are collected for
 responsible disclosure to the upstream maintainer.
 """
 
