@@ -58,7 +58,9 @@ targets keep working with no change. `targets/rust-canary/config.yaml` sets
 | detector | `harness/asan.py` | `harness/rust/detect.py` |
 | grade prompt | `harness/prompts/grade_prompt.py` | `harness/rust/grade_prompt.py` |
 | judge prompt | `harness/prompts/judge_prompt.py` | `harness/rust/judge_prompt.py` |
-| report / patch / compare | base | base (reused; fork when the Rust exploitability/fix wording is worth it) |
+| report prompt | `harness/prompts/report_prompt.py` | `harness/rust/report_prompt.py` |
+| patch prompt | `harness/prompts/patch_prompt.py` | `harness/rust/patch_prompt.py` |
+| compare / style-judge | base | base (reused — report-vs-report dedup and style-judge are language-agnostic) |
 | system prompt | shared (generalized to be detector-neutral) | shared |
 
 - **`harness/rust/find_prompt.py`** — same `build_find_prompt(...)` signature.
@@ -98,26 +100,33 @@ All four the base pipeline's ASAN slot maps onto, fast → thorough:
 `targets/rust-canary/run_detectors.sh` chains sanitizer → hang → Miri and is the
 target's `reattack_harness`.
 
-## Grade / report / patch deltas (still C/C++-worded in the base prompts)
+## Grade / report / patch rubric (forked into `harness/rust/`)
 
 The base grade/report/patch prompts assume memory corruption (heap layout,
-escalation). For Rust, adjust the rubric wording (keep the structure):
+escalation). Those assumptions are wrong for Rust, so all three are **forked**
+into `harness/rust/{grade,report,patch}_prompt.py` and wired into the `rust`
+profile (they keep the base prompts' output-tag structure so the parsers are
+unchanged — only the rubric wording differs). What each fork changes:
 
-- **Grade** — a valid crash is a Miri `Undefined Behavior`, a sanitizer
-  buffer-overflow/UAF, a reproducing panic on untrusted input, or a hang. A
-  clean `Err(...)` return is NOT a crash.
-- **Report** — swap "heap layout / escalation path" for: *primitive* (OOB
-  read = info-leak / OOB write = corruption / panic = availability), *unsafe
-  reachability from a public API*, *trust boundary* (attacker- vs
-  operator-controlled input — the single biggest severity driver for Rust), and
-  *soundness* (does the fix restore a real invariant or just move the panic).
-- **Patch** — a fix is accepted when the detector no longer fires AND
-  `cargo test` (T2) still passes. Prefer parse-time validation (bound the field
-  once) over per-use checks when the hot path is perf-sensitive — validating at
-  the trust boundary keeps `unsafe` reads unchecked at zero runtime cost.
+- **Grade** (`harness/rust/grade_prompt.py`) — a valid crash is a Miri
+  `Undefined Behavior`, a sanitizer buffer-overflow/UAF, a reproducing panic on
+  untrusted input, or a hang. A clean `Err(...)` return is NOT a crash.
+- **Report** (`harness/rust/report_prompt.py`) — "heap layout / escalation path"
+  becomes: *primitive* (OOB read = info-leak / OOB write = corruption / panic =
+  availability / Miri UB = unsoundness), *unsafe reachability from a public API*,
+  *trust boundary* (attacker- vs operator-controlled input — the single biggest
+  severity driver for Rust), and *soundness* (does the fix restore a real
+  invariant or just move the panic). `heap_layout` is reframed (adjacency for
+  OOB, `N/A` for panic).
+- **Patch** (`harness/rust/patch_prompt.py`) — the diff is over `*.rs`, the
+  toolchain is cargo/miri/git, and a fix is accepted when the detector no longer
+  fires AND `cargo test` (T2) still passes. Prefers parse-time validation (bound
+  the field once at the trust boundary) over a per-use crash-site check, so the
+  `unsafe` hot-path read stays unchecked at zero runtime cost.
 
-These are documented rather than pre-forked to keep the port minimal; the base
-prompt files are small if you want to hard-fork them per `docs/customizing.md`.
+Still reused from the base unchanged: the **compare** prompt (report-vs-report
+dedup) and the **style-judge**, both genuinely language-agnostic. To further
+customize any fork, see `docs/customizing.md`.
 
 ## Provenance
 
