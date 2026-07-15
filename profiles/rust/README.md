@@ -101,6 +101,13 @@ cargo-fuzz as a per-target reachability harness:
 | **Miri** (`cargo +nightly miri run`) | UB the sanitizer misses: provenance, uninit reads, invalid values, data races | slow; escalation oracle |
 | **cargo-fuzz** (installed in the image) | reachability — turn a static candidate into a reproduced crash | per-target harness |
 
+Fuzzing isn't one slot — it's a cheapest-first staircase (blind panic-fuzz →
+FFI-ABI guard-page/ASan → coverage-guided → AFL with **rustc-native** sancov),
+with a **domain-specific corpus** seeded per input surface and trust boundary.
+See [`fuzzing.md`](fuzzing.md) for the escalation, the Rust-behind-C coverage
+trap (a C-only AFL harness instruments the C edges, not the Rust), and the
+worked `russcan` example (blind harness over `Database::load` + `scan_block`).
+
 `targets/rust-canary/run_detectors.sh` chains sanitizer → hang → Miri and is the
 target's `reattack_harness`.
 
