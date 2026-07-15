@@ -69,3 +69,29 @@ TRUE_POSITIVE bar (reachable from untrusted input, concrete trigger). For every
 verdict, record REACHABLE_IF_TRUSTED_INPUT (yes/no) so ranking can separate live
 vulns from latent hardening — that field, not raw severity, usually drives the
 real priority order for Rust targets.
+
+── Calibration from real RustSec incidents (canonical review §15;
+   full text: profiles/rust/references/rust-security-review.md) ──
+
+RULE R8 — Soundness ≠ security, both count.
+"safe API, unsound internals" (a safe fn whose contract safe code can break —
+e.g. flatbuffers reinterpreting bytes as `bool`, tracing's `mem::forget` UAF) is
+a TRUE_POSITIVE even if no current caller triggers it — it is exactly the class
+that becomes exploitable after a refactor or compiler update. Conversely, a pure
+security-logic bug in fully-safe Rust (rustls-webpki name-constraint accept,
+hickory DNS cache poisoning, a Deno permission bypass) is ALSO a true positive:
+memory safety holding does not make it a false positive. R3 (safe-Rust) excludes
+only memory-corruption categories, never logic / authz / protocol bugs.
+
+RULE R9 — "we don't call that path" is not a false positive.
+An unsafe-soundness or panic finding does NOT become FALSE_POSITIVE merely
+because the current code doesn't reach it, IF the API is public/exported and a
+future caller could. Downgrade its *reachability/severity*, but keep it (unsafe
+bugs resurface under refactors). This is distinct from R2 (operator-only *input*)
+and R1 (an invariant that actually *dominates* the sink today).
+
+RULE R10 — Panic-safety is memory safety in unsafe code.
+A panic that unwinds through a temporarily-broken invariant in an `unsafe` region
+(via a callback, `Drop`, or allocation) producing UB / UAF / double-free
+(rkyv-style) is a real memory-safety TRUE_POSITIVE, not "just a panic" — do not
+apply the availability-only lens (R5) to it.

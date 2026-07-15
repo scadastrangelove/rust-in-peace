@@ -127,3 +127,13 @@ engine: unchecked `read_unaligned` at an offset trusted after a CRC check
 (→ parse-time validation), panic on untrusted operand reads in an interpreter,
 an unbounded chain walk with a data-controlled terminator, and one false
 positive (an unchecked read the caller's exclusion mask actually bounds).
+
+## Canonical reference
+
+The Rust bug taxonomy, FP rules, and severity calibration here are grounded in
+[`references/rust-security-review.md`](references/rust-security-review.md) — a
+merged canonical "Rust Security Code Review" best-practices document (unsafe
+audit dimensions, panic/DoS, `as`-conversions, FFI, concurrency/async, parser
+differentials, secrets/crypto, supply chain, CI layers, and real-world RustSec
+case studies mapped to each). `scan-extras.txt` / `fp-rules.txt` distil it into
+the interactive briefs; the full text is the depth reference for a reviewer.

@@ -90,3 +90,75 @@ memory-safety bug behind a purely operator-controlled input is a latent
 robustness bug, not a live vulnerability — say so and rank accordingly, but do
 NOT drop it (triage decides). This distinction is usually the single biggest
 driver of real-world severity.
+
+─────────────────────────────────────────────────────────────────────────────
+EXTENDED CATEGORIES (from the canonical Rust security review — full text at
+profiles/rust/references/rust-security-review.md). Same trust-boundary rule:
+name the attacker-controlled input for each. HIGH VALUE unless noted.
+
+  UNSAFE — deepen the audit (§2). For each unsafe site, the finding must name
+  which invariant is violable, not just "unchecked": alignment (`as_ptr()` on
+  `[u8]` is align-1; casting to `*const u64` does NOT make it align-8);
+  aliasing (`&mut` coexisting with other refs — Stacked/Tree Borrows / Miri);
+  validity (a `bool` from 2, uninit read, invalid `char`/`str`); panic-safety
+  (UB/leak if a panic unwinds through a temporarily-broken invariant, incl.
+  from a callback/Drop/alloc); ownership/double-free (`ManuallyDrop`/
+  `MaybeUninit`, drop order); Pin soundness (self-referential structs/futures,
+  `Unpin` only where structurally justified). "safe API, unsound internals" is
+  the canonical target — a safe fn whose contract safe code can break is a bug.
+
+  TYPE/SIZE CONVERSIONS (§4): `as` silently truncates / changes sign. Any
+  `x as u16/u32/usize` (or signed↔unsigned) on an attacker-influenced value that
+  then sizes an allocation, indexes, or forms a wire field is a finding — must be
+  `try_into()` with an error. Classic offset trap: `a + b < len` overflows;
+  `a < len - b` underflows when `b > len`.
+
+  COMMAND / FILE / PATH (§5): `Command` via `sh -c` / `cmd.exe` / `.bat` with
+  interpolated input = injection; path traversal (`../`, absolute, symlink,
+  TOCTOU) where a naive `starts_with` is not a path check; archive (zip/tar)
+  entry names are attacker-controlled (zip-slip); decompression without a
+  ratio/size cap (zip bomb).
+
+  AUTHORIZATION AT THE SIDE EFFECT (§6): the `load → modify → check` order (must
+  be `load → check → validate-transition → modify`); object/tenant ownership not
+  just role; a permission check reused after `.await`; mass assignment via
+  deserialization (service fields settable through JSON — want
+  `serde(deny_unknown_fields)`); check-then-write races.
+
+  FFI BOUNDARY (§7) — HIGH for anything replacing a C lib / running in a C host
+  (e.g. an nginx worker): a panic escaping across FFI into the host (crashes the
+  process — needs `catch_unwind` or `extern "C-unwind"`); a foreign exception
+  entering a non-unwind boundary (UB); wrong `extern` signature / ABI (transcribed
+  from memory not the header — UB); lengths/pointers from C used in
+  `slice::from_raw_parts` without null/length validation; allocator asymmetry
+  (freed by the side that didn't allocate); host-runtime lifecycle invariants
+  (refcounts, request lifetimes — e.g. nginx `r->main->count`) not upheld on every
+  exit path incl. errors.
+
+  CONCURRENCY / ASYNC (§8): `unsafe impl Send`/`Sync` that isn't actually
+  thread-safe; a mutex guard held across `.await`; cancellation safety (a future
+  dropped mid-`select!`/timeout leaving half-written state / unclosed resources);
+  `Ordering::Relaxed` in lock-free code without justification; blocking I/O
+  (`std::fs`, sync channels) on an async executor (starvation DoS); deadlock /
+  lock-ordering (not UB, not caught by the type system, but a real availability
+  bug).
+
+  PARSER DIFFERENTIALS (§9): if the same bytes are parsed twice (edge & upstream,
+  WAF & backend, two components normalizing a path/string differently), a
+  disagreement is a vulnerability class in itself (request smuggling, filter
+  bypass, permission-prompt spoofing). Report parse/normalization divergences,
+  not just crashes.
+
+  SECRETS / CRYPTO (§10): secrets leaking into `Debug`/`Display` (check the
+  derives), error chains, panic messages, tracing spans, metrics labels, query
+  strings; `==` comparison of a MAC/secret (needs constant-time `subtle`);
+  `SmallRng`/deterministic RNG for keys/tokens; missing nonce/IV uniqueness or
+  encryption without authentication (AEAD); hand-rolled crypto (auto-flag).
+
+  SUPPLY CHAIN (§11) — the agent may run these read-only static checks and fold
+  results in: `cargo audit` (RustSec advisories, yanked), `cargo deny check`
+  (policy), `cargo geiger` (unsafe map), `cargo tree -e features` (which features
+  are really on). A `build.rs` / proc-macro in a new dep executes at build time
+  → audit as executable code. Do NOT filter RustSec *informational soundness*
+  advisories — "safe API, unsound internals" is the class that becomes
+  exploitable after a refactor.
