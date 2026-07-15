@@ -20,16 +20,19 @@ import sys
 from collections import defaultdict
 from pathlib import Path
 
-from .asan import top_frame, crash_reason
+from .profiles import detector_for_output
 
 
 NO_FRAME = "<no-frame>"
 
 
 def _signature(crash: dict) -> tuple[str, str]:
-    reason = crash.get("reason") or crash_reason(crash.get("crash_output") or "")
+    # Post-hoc dedup may span profiles (cpp/rust); pick the parser by content.
+    out = crash.get("crash_output") or ""
+    det = detector_for_output(out)
+    reason = crash.get("reason") or det.crash_reason(out)
     crash_type = reason["crash_type"] or crash.get("crash_type") or "unknown"
-    frame = top_frame(crash.get("crash_output") or "")
+    frame = det.top_frame(out)
     return (crash_type, frame or NO_FRAME)
 
 
@@ -51,7 +54,8 @@ def dedup(results_root: Path) -> dict[tuple[str, str], list[tuple[Path, str, dic
         crash = result.get("crash")
         if not crash:
             continue
-        reason = crash.get("reason") or crash_reason(crash.get("crash_output") or "")
+        out = crash.get("crash_output") or ""
+        reason = crash.get("reason") or detector_for_output(out).crash_reason(out)
         sig = _signature(crash)
         groups[sig].append((path, result.get("status", "unknown"), reason))
     return dict(groups)

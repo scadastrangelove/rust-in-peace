@@ -17,7 +17,7 @@ from . import docker_ops, sandbox
 from .agent import run_agent, parse_xml_tag, AgentResult
 from .artifacts import CrashArtifact, GraderVerdict
 from .config import TargetConfig
-from .prompts.grade_prompt import build_grade_prompt
+from .profiles import get_profile
 
 
 GRADE_MAX_TURNS = 50
@@ -60,7 +60,7 @@ async def run_grade(
         with open(workspace_poc, "wb") as f:
             f.write(crash.poc_bytes)
 
-        prompt = build_grade_prompt(
+        prompt = get_profile(target.profile).build_grade_prompt(
             image_tag=target.image_tag,
             reproduction_command=crash.reproduction_command,
             reproduction_command_adapted=adapted_cmd,

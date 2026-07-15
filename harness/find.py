@@ -12,7 +12,7 @@ from . import docker_ops, sandbox
 from .agent import run_agent, parse_xml_tag, AgentResult
 from .artifacts import CrashArtifact
 from .config import TargetConfig
-from .prompts.find_prompt import build_find_prompt
+from .profiles import get_profile
 
 
 DEFAULT_FIND_MAX_TURNS = 2000
@@ -47,7 +47,7 @@ async def run_find(
         target.image_tag, container_name, agent_env,
         memory=target.memory_limit, shm_size=target.shm_size, mounts=mounts,
     ) as container:
-        prompt = build_find_prompt(
+        prompt = get_profile(target.profile).build_find_prompt(
             github_url=target.github_url,
             commit=target.commit,
             source_root=target.source_root,

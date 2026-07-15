@@ -13,7 +13,7 @@ import time
 from . import sandbox
 from .agent import run_agent, parse_xml_tag, AgentResult
 from .artifacts import JudgeVerdict
-from .prompts.judge_prompt import build_judge_prompt, build_compare_prompt
+from .profiles import get_profile
 
 
 JUDGE_MAX_TURNS = 20
@@ -36,13 +36,14 @@ async def run_judge(
     transcript_path: str | None = None,
     progress_prefix: str | None = None,
     system_prompt: str | None = None,
+    profile: str = "cpp",
 ) -> tuple[JudgeVerdict, AgentResult, float]:
     """Decide whether a freshly-graded crash warrants a report.
 
     Returns (verdict, agent_result, elapsed). If the agent emits no parseable
     judgment, defaults to NEW — fail open so crashes aren't silently dropped.
     """
-    prompt = build_judge_prompt(
+    prompt = get_profile(profile).build_judge_prompt(
         asan_excerpt=asan_excerpt,
         dup_check=dup_check or "",
         grade_status=grade_status,
@@ -97,6 +98,7 @@ async def run_compare(
     transcript_path: str | None = None,
     progress_prefix: str | None = None,
     system_prompt: str | None = None,
+    profile: str = "cpp",
 ) -> tuple[str, str, AgentResult, float]:
     """Pick the canonical report after a DUP_BETTER re-report.
 
@@ -104,7 +106,7 @@ async def run_compare(
     defaults to "B" (the newer re-report) if no parseable output — the judge
     already ruled the new crash a better representative, so lean that way.
     """
-    prompt = build_compare_prompt(report_a=report_a, report_b=report_b)
+    prompt = get_profile(profile).build_compare_prompt(report_a=report_a, report_b=report_b)
 
     t0 = time.time()
     with sandbox.agent_container(image_tag, container_name, agent_env) as container:

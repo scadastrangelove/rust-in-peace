@@ -21,7 +21,7 @@ from .agent import AgentResult, parse_xml_tag, run_agent
 from .artifacts import CrashArtifact, PatchVerdict
 from .config import TargetConfig
 from .patch_grade import grade_patch
-from .prompts.patch_prompt import build_patch_prompt
+from .profiles import get_profile
 
 PATCH_MAX_TURNS = 200
 DEFAULT_MAX_ITERATIONS = 5
@@ -92,7 +92,7 @@ async def run_patch(
 
         for it in range(max_iterations):
             iterations = it + 1
-            prompt = build_patch_prompt(
+            prompt = get_profile(target.profile).build_patch_prompt(
                 source_root=target.source_root,
                 binary_path=target.binary_path,
                 build_command=target.build_command,

@@ -25,7 +25,7 @@ from dataclasses import replace
 from . import docker_ops, sandbox
 from .agent import parse_xml_tag, run_agent
 from .artifacts import CrashArtifact, PatchVerdict
-from .asan import project_frames
+from .profiles import detector_for_output
 from .config import TargetConfig
 from .find import run_find
 from .prompts.patch_prompt import build_style_judge_prompt
@@ -246,7 +246,7 @@ def _t1_passes(rc: int, stdout: str, stderr: str) -> bool:
 
 
 def _focus_hint(crash: CrashArtifact, diff_source_root: str | None = None) -> str:
-    frames = project_frames(crash.crash_output, n=1)
+    frames = detector_for_output(crash.crash_output).project_frames(crash.crash_output, n=1)
     where = f" near {frames[0]}" if frames else ""
     hint = (
         f"Re-attack the just-patched code path. The original crash was "
