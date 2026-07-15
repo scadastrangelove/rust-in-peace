@@ -1,0 +1,41 @@
+# Rust-security profile canary target. Uses the standard TargetConfig schema
+# (harness/config.py). `profile: rust` selects the Rust find prompt, crash
+# detector (Miri/panic/ASAN), and grade/judge prompts — see profiles/rust/README.md.
+profile: rust
+image_tag: vuln-pipeline-rust-canary:latest
+github_url: https://github.com/anthropics/defending-code-reference-harness
+commit: 0000000000000000000000000000000000000000   # local demo target; not upstreamed
+binary_path: /work/entry                            # ASAN + panic driver, reads argv[1]
+source_root: /work/crate
+
+# The multi-detector oracle (sanitizer + hang-timeout + Miri). Passing this as
+# reattack_harness makes the find agent drive it instead of the bare binary,
+# and gives the patch re-attack stage the same oracle.
+reattack_harness: /work/run_detectors.sh
+
+# In-container rebuild for the patch grader (T0): reapply the ASAN driver build.
+build_command: >-
+  cd /work/crate &&
+  RUSTFLAGS="-Zsanitizer=address" cargo +nightly build -Zbuild-std
+  --target x86_64-unknown-linux-gnu --bin entry &&
+  cp target/x86_64-unknown-linux-gnu/debug/entry /work/entry
+
+# Regression suite for the patch grader (T2): the crate's own tests must still
+# pass after a fix (valid_input_roundtrips guards against over-broad patches).
+test_command: cd /work/crate && cargo +nightly test
+
+memory_limit: 6g
+build_timeout_s: 2400   # nightly + cargo-fuzz + build-std image build is heavy
+
+focus_areas:
+  - "record data reads (Table::sum_record) — unchecked unsafe offset into the data blob"
+  - "container framing (parse) — untrusted n_recs / record region slicing"
+  - "chain traversal (Table::walk_chain) — untrusted next index, loop termination"
+
+known_bugs: []   # empty on purpose: this is the demo; the pipeline should find them
+
+attack_surface: |
+  A binary "record table" parser. Real surface: any caller of the public
+  `parse(bytes)` API on untrusted bytes, then the `Table` methods. Pure byte
+  parser — no wire protocol, no auth. The integrity checksum is NOT a bounds
+  guarantee; internal record offsets/counts are attacker-controlled.
