@@ -34,5 +34,5 @@ The agents run `docker exec … claude -p` inside the image; auth is passed as
 
 ```bash
 export ANTHROPIC_API_KEY=…            # your key, on the host
-python -m harness.cli run targets/russcan --no-sandbox   # or bin/vp-sandboxed
+python -m harness.cli run targets/russcan --dangerously-no-sandbox   # or bin/vp-sandboxed
 ```
