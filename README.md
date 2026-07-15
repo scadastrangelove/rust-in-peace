@@ -37,6 +37,15 @@ This repo is not maintained and is not accepting contributions.
   The general shape, prompts, and sandboxing are reusable, but the harness
   will not work on every codebase out of the box. Run `/customize` to port it 
   to your language, detector, or vuln class.
+- **Profiles** (`harness/profiles.py`): the pipeline selects its
+  language/detector-specific pieces (find prompt, crash detector, grade/judge/
+  report/patch prompts) by a `profile:` field in a target's `config.yaml`.
+  `cpp` (C/C++ + ASAN) is the default; **`rust`** is a full worked fork for Rust
+  security — Miri / sanitizer / panic / hang detectors and the Rust bug taxonomy
+  (unsafe/FFI, panic-DoS, deserialization trust). See
+  [profiles/rust/README.md](profiles/rust/README.md) and the `targets/rust-canary`
+  demo target. Adding another language = a new `harness/<lang>/` package + one
+  registry entry; the orchestration doesn't change.
 
 > ⚠️ **Security:** `/quickstart`, `/threat-model`, `/vuln-scan`, and `/triage`
 > only read and write files. Running `/patch` on static findings (`TRIAGE.json`
@@ -70,6 +79,7 @@ claude
 - [**Security**](docs/security.md) · Sandboxing, what not to mount
 - [**Agent sandbox**](docs/agent-sandbox.md) · gVisor isolation + egress allowlist for every agent
 - [**Customize**](docs/customizing.md) · Port to my stack; which files change and why
+- [**Rust profile**](profiles/rust/README.md) · A worked fork for Rust security (unsafe/FFI, panic-DoS, deserialization trust) — Miri / sanitizer / panic / hang detectors, selected with `profile: rust`
 - [**Patching**](docs/patching.md) · Generate and verify fixes for verified crashes
 - [**Troubleshooting**](docs/troubleshooting.md) · Duplicates, rate limits, subagent model pinning
 - [**Safeguards**](https://support.claude.com/en/articles/14604842-real-time-cyber-safeguards-on-claude) · Block for dangerous cyber work
