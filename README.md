@@ -1,15 +1,59 @@
-# Defending Code Reference Harness
+# rust-in-peace 🦀🤘
 
-A reference implementation for autonomous vulnerability discovery and
-remediation with Claude, based on our learnings from [partnering with security
-teams at several organizations](https://www.anthropic.com/glasswing)
-since launching Claude Mythos Preview. For a write up of these learnings along with
-best practices, see the [accompanying blog post](https://claude.com/blog/using-llms-to-secure-source-code)
-(also available in [`blog-post.md`](docs/blog-post.md)). For a lightweight SDK-only 
-walkthrough of the same recon → find → triage → report → patch loop, see the 
-[companion cookbook](https://platform.claude.com/cookbook/claude-agent-sdk-06-the-vulnerability-detection-agent).
+**Agentic security review for Rust.** An autonomous
+recon → find → triage → report → patch loop for the bugs that actually bite
+Rust: memory-safety in `unsafe`/FFI, panic-DoS from untrusted input, and
+parser/deserialization trust (an integrity check is not a bounds check).
+Detectors: **Miri** (undefined behavior), **AddressSanitizer**, **panic/abort**,
+and **hang-timeout** — plus `cargo-fuzz` for reachability.
 
-This repo is not maintained and is not accepting contributions.
+[![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
+![Target: Rust](https://img.shields.io/badge/target-Rust-orange.svg)
+![Detectors: Miri · ASan · panic · hang](https://img.shields.io/badge/detectors-Miri%20%C2%B7%20ASan%20%C2%B7%20panic%20%C2%B7%20hang-brightgreen.svg)
+
+> A Rust-security fork of Anthropic's
+> [defending-code-reference-harness](https://github.com/anthropics/defending-code-reference-harness)
+> (Apache-2.0) — the reference implementation for autonomous vulnerability
+> discovery and remediation with Claude ([blog](https://claude.com/blog/using-llms-to-secure-source-code),
+> [cookbook](https://platform.claude.com/cookbook/claude-agent-sdk-06-the-vulnerability-detection-agent)).
+> Upstream is a C/C++ + ASAN demo and is not maintained. This fork keeps that
+> intact as the default `cpp` profile and adds a first-class **`rust`** profile.
+> Maintained by Sergey Gordeychik ([contact](#contact)).
+
+## What this fork adds
+
+- A **profile registry** (`harness/profiles.py`): the pipeline resolves its
+  language/detector-specific pieces (find prompt, crash detector, grade/judge/
+  report/patch prompts) from a `profile:` field in a target's `config.yaml`.
+  `cpp` is the default; **`rust`** is a complete second profile.
+- The **`rust` profile** (`harness/rust/`): a Rust find prompt, a
+  Miri/panic/ASAN/hang crash detector, Rust-tuned grade/judge/report/patch
+  prompts, and interactive-skill tuning (`/vuln-scan --extra`,
+  `/triage --fp-rules`). See [profiles/rust/README.md](profiles/rust/README.md).
+- A runnable **`rust-canary`** demo target (`targets/rust-canary/`): a
+  deliberately-vulnerable crate with seeded unsafe-OOB / panic-DoS /
+  unbounded-loop bugs and one safe decoy (a triage false positive).
+
+## Quickstart (Rust)
+
+Interactive skills — read-only, no Docker, usable today (from the repo root in
+Claude Code):
+
+```
+/vuln-scan <your-crate>/src --extra profiles/rust/scan-extras.txt
+/triage VULN-FINDINGS.json --fp-rules profiles/rust/fp-rules.txt
+```
+
+Autonomous pipeline on the demo target (executes code — runs sandboxed):
+
+```
+docker build -t vuln-pipeline-rust-canary:latest targets/rust-canary
+# rust-canary/config.yaml sets `profile: rust`; run the pipeline against it.
+```
+
+Adding another language = a new `harness/<lang>/` package + one `Profile` entry
+in `harness/profiles.py`; the orchestration doesn't change. Full details:
+[profiles/rust/README.md](profiles/rust/README.md).
 
 > 🔒 **Want a managed option?** Anthropic offers
 > [Claude Security](https://claude.com/product/claude-security), a hosted product
@@ -61,15 +105,16 @@ This repo is not maintained and is not accepting contributions.
 ## Getting Started
 
 ```bash
-git clone https://github.com/anthropics/defending-code-reference-harness
-cd defending-code-reference-harness
+git clone https://github.com/scadastrangelove/rust-in-peace
+cd rust-in-peace
 claude
 
 # 30-sec intro + guided first run on the canary target
 > /quickstart
 
-> /quickstart how do I port the pipeline to Java?
-> /quickstart how do I triage all these bugs?
+# Rust: scan a crate with the rust profile's brief / triage rules
+> /vuln-scan path/to/crate/src --extra profiles/rust/scan-extras.txt
+> /triage VULN-FINDINGS.json --fp-rules profiles/rust/fp-rules.txt
 ```
 
 ## Further Reading
@@ -320,3 +365,21 @@ scanning platform before scaling up.
 3. Incorporating scans into their SDLC. Some teams have set up recurring scans 
 (e.g., daily, weekly) or have added scanning into their CI pipelines.
 4. Testing and experimenting with the models to find what works best for them.
+---
+
+## Contact
+
+Maintainer of this fork — **Sergey Gordeychik**:
+
+- Email: [scadastrangelove@gmail.com](mailto:scadastrangelove@gmail.com)
+- X/Twitter: [@scadasl](https://x.com/scadasl)
+- Blog: [scadastrangelove.blogspot.com](https://scadastrangelove.blogspot.com/)
+
+Issues and pull requests are welcome on this fork. For the upstream C/C++
+reference pipeline, see
+[anthropics/defending-code-reference-harness](https://github.com/anthropics/defending-code-reference-harness).
+
+## License
+
+Apache-2.0 — see [LICENSE](LICENSE). This is a fork of Anthropic's
+defending-code-reference-harness; upstream copyright and license are retained.
