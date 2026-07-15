@@ -11,7 +11,8 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
 # Nightly is required for -Zsanitizer, Miri, and cargo-fuzz. rust-src +
 # llvm-tools-preview back the sanitizer's -Zbuild-std; miri is the UB oracle.
 RUN rustup toolchain install nightly --profile minimal \
-        --component miri rust-src llvm-tools-preview clippy \
+        --component miri --component rust-src \
+        --component llvm-tools-preview --component clippy \
     && rustup default nightly \
     && cargo install cargo-fuzz --locked
 

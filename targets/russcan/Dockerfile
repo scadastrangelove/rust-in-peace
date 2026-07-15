@@ -18,9 +18,11 @@ RUN apt-get update && apt-get install -y --no-install-recommends \
     && npm i -g @anthropic-ai/claude-code \
     && rm -rf /var/lib/apt/lists/*
 
-# Nightly + the detector components.
+# Nightly + the detector components. NB: this rustup wants one --component per
+# item (a space-separated list is parsed as extra toolchain names).
 RUN rustup toolchain install nightly --profile minimal \
-        --component miri rust-src llvm-tools-preview clippy \
+        --component miri --component rust-src \
+        --component llvm-tools-preview --component clippy \
     && rustup default nightly \
     && cargo install cargo-fuzz --locked
 
