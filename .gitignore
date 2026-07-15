@@ -20,3 +20,8 @@ TRIAGE.json
 PATCHES/
 PATCHES.md
 PATCHES.json
+
+# local auth tokens / secrets — never commit
+*.tkn
+cc.tkn
+.rip-auth
