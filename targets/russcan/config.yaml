@@ -1,0 +1,43 @@
+# rust-in-peace target: russcan (Vectorscan→Rust port). profile: rust selects
+# the Rust find prompt + Miri/panic/ASAN/hang detector + Rust grade/judge/report/
+# patch prompts. Attack surface = an untrusted serialized vectorscan DB.
+profile: rust
+image_tag: vuln-pipeline-russcan:latest
+github_url: "local — russcan (Vectorscan→Rust port, pinned upstream a1c107e)"
+commit: "9cd5a34+wip (hardened working tree)"
+binary_path: /work/riptarget          # ASAN + panic driver, reads argv[1] as a DB
+source_root: /work/russcan
+reattack_harness: /work/run_detectors.sh   # sanitizer + hang-timeout + Miri
+
+# T0 rebuild for the patch grader: reapply the ASAN driver build.
+build_command: >-
+  cd /work/russcan &&
+  RUSTFLAGS="-Zsanitizer=address" cargo +nightly build -Zbuild-std
+  --target x86_64-unknown-linux-gnu -p russcan --bin riptarget &&
+  cp target/x86_64-unknown-linux-gnu/debug/riptarget /work/riptarget
+
+# T2 regression: the memory-safety unit tests that don't need the C oracle
+# (the oracle dev-dep + vectorscan submodule aren't in the image).
+test_command: cd /work/russcan && cargo +nightly test -p russcan-hwlm -p russcan-simd -p russcan-bytecode
+
+memory_limit: 8g
+build_timeout_s: 3600     # nightly + cargo-fuzz + build-std image build is heavy
+
+focus_areas:
+  - "DB parse + confirm-region validation (crates/russcan-hwlm/src/fdr.rs: FdrTable::parse, validate_confirm, do_confirm, conf_with_bit) — a CRC-valid DB with hostile internal offsets"
+  - "Teddy confirm path (crates/russcan-hwlm/src/teddy.rs) — mirror of the FDR confirm region"
+  - "Rose literal interpreter (crates/russcan-rose/src/literal.rs: run_program) — a truncated / crafted bytecode program"
+  - "NFA table validation (crates/russcan-nfa/src/limex.rs, mcclellan.rs) — reachMap / alpha_shift / shiftAmount bounds"
+
+known_bugs: []
+
+attack_surface: |
+  The public entry is russcan::Database::load(bytes) then scan_block on a fixed
+  buffer, driven by an untrusted serialized vectorscan DB (the input file). The
+  parser checks magic + a CRC, then validates the confirm region; a CRC-valid DB
+  with hostile offsets is the interesting case. Recent hardening added
+  parse-time validation (validate_confirm), fallible operand reads, an
+  instruction budget, and NFA parse guards — a clean run confirms those hold; a
+  crash finds a gap. A `reject:` line (bad magic/CRC/out-of-scope) is correct
+  handling, not a finding. Under Miri russcan falls back to its scalar SIMD
+  backend, so the confirm-path unchecked reads are UB-checkable.
