@@ -19,6 +19,40 @@ classes you care about), and proposes a concrete migration plan. If you can't
 use Claude Code, paste the contents of `.claude/skills/customize/SKILL.md`
 into another AI coding tool.
 
+## Profiles: the built-in way to add a language
+
+The pipeline now has a **profile registry** (`harness/profiles.py`). A profile
+bundles the pieces that vary by language/detector — find prompt, crash detector,
+and grade/judge/report/patch prompt builders — and every stage resolves them at
+run time from a `profile:` field in the target's `config.yaml` (default `cpp`).
+
+This means a language port no longer edits the base `harness/prompts/*` or
+`harness/asan.py` in place. Instead you **add** a package and one registry entry:
+
+1. Create `harness/<lang>/` with `find_prompt.py`, `detect.py` (the crash
+   detector — same surface as `asan.py`: `project_frames`, `top_frame`,
+   `crash_reason`, `asan_excerpt`), and any forked prompt builders
+   (`grade_prompt.py`, `judge_prompt.py`, `report_prompt.py`, `patch_prompt.py`).
+   Reuse the base builders for whatever doesn't need to change.
+2. Add one `Profile(...)` entry to `harness/profiles.py`.
+3. Set `profile: <lang>` in your target's `config.yaml`.
+
+The generic orchestration (`cli.py`, `find.py`, `grade.py`, `judge.py`,
+`report.py`, `patch.py`, `dedup.py`) does not change — it already calls
+`get_profile(target.profile).build_...(...)`. Keeping the base `cpp` profile
+untouched lets you run both and union results.
+
+**`rust` is a complete worked example** of such a port: see
+[`profiles/rust/README.md`](../profiles/rust/README.md), the `harness/rust/`
+package, and the `targets/rust-canary` demo target. It swaps ASAN for a
+Miri / sanitizer / panic / hang detector and retargets the whole taxonomy to
+Rust (unsafe/FFI memory safety, panic-DoS, deserialization trust). Read it
+before porting a new language — it shows exactly which pieces are worth forking
+and which reuse the base.
+
+The sections below describe the C/C++ specifics file-by-file; a fork edits the
+*copies* under `harness/<lang>/`, not these originals.
+
 ## What a port usually involves
 
 Most likely, porting this pipeline will mean building container images for
