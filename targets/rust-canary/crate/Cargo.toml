@@ -1,0 +1,22 @@
+[package]
+name = "rustcanary"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+# Deliberately-vulnerable demo target for the Rust-security pipeline profile.
+# NOT a real library. See src/lib.rs for the seeded bug classes.
+
+[lib]
+path = "src/lib.rs"
+
+[[bin]]
+name = "entry"
+path = "src/bin/entry.rs"
+
+# NB: `panic = "abort"` is applied to the DRIVER via RUSTFLAGS in the Dockerfile
+# (a panic must abort = a detectable crash). It is intentionally NOT set here so
+# `cargo test` keeps unwinding and `#[should_panic]` works for the T2 regression
+# suite / the patch grader.
+[profile.release]
+overflow-checks = true   # keep arithmetic-overflow panics in release for the demo

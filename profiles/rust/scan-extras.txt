@@ -1,0 +1,92 @@
+RUST SECURITY REVIEW — additional categories (appended to the /vuln-scan brief).
+Use with:  /vuln-scan <dir> --extra profiles/rust/scan-extras.txt
+
+CONTEXT. Rust's borrow checker eliminates most memory-safety bugs in SAFE code.
+Real Rust vulnerabilities concentrate in four places: (1) `unsafe`/FFI blocks,
+(2) panics reachable from untrusted input (availability), (3) parsers /
+deserializers that trust internal offsets after an integrity check, and (4)
+release-only behavior that debug builds hide. Hunt those. For EVERY finding,
+state the TRUST BOUNDARY explicitly: which inputs are attacker-controlled vs
+operator-controlled — severity is gated on it (see the "trust boundary" note at
+the end).
+
+  RUST MEMORY SAFETY — unsafe / FFI only — HIGH VALUE:
+  - Unchecked raw read/write at an untrusted-derived offset or length:
+    `ptr::read`/`read_unaligned`/`*ptr`/`get_unchecked`/`copy_nonoverlapping`/
+    `slice::from_raw_parts(ptr, n)` where the offset/index/`n` comes from a
+    deserialized field, a length header, or attacker input, WITHOUT a validating
+    bounds check against the real buffer. The canonical trap: an integrity check
+    (CRC / hash / signature / magic+version) proves the bytes are intact but NOT
+    that internal offsets/counts/indices are in-bounds. Trace every such read to
+    where its offset is validated; if it isn't, report it.
+  - Integer under/overflow feeding an index or pointer offset: `wrapping_sub`/
+    `wrapping_add`/`saturating_*` or `a - b` / `x as usize` on untrusted values
+    that then index memory (`slice[i]`, `.add(off)`, `get_unchecked`). An
+    underflow that wraps to a huge usize and is used unchecked is an OOB read.
+  - `mem::transmute` across types of different size/alignment/validity; casting
+    `&[u8]` to `&[T]` / `bytemuck`-style reinterpret without alignment + length
+    guarantees; constructing an invalid enum/bool/char via unsafe.
+  - Shift by an untrusted amount: `x << n` / `x >> n` where `n` can be >= the
+    bit width (panic in debug, silent mask in release → wrong index/state).
+  - A safety invariant enforced only by `debug_assert!` (compiled out in
+    release) rather than a real runtime check or a parse-time guarantee.
+  - `unsafe impl Send`/`unsafe impl Sync` on a type that isn't actually
+    thread-safe; `Send`-bypassing raw-pointer sharing across threads.
+  - Self-referential / lifetime-extended references built with unsafe that can
+    dangle; `MaybeUninit::assume_init` on partially-initialized data.
+
+  RUST AVAILABILITY / DoS — HIGH VALUE:
+  - Panic reachable from a public API on attacker-controlled input: `unwrap()`/
+    `expect()` on a fallible parse of untrusted data, `slice[i]` / `&slice[a..b]`
+    range indexing, `try_into().unwrap()`, `char::from_u32(...).unwrap()`,
+    or arithmetic overflow (with overflow-checks on) driven by an untrusted
+    length/offset/count. A panic across an FFI boundary (e.g. a C caller) is
+    UB, not just an abort — flag that as higher severity.
+  - Unbounded loop / recursion / allocation driven by an untrusted control
+    field: an interpreter/state-machine whose jump target, iteration count, or
+    terminator byte comes from the input; a linked-chain walk with a
+    data-controlled terminator and no length cap; `Vec::with_capacity(n)` /
+    `vec![x; n]` / `read_to_end` where `n` is an untrusted size header.
+
+  RUST DESERIALIZATION / PARSER TRUST — HIGH VALUE:
+  - A parser that validates a container's INTEGRITY (magic/version/length/CRC/
+    signature) and then treats internal offsets/counts/indices as in-bounds.
+    Integrity is not semantic validation. Every offset/length/index that a later
+    (esp. `unsafe`) hot path reads must be bounded against the buffer AT PARSE
+    TIME, or checked at use.
+  - A record/table sliced to the WHOLE input blob instead of its declared `size`,
+    letting a hostile record steer reads into a neighboring region that still
+    passes the integrity check (cross-record / cross-tenant disclosure).
+  - `serde`/`bincode`/`prost`/custom decoders that allocate or recurse based on
+    a length/count field before validating it against remaining input.
+
+  RUST-ADJACENT — note briefly:
+  - Dependency with a known-unsound API used in an unsafe way (don't just flag
+    "outdated dep" — flag the unsound USE).
+  - `catch_unwind` missing at an FFI boundary where the Rust side can panic.
+
+DO NOT REPORT (Rust-specific false positives — skip even if technically present):
+  - An `unsafe` read whose index/offset IS bounded by a checked invariant
+    elsewhere — a preceding mask/exclusion, a parse-time validation, an enforced
+    zone/record size, or a proven caller contract. TRACE the invariant before
+    reporting; "unchecked read" alone is not a finding if the bound is
+    established upstream.
+  - Memory-safety concerns in 100% safe Rust with no `unsafe` and no FFI (the
+    borrow checker covers use-after-free / double-free / data races there).
+  - Panics reachable ONLY from operator-controlled config, CLI flags, env vars,
+    build scripts, or `#[cfg(test)]` / benches / examples.
+  - `debug_assert!`/`assert!` that is provably always-true given a caller
+    contract enforced at the trust boundary.
+  - Integer overflow that yields only a wrong value with NO memory/index/
+    allocation/security-decision consequence downstream.
+  - `unwrap()` on a value the code just constructed or proved `Some`/`Ok`
+    (e.g. `map.insert` then `map.get(k).unwrap()`), not on untrusted parse output.
+
+TRUST BOUNDARY (report this for every finding). Name the untrusted input(s)
+and, for each finding, whether it is reachable from ATTACKER-controlled data or
+only from OPERATOR-controlled / trusted-by-construction data (a
+compiler-emitted artifact, an operator-signed config, an internal-only DB). A
+memory-safety bug behind a purely operator-controlled input is a latent
+robustness bug, not a live vulnerability — say so and rank accordingly, but do
+NOT drop it (triage decides). This distinction is usually the single biggest
+driver of real-world severity.

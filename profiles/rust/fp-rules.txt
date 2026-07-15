@@ -1,0 +1,71 @@
+RUST SECURITY — triage exclusion rules (appended to the /triage verifier).
+Use with:  /triage <findings>.json --fp-rules profiles/rust/fp-rules.txt
+
+These are FALSE_POSITIVE precedents for Rust targets. A finding matching one is
+FALSE_POSITIVE even if the cited code is technically as described. Cite the rule
+number in the verdict. Each rule demands the verifier do a specific TRACE, not a
+pattern match.
+
+RULE R1 — Invariant-protected unsafe read.
+An `unsafe` unchecked read (`read_unaligned`, `get_unchecked`, `.add()`,
+`from_raw_parts`, raw index) is a FALSE_POSITIVE if the index/offset/length it
+uses is provably bounded by a checked invariant established BEFORE the read:
+a preceding exclusion/mask that removes the dangerous positions, a parse-time
+validation of the field, an enforced zone/record/buffer size, or a caller
+contract enforced at the trust boundary. To apply this rule the verifier MUST
+trace the invariant to its source and show it dominates the read on every path —
+not merely assert "looks guarded." (If the invariant is only a `debug_assert!`,
+R1 does NOT apply — see R4.)
+
+RULE R2 — Operator-only / trusted-by-construction trust boundary.
+A finding whose trigger requires an input that, IN THIS DEPLOYMENT, is
+operator-controlled or trusted-by-construction — a compiler/toolchain-emitted
+artifact, an operator-signed or CI-produced blob, an internal-only database, a
+value already validated at an outer trust boundary — and is NOT reachable from
+attacker-controlled data, is downgraded to latent-hardening and excluded from
+the live-vulnerability set. The verifier MUST state which input carries the
+finding and classify it attacker- vs operator-controlled (the
+"reachable-from-untrusted-input?" question). If attacker-reachability is
+plausible (e.g. multi-tenant, user-uploaded, network-sourced), R2 does NOT apply
+— keep it.
+
+RULE R3 — Memory safety in safe Rust.
+A memory-corruption category (UAF, double-free, OOB, data race) reported in code
+with NO `unsafe` block and NO FFI on the path is a FALSE_POSITIVE — the borrow
+checker and bounds checks preclude it. (Panics / DoS in safe Rust are NOT
+excluded by R3; those are real availability issues — judge them on R2/R5.)
+
+RULE R4 — Release-stripped assertion with no consequence.
+A panic or "OOB" that can only fire in a debug build (a `debug_assert!`, or an
+arithmetic-overflow panic that the shipped `[profile.release]` disables) AND
+whose value has no downstream memory/index/allocation/security-decision
+consequence, is a FALSE_POSITIVE for the shipped artifact. BUT: if the same
+release path then does an UNCHECKED index/allocation with the un-asserted value
+(the assert was the only guard), it is a TRUE_POSITIVE — the stripped assert is
+the bug. Check what the release build actually does after the assert.
+
+RULE R5 — Operator-controlled panic surface.
+A panic (`unwrap`/`expect`/index/`try_into().unwrap()`/overflow) reachable only
+from CLI arguments, config files, environment variables, build scripts, or
+`#[cfg(test)]`/bench/example code is a FALSE_POSITIVE (operator input, same
+class as the standard env-var/CLI exclusion). Only panics reachable from
+attacker-controlled data through a public/exported API survive.
+
+RULE R6 — Proven-Some/Ok unwrap.
+`unwrap()`/`expect()` on a value the code just constructed or proved present
+on the same path (insert-then-get, `is_some()`-guarded, a literal, a checked
+length) is a FALSE_POSITIVE. Only unwraps on fallible operations over untrusted
+data (parse, decode, checked conversion of an untrusted number) are real.
+
+RULE R7 — Wrong-value-only integer overflow.
+An integer overflow (`wrapping_*`, unchecked `+`/`-`/`*`, `as` truncation) that
+produces only an incorrect value with NO effect on a subsequent index, pointer
+offset, allocation size, or security decision is a FALSE_POSITIVE. If the
+wrapped value THEN indexes memory or sizes an allocation, it is a TRUE_POSITIVE
+(that is the actual OOB / DoS).
+
+GENERAL. When a finding survives all rules, keep the verifier's standard
+TRUE_POSITIVE bar (reachable from untrusted input, concrete trigger). For every
+verdict, record REACHABLE_IF_TRUSTED_INPUT (yes/no) so ranking can separate live
+vulns from latent hardening — that field, not raw severity, usually drives the
+real priority order for Rust targets.
