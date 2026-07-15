@@ -104,6 +104,15 @@ def container_env(auth: dict[str, str] | None) -> dict[str, str]:
     if p := proxy():
         e["HTTPS_PROXY"] = p
         e["https_proxy"] = p
+    else:
+        # No sandbox egress proxy (e.g. --dangerously-no-sandbox). Forward an
+        # outbound HTTP(S) proxy from the host env into the agent container so
+        # the in-container `claude -p` can reach the model API from a
+        # geo-restricted host. Both cases — some SDKs read only the lower-case.
+        for var in ("HTTPS_PROXY", "HTTP_PROXY", "NO_PROXY",
+                    "https_proxy", "http_proxy", "no_proxy"):
+            if v := os.environ.get(var):
+                e[var] = v
     return e
 
 
