@@ -31,6 +31,8 @@ step.
 | `untrusted_deserialization` | a parser/decoder over attacker-supplied structured bytes: `serde`/`bincode`/`prost`, or a hand-rolled length/offset/tag reader |
 | `multi_tenant_authz` | a permission/ownership check on a shared resource; request carries a tenant/user identity |
 | `unsafe_simd` | non-trivial `unsafe` density; `core::arch` intrinsics / `#[target_feature]` |
+| `unsafe_trait_trust` | unsafe code that trusts a caller's trait impl — `size_hint`/`len`/`Ord`/`Borrow` feeding a length/ptr computation, or `ptr::read`/`set_len` around a user `Clone`/`Drop`/`next` (Rudra: higher-order-invariant + panic-safety) |
+| `unsafe_generic_soundness` | `unsafe impl Send`/`Sync` for a generic type with no `T: Send`/`T: Sync` bound (Rudra: Send/Sync variance) |
 | `network_protocol_parser` | parses a wire protocol (HTTP, DNS, TLS records…), esp. if a second implementation parses the same bytes |
 | `subprocess_exec` | `Command`, `sh -c`, path/archive handling of attacker-influenced names |
 | `crypto_secrets` | holds keys/tokens/MACs; comparisons, RNG choice, `Debug`/log exposure |
@@ -45,6 +47,8 @@ step.
 | `untrusted_deserialization` | integrity ≠ bounds; eager alloc before validation | ASan + hang-timeout | **Stage 1 + Stage 3 mandatory**; `Arbitrary`/structured corpus seeded from real artifacts | R1 (invariant dominates the unsafe read); R7 (len→index) |
 | `multi_tenant_authz` | `scan-extras` §6 authz-at-side-effect | — | — | R2 attacker- vs operator-reachable is the severity driver |
 | `unsafe_simd` | `scan-extras` §2 unsafe audit (alignment/validity/aliasing) | **Miri** prioritized | libFuzzer over the unsafe entry point | R1 / R9 (soundness even if no caller today) |
+| `unsafe_trait_trust` | Rudra higher-order / panic-safety brief | **Miri** (UB oracle) | **adversarial trait-impl fuzz** — lying `size_hint`/panicking `Clone`, [`fuzzing.md`](fuzzing.md) | R8 / R10 (panic-safety is memory-safety in unsafe code) |
+| `unsafe_generic_soundness` | `scan-extras` §8 Send/Sync | Miri (multi-thread driver) | adversarial: cross-thread send of a `!Send` `T` | R8 / R9 (unsound `Send`/`Sync` is real even with no caller) |
 | `network_protocol_parser` | `scan-extras` §9 parser differentials | — | **differential fuzz** vs the reference impl | parse divergence = a bug class itself |
 | `subprocess_exec` | `scan-extras` §5 command/path/archive | ASan | path/zip-slip corpus | injection / traversal |
 | `crypto_secrets` | `scan-extras` §10 secrets/crypto | — | — | constant-time; leak into Debug/logs |
