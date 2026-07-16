@@ -11,6 +11,20 @@ verifiers check, an analyst assesses exploitability.* Only the swappable nouns
 change: **detector** (ASAN → Miri + `-Zsanitizer=address` + panic/abort + hang),
 **bug taxonomy**, and **crash signatures**.
 
+## Capability-gated checks — [`capabilities.md`](capabilities.md)
+
+Not every check applies to every target. FFI-ABI fuzzing only makes sense with an
+inbound C ABI; TSan only with concurrency; structured-deserialization fuzzing only
+when untrusted structured input is parsed. So the specialized checks are **gated
+by an inventory of the target's shape**, not run universally: the `threat-model`
+skill records a capability inventory in `THREAT_MODEL.md` §9 (`present` ∈
+`yes|no|test_only|partial` + evidence), and [`capabilities.md`](capabilities.md)
+maps each capability to the checks it turns on across **every** stage — find,
+detector, fuzzing rung, triage. An absent capability is a deliberate, evidenced
+skip. This is what keeps one target's needs (e.g. an in-process C ABI) from
+leaking in as a step everyone pays for. *Today the inventory is consumed by a
+reviewer/agent reading it; auto-wiring the stages to parse §9 is future work.*
+
 ## Two layers (use either or both)
 
 ### 1. Interactive skills — usable today, zero setup

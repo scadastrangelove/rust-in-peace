@@ -28,12 +28,18 @@ coverage harness was written.
   point is to find the panic and fix it. In shipped code, `catch_unwind` is a
   net, not a fix — a caught panic is still a reported bug.
 
-### Stage 2 — FFI ABI fuzz (guard-page + ASan)
-For the canonical target class — **Rust replacing a C library** — the C ABI is its
-own attack surface: wrong lengths, non-NUL-terminated buffers, double/idempotent
-destroy, concurrent handle lifecycle. Drive the `extern "C"` entry points from a C
-harness built with `-fsanitize=address` and a guard page *after* the buffer, so an
-off-by-one read faults immediately instead of silently succeeding.
+### Stage 2 — FFI ABI fuzz (guard-page + ASan) — *capability-gated*
+**Only when the target has an inbound C ABI** (`capabilities.md`
+`inbound_c_abi: yes` — a C ABI that C code calls *into*). On a pure-Rust target
+there is no such boundary and the type system already rules out the bugs this
+rung hunts, so it is skipped, not run as a borrowed step. When it does apply —
+the canonical **Rust-replacing-a-C-library** case — the C ABI is its own attack
+surface: wrong lengths, non-NUL-terminated buffers, double/idempotent destroy,
+concurrent handle lifecycle. Drive the `extern "C"` entry points from a C harness
+built with `-fsanitize=address` and a guard page *after* the buffer, so an
+off-by-one read faults immediately instead of silently succeeding. (russcan today
+is `inbound_c_abi: no` — Stage 2 is a deliberate skip until its libhs-compat shim
+lands; see [`capabilities.md`](capabilities.md).)
 
 ### Stage 3 — coverage-guided (cargo-fuzz + AFL++)
 Now spend the harness cost. `cargo-fuzz` (libFuzzer, real Rust `sancov`) over the
