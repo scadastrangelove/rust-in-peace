@@ -65,6 +65,35 @@ the end).
     "outdated dep" — flag the unsound USE).
   - `catch_unwind` missing at an FFI boundary where the Rust side can panic.
 
+  RUDRA PATTERNS — unsafe code that trusts a CALLER's behavior — HIGH VALUE
+  (these are the classes a one-pass review misses most; from the Rudra analyzer,
+  SOSP'21). Memory-safety here needs NO byte input — the "input" is a trait impl:
+  - HIGHER-ORDER INVARIANT: `unsafe` code that trusts a caller-supplied trait
+    method to be truthful/consistent, when the type system does NOT guarantee it.
+    Classic: `Vec`/`SmallVec`/arena code that calls `iter.size_hint()` (or
+    `ExactSizeIterator::len()`) and `reserve`s / `ptr::write`s / `set_len`s on
+    that count — a `size_hint` that UNDER- or OVER-reports drives an OOB write or
+    a stale-pointer write after an in-loop realloc. Also `Ord`/`PartialOrd` that
+    is inconsistent, `Borrow` that returns different references, `Hash` that
+    varies — used to index/partition an `unsafe` buffer. TRACE: does any `unsafe`
+    length/offset/capacity come from a caller trait method with no post-check?
+  - PANIC SAFETY: `unsafe` code left in a temporarily-broken state across a call
+    that can PANIC — `ptr::read` has duplicated ownership (a later `drop` →
+    double-free), or `set_len(n)` ran before the `n` elements were initialized,
+    and then a user callback (`Clone::clone`, `Drop`, the iterator's `next`, a
+    closure) panics and unwinds through it → double-free / drop-of-uninitialized.
+    TRACE every `ptr::read`/`set_len`/`ManuallyDrop` and ask "if the next
+    user-controlled call panics here, what does the `Drop`/unwind do?".
+  - SEND/SYNC VARIANCE: `unsafe impl<T> Send for X<T>` / `Sync` with NO
+    `T: Send`/`T: Sync` (or weaker) bound, over a type holding `*mut T`/`*const T`/
+    `NonNull<T>`. An unconditional `Send`/`Sync` lets a non-thread-safe `T`
+    (`Rc`, `Cell`, a `!Send` handle) cross threads → data race / UAF. Compare the
+    impl's bounds against what the contained raw pointer actually requires. A
+    single-producer/consumer endpoint made `Sync` is the same bug.
+  (These survive R3 — a soundness hole in a public API is a real bug even if no
+  current caller triggers it, R8/R9. Dynamic confirmation = Miri under an
+  adversarial trait impl, see fuzzing.md.)
+
 DO NOT REPORT (Rust-specific false positives — skip even if technically present):
   - An `unsafe` read whose index/offset IS bounded by a checked invariant
     elsewhere — a preceding mask/exclusion, a parse-time validation, an enforced
