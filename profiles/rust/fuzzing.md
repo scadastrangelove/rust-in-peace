@@ -13,6 +13,12 @@ the FFI threat `scan-extras.txt` §7 describes, made concrete: the campaign foun
 and fixed one real panic and otherwise came back clean across billions of
 executions. (Numbers below are illustrative of the *shape* of the effort.)
 
+**Automating find → fuzz:** turning a graded static finding into a reproducing
+harness of the right rung is [`find-to-fuzz.md`](find-to-fuzz.md) (CWE/capability
+→ [`harness-templates/`](harness-templates/) → agent-bound → compile+smoke
+validated). This page is the *menu* of rungs; that page is how a finding gets
+dispatched to one.
+
 ## The staircase
 
 ### Stage 1 — blind panic-fuzz (stable Rust, minutes, no harness)

@@ -57,6 +57,11 @@ Absent (`present: no`) rows are simply not run. `test_only`/`partial` rows are
 run but ranked as latent hardening (they don't reach the shipped surface) — the
 same distinction `fp-rules.txt` R2 draws.
 
+The **fuzzing** column resolves to a concrete harness via
+[`find-to-fuzz.md`](find-to-fuzz.md): CWE/capability → template
+([`harness-templates/`](harness-templates/)) → agent-bound → compile+smoke
+validated. That's how a graded finding becomes a reproduction.
+
 ## Worked example — russcan
 
 Its §9 inventory and what it gates:
