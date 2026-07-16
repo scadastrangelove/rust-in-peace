@@ -56,6 +56,40 @@ sancov (`-Zsanitizer`/`-C instrument-coverage` + `afl-compiler-rt`) took it to
 statement *about the Rust code*. **If a target is Rust-behind-C, the Stage-3
 C-ABI AFL edge count is not coverage of the Rust — say so, and climb to Stage 4.**
 
+## A different axis — fuzz the trait impl, not the bytes
+
+The staircase above fuzzes *data*. But a large class of Rust memory-safety bugs
+has **no byte input**: unsafe code that trusts a caller-supplied *trait
+implementation* to behave. These are the patterns the Rudra analyzer (SOSP'21,
+264 issues / 76 CVEs) named — and exactly where a one-pass static/LLM review is
+weakest:
+
+- **Higher-order invariant** — unsafe code trusts `Iterator::size_hint` /
+  `ExactSizeIterator::len` / `Ord` / `Borrow` to tell the truth. A `size_hint`
+  that under-reports drives an OOB `ptr::write`.
+- **Panic safety** — unsafe code left in a temporarily-broken state (ownership
+  duplicated by `ptr::read`, `set_len` past the initialized region) when a user
+  callback (`Clone`, `Drop`, the iterator's `next`) panics → double-free /
+  drop-of-uninit.
+- **Send/Sync variance** — `unsafe impl Send/Sync` over a generic with no
+  `T: Send/Sync` bound → cross-thread race.
+
+You reach these by fuzzing the **impl**: supply an adversarial `Iterator` whose
+`size_hint` lies, a `Clone`/`next` that panics on the Nth call, an `Ord` that is
+inconsistent (parametrize the hostile behaviour with `Arbitrary`), and drive the
+target's generic API — **under Miri**, the UB oracle. A `ptr::write` past the
+buffer is *silent* to a plain panic-fuzzer (no panic, no crash in a `Copy`-elem
+container) but Miri flags it precisely. This is the `unsafe_trait_trust` /
+`unsafe_generic_soundness` capability in `capabilities.md`, and on a
+soundness-heavy target it is the high-yield rung — byte-fuzzing has no surface
+there.
+
+> Validated: a ~15-line `Iterator` whose `size_hint()` returns `(0, Some(0))`
+> while yielding one element, fed to `SmallVec::insert_many` at inline capacity,
+> reproduced the RUSTSEC-2021-0003 class defect **in seconds** — a bug a one-pass
+> blind static review had scored CLEAN. Byte-fuzzing could never reach it (no
+> bytes); Miri turns the reproduction into a precise UB report.
+
 ## Domain-specific corpus (per threat model)
 
 A fuzz corpus is only as good as its seeds, and the right seeds come from *what the
