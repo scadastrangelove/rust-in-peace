@@ -37,6 +37,9 @@ class TargetConfig:
     reattack_harness: str | None = None  # in-image script that runs every /poc/* and exits 1 on crash
     profile: str = "cpp"              # pipeline profile: "cpp" (default) | "rust";
                                       # selects find prompt, crash detector, grade/judge prompts
+    capabilities_path: str | None = None  # host path to capabilities.json (§9 machine form);
+                                      # relative → resolved under the target dir. None → no
+                                      # capability routing (additive; older targets omit it).
 
     @classmethod
     def load(cls, target_dir: str | Path) -> TargetConfig:
@@ -47,6 +50,15 @@ class TargetConfig:
 
         with open(config_path) as f:
             cfg = yaml.safe_load(f)
+
+        # capabilities.json path: relative entries resolve under the target dir
+        # (that's where the threat-model skill writes it, next to config.yaml).
+        cap_path = cfg.get("capabilities_path")
+        if cap_path:
+            cp = Path(cap_path)
+            cap_path = str(cp if cp.is_absolute() else target_dir / cp)
+        elif (target_dir / "capabilities.json").exists():
+            cap_path = str(target_dir / "capabilities.json")  # convention default
 
         return cls(
             name=target_dir.name,
@@ -66,4 +78,5 @@ class TargetConfig:
             shm_size=cfg.get("shm_size"),
             memory_limit=cfg.get("memory_limit", "4g"),
             reattack_harness=cfg.get("reattack_harness"),
+            capabilities_path=cap_path,
         )

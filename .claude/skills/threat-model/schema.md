@@ -171,7 +171,39 @@ another-target artifact).
 
 **Consumer contract:** a stage enables the specialized checks mapped to each
 capability whose `present` is not `no`. The capability→check mapping (per stage,
-including which fuzzing rung) lives in `profiles/rust/capabilities.md`.
+including which fuzzing rung) lives in `profiles/rust/capabilities.md`; its code
+twin (so stages route *programmatically*, not by a human reading the table) is
+`harness/capabilities.py`.
+
+**Machine emission — `capabilities.json`.** Alongside the §9 table, emit a
+sibling `capabilities.json` (next to `config.yaml`; the pipeline auto-discovers
+it, or point `config.capabilities_path` at it). This is what `harness/
+capabilities.py` loads and every stage gates on. Shape:
+
+```json
+{
+  "capabilities": {
+    "untrusted_deserialization": {"present": "yes", "evidence": "serde derive on wire types"},
+    "unsafe_trait_trust":        {"present": "yes", "evidence": "ptr::read across user Iterator::next in src/buf.rs"},
+    "inbound_c_abi":             {"present": "no",  "evidence": "grep 'extern \"C\"'/#[no_mangle] empty"}
+  },
+  "reachable_from_public_api":   {"present": "yes", "evidence": "lib.rs re-exports parse()"}
+}
+```
+
+- `capabilities`: the §9 table, one key per row. `present` and `evidence` carry
+  the exact same values as the table — the JSON is a machine mirror, not a new
+  judgment. Absent key == `present: no` (deliberate, evidenced skip).
+- **`reachable_from_public_api`** (top-level, NOT a capability — a *ranking*
+  axis): `present ∈ {yes, no}` — is the finding's sink actually driven by a
+  public/exported entry point on attacker-controlled input? This expresses the
+  `unreachable-as-extracted` case the capability keys can't: real code with no
+  public entry to reach it (a function lifted out of its crate, an internal
+  helper). `no` **down-ranks** a finding *before* fuzz time is spent on it
+  (it does not gate a check on/off); absence == `unknown` (only down-rank on an
+  explicit, evidenced `no`). Keep `evidence` (the entry-point trace, or its
+  absence). One `reachable_from_public_api` may be emitted per finding when the
+  model is finding-scoped rather than target-scoped.
 
 ---
 
