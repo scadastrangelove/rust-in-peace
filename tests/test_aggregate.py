@@ -89,3 +89,27 @@ def test_to_dict_shape(tmp_path):
     assert d["mode"] == "union" and d["n_candidates"] == 1
     assert d["candidates"][0]["vote_fraction"] == "2/2"
     assert d["candidates"][0]["confirmed"] is True
+    assert d["candidates"][0]["contested"] is False
+
+
+def test_contested_candidate(tmp_path):
+    # flip: found in 2 of 5 runs, none passed → contested (static didn't settle it)
+    _mkrun(tmp_path, 0, "flip", "crash_rejected")
+    _mkrun(tmp_path, 1, "flip", "crash_rejected")
+    _mkrun(tmp_path, 2, "stable", "crash_found")
+    _mkrun(tmp_path, 3, "stable", "crash_found")
+    _mkrun(tmp_path, 4, "stable", "crash_found")
+    agg = aggregate(tmp_path, "union")
+    flip = next(c for c in agg.candidates if "flip" in c.site)
+    stable = next(c for c in agg.candidates if "stable" in c.site)
+    assert flip.is_contested and not stable.is_contested
+    assert agg.contested() == [flip]
+    assert agg.to_dict()["n_contested"] == 1
+
+
+def test_found_in_every_run_is_not_contested(tmp_path):
+    # a candidate found by ALL runs (even if none passed grade) is stable, not contested
+    for i in range(3):
+        _mkrun(tmp_path, i, "always", "crash_rejected")
+    c = aggregate(tmp_path, "union").candidates[0]
+    assert c.votes == 3 and not c.is_contested

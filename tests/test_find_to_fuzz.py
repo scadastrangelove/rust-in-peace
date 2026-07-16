@@ -57,10 +57,19 @@ def test_build_reattack_binds_template_and_rules():
     assert "DEFER-TO-DYNAMIC sketch" in p        # defer section rendered
 
 
-def test_build_reattack_unshipped_template_fallback():
+def test_load_template_unshipped_fallback():
+    # a template dispatch might route to but that isn't in-repo yet falls back to
+    # the nearest shipped skeleton + an inline note (the mechanism; all current
+    # dispatch targets ARE shipped, so exercise it directly).
+    name, text = ff._load_template("future_template.rs")
+    assert name == "future_template.rs"
+    assert "not shipped yet" in text and "byte_parser.rs" in text
+
+
+def test_build_reattack_grammar_loads_real_template():
     p = ff.build_reattack(github_url="x", commit="c", source_root="/s",
                           cwe="CWE-125", site="get_id3", structure_gated=True)
-    assert "grammar_parser.rs" in p and "not shipped yet" in p
+    assert "grammar_parser.rs" in p and "not shipped yet" not in p   # now shipped
 
 
 def test_classify_residual():
@@ -97,3 +106,31 @@ def test_runscorecard_counts():
     d = sc.to_dict()
     assert d["n_reattacks"] == 2 and d["n_reproduced"] == 1
     assert RunScorecard.from_dict(d).reproduced[0].finding_id == "cand_00"
+
+
+def test_l12_lint():
+    assert ff.lint_adversarial_harness("impl Iterator for L { type Item = u32; }")
+    assert not ff.lint_adversarial_harness("impl Iterator for L { type Item = Box<u32>; }")
+    assert ff.lint_adversarial_harness("struct Bomb(u32);")
+    assert not ff.lint_adversarial_harness("struct Bomb(Box<u32>);")
+    assert not ff.lint_adversarial_harness("struct Bomb(String);")
+
+
+def test_l12_lint_clean_on_shipped_templates():
+    import pathlib
+    tdir = pathlib.Path(__file__).resolve().parents[1] / "profiles" / "rust" / "harness-templates"
+    for t in ("adversarial_impl.rs", "grammar_parser.rs", "threaded_driver.rs", "index_arbitrary.rs"):
+        assert ff.lint_adversarial_harness((tdir / t).read_text()) == [], f"{t} should pass L12"
+
+
+def test_escalate_rung():
+    assert ff.escalate_rung("needs-MSan").sanitizer == "msan"
+    assert ff.escalate_rung("asan-on-C").sanitizer == "asan_on_c"
+    assert ff.escalate_rung("grammar-gated").fuzz_rung == "grammar"
+    assert ff.escalate_rung("address-space-only") is None   # out of fuzz scope → no escalation
+    assert ff.escalate_rung("reproduced") is None
+
+
+def test_shipped_templates_includes_new():
+    assert "grammar_parser.rs" in ff.SHIPPED_TEMPLATES
+    assert "threaded_driver.rs" in ff.SHIPPED_TEMPLATES

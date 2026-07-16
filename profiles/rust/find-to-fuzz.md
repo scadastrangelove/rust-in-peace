@@ -28,9 +28,10 @@ feature/cfg gates, the heap-owning-element trick).
 | byte-input entry (`&[u8]`/`*const u8`/`&str`/`Read`/parser) | [`byte_parser`](harness-templates/byte_parser.rs) | **ASan** |
 | CWE-416/415/908 via a caller trait impl — `size_hint`/`ExactSizeIterator::len`/`Ord`/`Borrow` feeding unsafe length; `Clone`/`Drop`/`next` panicking mid-`ptr::read`/`set_len` | [`adversarial_impl`](harness-templates/adversarial_impl.rs) | **Miri** (surest) + ASan for the heap-overflow/UAF variants |
 | CWE-662 unsound `Send`/`Sync` variance | [`sendsync_compileproof`](harness-templates/sendsync_compileproof.rs) | **the compiler** (compiles ⇒ unsound) — not a fuzz run |
-| CWE-908 uninitialized read (memory validly allocated) | `index_arbitrary`, but | **MSan** (`-Zsanitizer=memory`) — ASan will NOT see it |
-| CWE-134 format string into a C library | `byte_parser` feeding `%`-directives | ASan **only if the C is `-fsanitize=address`-compiled**; else a `%n`/bad-ptr oracle |
-| CWE-362 data race / concurrency | threaded driver | **TSan** / loom — libFuzzer alone won't find it |
+| CWE-908 uninitialized read (memory validly allocated) | `index_arbitrary` + [`fuzz-Cargo.msan.toml`](harness-templates/fuzz-Cargo.msan.toml) | **MSan** (`-Zsanitizer=memory -Zbuild-std`) — ASan will NOT see it |
+| CWE-134 format string into a C library | `byte_parser` feeding `%`-directives | ASan **only if the C is `-fsanitize=address`-compiled** ([`ffi_asan.md`](harness-templates/ffi_asan.md)); else a `%n`/bad-ptr oracle |
+| CWE-362 data race / concurrency | [`threaded_driver`](harness-templates/threaded_driver.rs) | **TSan** / loom — libFuzzer alone won't find it |
+| structure-gated parser (magic/length/frame — a byte stream can't satisfy the gates) | [`grammar_parser`](harness-templates/grammar_parser.rs) | **ASan + `-dict=` grammar** (`Arbitrary` over the AST) |
 
 The `fuzz/` project boilerplate is one file: [`fuzz-Cargo.toml.template`](harness-templates/fuzz-Cargo.toml.template).
 
@@ -87,7 +88,8 @@ When a target runs clean, the *reason* is the actionable output — it names the
 missing capability (validated on rust-mizan, 11/14 reproduced):
 - **deep-structure byte parser** (valid magic/length/frame gates) → blind AND
   coverage-guided both miss → escalate to a **grammar/dictionary** harness
-  (`Arbitrary` over the format's AST, or a libFuzzer dictionary).
+  ([`grammar_parser`](harness-templates/grammar_parser.rs): `Arbitrary` over the
+  format's AST + a libFuzzer `-dict=`).
 - **bug only at >4 GiB / 32-bit** → not reachable on a 64-bit host; a real defect
   but out of fuzz scope — report it, don't chase it.
 - **format string in un-instrumented C** → build the C dep with ASan, or add a

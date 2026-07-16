@@ -73,6 +73,15 @@ class Candidate:
         journal used (a lone unverified single-run hit stays a candidate)."""
         return self.votes >= 2 or self.passed_votes >= 1
 
+    @property
+    def is_contested(self) -> bool:
+        """Flip-flop the static/grade layer did NOT settle: some runs found it,
+        some didn't, and no run's grade passed. This is the CONTESTED triage
+        disposition (P1.3) — skip a final static verdict, auto-dispatch to the
+        dynamic confirmer (the "Miri settles 0021" move). A candidate found by
+        EVERY run, or one with a passed grade, is settled — not contested."""
+        return self.passed_votes == 0 and 0 < self.votes < self.n_runs
+
     def vote_str(self) -> str:
         return f"{self.votes}/{self.n_runs}"
 
@@ -83,11 +92,16 @@ class AggregateResult:
     n_runs: int
     candidates: tuple[Candidate, ...]   # already filtered by mode + ordered
 
+    def contested(self) -> list[Candidate]:
+        """Candidates the static/grade layer didn't settle → dynamic-confirm queue."""
+        return [c for c in self.candidates if c.is_contested]
+
     def to_dict(self) -> dict:
         return {
             "mode": self.mode,
             "n_runs": self.n_runs,
             "n_candidates": len(self.candidates),
+            "n_contested": len(self.contested()),
             "candidates": [
                 {
                     "crash_type": c.crash_type,
@@ -98,6 +112,7 @@ class AggregateResult:
                     "passed_votes": c.passed_votes,
                     "operations": list(c.operations),
                     "confirmed": c.is_confirmed,
+                    "contested": c.is_contested,
                     "best": str(c.best_path),
                     "runs": [str(p) for p in c.run_paths],
                 }
@@ -198,9 +213,10 @@ def format_report(agg: AggregateResult, root: Path | None = None) -> str:
     for c in agg.candidates:
         where = f" in {c.site}" if c.site != NO_FRAME else ""
         ops = f" ({'/'.join(c.operations)})" if c.operations else ""
-        flag = "✓" if c.is_confirmed else " "
+        flag = "✓" if c.is_confirmed else ("?" if c.is_contested else " ")
         passed = f", {c.passed_votes} passed" if c.passed_votes else ""
-        lines.append(f"[{flag}] votes {c.vote_str()}{passed}  {c.crash_type}{ops}{where}")
+        contested = "  [CONTESTED → dynamic-confirm]" if c.is_contested else ""
+        lines.append(f"[{flag}] votes {c.vote_str()}{passed}  {c.crash_type}{ops}{where}{contested}")
         shown = c.best_path.relative_to(root) if root else c.best_path
         lines.append(f"      best: {shown}")
     lines.append("")

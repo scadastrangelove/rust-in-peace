@@ -116,10 +116,20 @@ queue for possible upstreaming; do not auto-file, do not count against precision
 
 Every surviving flag on a labeled sample MUST carry:
 
-  DISPOSITION ∈ { same_as_seeded | real_latent | false_positive }
+  DISPOSITION ∈ { same_as_seeded | real_latent | false_positive | contested }
     same_as_seeded  — matches the seeded label (site + class within the fix region)
     real_latent     — a real, reachable bug the label does NOT cover (R11); the WIN case
     false_positive  — the code is actually safe (some R1..R7 exclusion fired)
+    contested       — the finding FLIP-FLOPS across the union-of-N votes (found in
+                      some runs, not others, no run's grade passed), or it is a
+                      provably-noisy class (the four Rudra soundness classes:
+                      trait-trust, panic-safety, Send/Sync, generic-soundness).
+                      Do NOT emit a final static verdict — auto-dispatch to the
+                      dynamic confirmer (find→fuzz / Miri, P0.2); the dynamic
+                      verdict is authoritative (the "Miri settles 0021" move). A
+                      contested flag is a routing action, not a safety judgment,
+                      and is excluded from the precision numerator AND denominator
+                      until the dynamic stage resolves it.
 
   LABEL_DELTA  (required iff DISPOSITION=real_latent) — one line tracing WHY it is
     distinct from the seed: different sink / different file / fix-untouched region /

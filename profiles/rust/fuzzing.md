@@ -146,3 +146,137 @@ The Stage-1 blind harness over both surfaces ships in the target as the
 the cheap first net; Stage 3/4 (cargo-fuzz over `Database::load`, AFL + rustc
 sancov) run from the target's Dockerfile, which already installs cargo-fuzz and a
 nightly toolchain.
+
+## Sanitizer rungs beyond ASan (the residual-named oracles)
+
+The staircase above is horizontal — cheapest *coverage* first. There is a second,
+vertical axis: **which oracle is even capable of seeing the bug**. ASan is the
+default and it is blind to whole classes. When a cheaper rung comes back clean,
+the finding's **residual reason** (the vocabulary in
+[`find-to-fuzz.md`](find-to-fuzz.md) §5) names *which oracle to climb to* — a
+clean run under the wrong oracle is not a clean finding, it is an
+*uncharacterized* one. These are the rungs the rust-mizan corpus named as its
+own residuals.
+
+### MSan — uninitialized reads ASan cannot see (residual: **needs-MSan**)
+ASan instruments the *allocator* — it catches out-of-bounds and use-after-free,
+but a read of **validly-allocated-but-never-written** memory is, to ASan, a
+perfectly legal load. That is rust-mizan **0027**: an uninitialized read that a
+full ASan campaign passes clean and that only **MemorySanitizer** flags. Rebuild
+the target with `-Zsanitizer=memory` on nightly, which requires `-Zbuild-std`
+(the standard library must itself be MSan-instrumented or every `std` call is a
+false "uninitialized" report). The `[unstable] build-std` + `RUSTFLAGS` wiring is the
+[`fuzz-Cargo.msan.toml`](harness-templates/fuzz-Cargo.msan.toml) variant of the
+base [`fuzz-Cargo.toml.template`](harness-templates/fuzz-Cargo.toml.template) (adds
+`-Zbuild-std` + the `-Zsanitizer=memory` `RUSTFLAGS`), not a second copy of the
+boilerplate.
+- **GOTCHA (`--privileged` / ASLR).** MSan's shadow-memory mapping needs a
+  predictable address space; under Docker's default seccomp the `personality`
+  syscall that disables ASLR is blocked, and MSan aborts at startup. Run the MSan
+  image `--privileged` (or at minimum `--security-opt seccomp=unconfined
+  --cap-add SYS_PTRACE`). This is the single most common reason an MSan run
+  "doesn't reproduce" — it never actually started.
+- The dispatch key: [`index_arbitrary`](harness-templates/index_arbitrary.rs) is
+  the right *harness* for a CWE-908 uninitialized read (feed the length/op
+  stream — see its own header note), but its sanitizer must be swapped ASan→MSan.
+  Same bytes, different oracle.
+
+### TSan / loom — data races and Send/Sync (capability: `concurrency_async`)
+libFuzzer alone will not find a data race: a race is a property of *interleaving*,
+not of input bytes, so a single-threaded fuzz run over billions of executions
+sees nothing. Two oracles apply, and they are complementary:
+- **TSan** (`-Zsanitizer=thread`) instruments real threads and reports an actual
+  observed race — good for a concrete `unsafe impl Send`/`Sync` that a driver can
+  exercise with genuine cross-thread sends.
+- **loom** *model-checks* the interleaving space exhaustively for a bounded thread
+  count — good for a lock-free/atomic algorithm where the racy schedule is rare
+  and TSan would need luck to hit it.
+
+Drive both from the
+[`threaded_driver.rs`](harness-templates/threaded_driver.rs) harness: it spawns the adversarial
+cross-thread pattern (send a `!Send` `T`, concurrent handle lifecycle) that the
+`concurrency_async` row in [`capabilities.md`](capabilities.md) gates. Note the
+split from the *soundness* case: an unsound `unsafe impl Send/Sync` with **no**
+live racing caller is proven by the compiler
+([`sendsync_compileproof`](harness-templates/sendsync_compileproof.rs),
+compiles ⇒ unsound) — TSan/loom are for when there **is** a caller and you want
+the race itself, not just the unsound variance.
+
+### FFI-ASan — format string / FFI-into-C (residual: **asan-on-C**)
+When Rust calls *into* a C dependency (`outbound_ffi`, a `*-sys` crate) the bug
+can live on the C side of the boundary — a format string reaching a C `printf`
+family call (CWE-134), an OOB in the C library itself. A Rust-only ASan build
+does **not** instrument that C code: the C object files were compiled by the
+`*-sys` build script with their own flags, and your `RUSTFLAGS` never reach them.
+The residual reason is **asan-on-C**: the fix is to rebuild the C dependency
+with `CC`/`CFLAGS=-fsanitize=address` so ASan's redzones and interceptors cover
+the native code too. (The full playbook is
+[`ffi_asan.md`](harness-templates/ffi_asan.md).)
+- This is rust-mizan **0033**: a format string into **libsqlite3-sys**, whose
+  build script **breaks under `CFLAGS=-fsanitize=address`** — the amalgamation's
+  configure/feature probes miscompile or the link fails when the sanitizer flag
+  is injected globally. The pre-build fix: build the ASan-instrumented C
+  dependency **separately and first**, pinning the sanitizer flags to that one
+  crate's compile — do not let `CFLAGS` leak into the whole cargo build. A blind
+  attempt to `export CFLAGS=-fsanitize=address` for the workspace reproduces
+  0033's build break, not its bug.
+
+### Grammar / dictionary — structure-gated parsers (residual: **grammar-gated**)
+A deep-structure parser (magic + length + frame + checksum gates) defeats *both*
+blind and coverage-guided byte fuzzing: random and mutated bytes bounce off the
+first gate and never reach the vulnerable deep state. Coverage guidance does not
+save you here — the edges past the gate are unreachable without a structurally
+valid prefix, so the fuzzer has no gradient to climb. This is rust-mizan
+**0040**: an **ID3 / synchsafe** structure-gated parser that both blind and
+coverage fuzzing missed. The rung is a **grammar/dictionary** harness:
+`#[derive(Arbitrary)]` over the format's AST so every generated input is
+valid-by-construction and mutation happens *in the structure*, plus a libFuzzer
+`-dict=` of the format's magic bytes and tag keywords. The skeleton for this is
+the [`grammar_parser.rs`](harness-templates/grammar_parser.rs) template (named by
+[`capabilities.md`](capabilities.md)'s `structure_gated` sub-signal). This is the same rung the
+`structure_gated` sub-signal in [`capabilities.md`](capabilities.md) tells the
+dispatcher to **jump straight to** after a blind pass fails, instead of burning
+the whole budget on raw bytes.
+
+> The through-line: each of these is a rung you climb **only when the residual
+> reason names it** — you do not run MSan, TSan, FFI-ASan, and grammar on every
+> target. The cheaper rung runs first; its clean result plus the finding's
+> residual vocabulary (`needs-MSan` / `asan-on-C` / `grammar-gated` /
+> `address-space-only`) is the routing signal. `address-space-only` (0040's
+> sibling residual — a bug only at >4 GiB / 32-bit, [`find-to-fuzz.md`](find-to-fuzz.md)
+> §5) climbs to **nothing**: it is a real defect out of fuzz scope on a 64-bit
+> host, reported not chased.
+
+## Tamm execution matrix
+
+Each oracle is a distinct toolchain, and most need a distinct container image
+(different nightly features, different privilege, an ASan-compiled C world).
+The matrix below is what CI selects from — **the image is chosen per
+finding-class**, from the sanitizer the dispatch table
+([`find-to-fuzz.md`](find-to-fuzz.md) §1) assigned to that finding's CWE/capability.
+
+| oracle | image | invocation | notes / privilege |
+|---|---|---|---|
+| **ASan** (unprivileged, cargo-fuzz default) | `russcan-fuzz:nl` | `cargo +nightly fuzz run <target> -- -rss_limit_mb=4096` | the default rung; OOB / UAF / panic. No special privilege. |
+| **MSan** | `russcan-msan:nl` | `cargo +nightly fuzz run <target> -Zbuild-std --target <triple>` with `RUSTFLAGS=-Zsanitizer=memory` ([`fuzz-Cargo.msan.toml`](harness-templates/fuzz-Cargo.msan.toml)) | **`--privileged`** — MSan shadow mapping needs ASLR off; blocked by default seccomp (the `personality` syscall). Without it the run never starts. |
+| **TSan / loom** | `russcan-tsan:nl` | TSan: `cargo +nightly fuzz run <t>` with `RUSTFLAGS=-Zsanitizer=thread`; loom: `RUSTFLAGS=--cfg loom cargo test` over [`threaded_driver.rs`](harness-templates/threaded_driver.rs) | `concurrency_async` only. loom is a bounded exhaustive model-check (a test run), not a fuzz run. |
+| **Miri** | `mizan-miri:nl` | `cargo +nightly miri run` (or `miri test`) over [`adversarial_impl`](harness-templates/adversarial_impl.rs) | **UB oracle, no fuzz** — Stacked-Borrows / drop-of-uninit for the trait-trust & soundness classes. No sancov, no corpus. |
+| **FFI-ASan** | ASan-compiled C image (per-`*-sys`, e.g. `russcan-ffi-asan:nl`) | build the C dep with `CC`/`CFLAGS=-fsanitize=address` **first**, then `cargo +nightly fuzz run` | **pre-build the broken C deps** — 0033's libsqlite3-sys breaks under a global `CFLAGS`; pin the sanitizer flags to that one crate. |
+| **compile-proof** | any (`russcan-fuzz:nl` is fine) | `cargo +nightly build --bin proof` (or `cargo test`) over [`sendsync_compileproof`](harness-templates/sendsync_compileproof.rs) | **no run** — compiles ⇒ unsound. The build *is* the result; nothing to execute or reproduce. |
+
+CI dispatches the image from the finding's sanitizer field: the
+`reattack` stage reads `gates_for(cap).sanitizer` (per
+[`capabilities.md`](capabilities.md)) and the CWE→oracle row in
+[`find-to-fuzz.md`](find-to-fuzz.md) §1, and picks the matching image — it does
+not run every image against every finding.
+
+**"0 crashes" is only meaningful once the RIGHT oracle ran.** A clean ASan run on
+an uninitialized-read finding (residual `needs-MSan`) is **uncharacterized, not
+clean** — ASan is structurally blind to that bug, so its silence carries no
+information. Same for a format-string finding whose C dep was never
+ASan-compiled (`asan-on-C`), or a structure-gated parser blind-fuzzed without a
+grammar (`grammar-gated`). The residual reason
+([`find-to-fuzz.md`](find-to-fuzz.md) §5) is the gate: a run is "clean" only if
+the oracle it ran under is *capable* of seeing the finding's class. Report the
+residual with its reason — a no-crash under the wrong oracle is a capability gap
+to close (climb the rung), never a pass.
