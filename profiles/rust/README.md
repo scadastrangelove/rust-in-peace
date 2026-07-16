@@ -122,6 +122,15 @@ See [`fuzzing.md`](fuzzing.md) for the escalation, the Rust-behind-C coverage
 trap (a C-only AFL harness instruments the C edges, not the Rust), and the
 worked `russcan` example (blind harness over `Database::load` + `scan_block`).
 
+**Turning a static finding into a reproduction is the `reattack_harness` slot,
+made concrete: [`find-to-fuzz.md`](find-to-fuzz.md).** A CWE/capability →
+harness-template lookup ([`harness-templates/`](harness-templates/)), the agent
+binds the template to the crate's API, and a `cargo fuzz build` + smoke + replay
+loop validates it. Distilled from 22 harnesses against the rust-mizan CVE corpus
+(11/14 memory-corruption reproduced via cargo-fuzz+ASan, 8/8 soundness via
+Miri/compile-proof) — including the rule that a "no crash" names a *missing
+capability* (grammar-aware input / MSan / ASan-on-C), not a finder failure.
+
 `targets/rust-canary/run_detectors.sh` chains sanitizer → hang → Miri and is the
 target's `reattack_harness`.
 

@@ -1,0 +1,28 @@
+# fuzz/Cargo.toml — cargo-fuzz project boilerplate.
+# Lives at <target-crate>/fuzz/Cargo.toml. `EDITION` must match the target crate.
+# The path dep uses `package = "..."` because sample package names are hyphenated
+# (not valid Rust identifiers); the `use` in the target file uses the underscore
+# form (CRATE_IDENT).
+[package]
+name = "TARGET-fuzz"
+version = "0.0.0"
+publish = false
+edition = "EDITION"          # match the target crate's edition (2015/2018/2021)
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+arbitrary = { version = "1", features = ["derive"] }   # drop if the target is `|data: &[u8]|`
+TARGET_CRATE = { path = "..", package = "TARGET-crate" }  # , features = ["FEAT", ...] if the bug is feature-gated
+
+# fuzz/ is its own workspace so the parent workspace doesn't try to absorb it.
+[workspace]
+
+[[bin]]
+name = "fuzz_target"
+path = "fuzz_targets/fuzz_target.rs"
+test = false
+doc = false
+bench = false
