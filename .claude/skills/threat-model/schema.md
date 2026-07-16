@@ -32,6 +32,8 @@ downstream tooling can parse them with regex.
 ## 7. Provenance
 
 ## 8. Recommended mitigations
+
+## 9. Target capabilities
 ```
 
 A consumer that only needs the threat table can regex for `^## 4\. Threats$`
@@ -141,6 +143,35 @@ entire threat cluster regardless of which instance is found next.
 - `threat_ids`: comma-separated section 4 ids (e.g., `T1,T3`) this mitigation covers.
 - `closes_class`: `yes` | `partial`.
 - `effort`: `S` | `M` | `L`.
+
+### 9. Target capabilities
+
+Optional, additive (like section 8): older files may omit it; consumers must
+tolerate its absence. A factual inventory of the code's **shape** — properties
+that gate which *specialized* checks the downstream stages (find / detect / fuzz
+/ triage) turn on. Unlike a threat, a capability is not about an attacker; it is
+"does this code have surface X at all?". **An absent capability means the stage
+skips its specialized check** — so a pure-Rust library gets no FFI-ABI fuzzing, a
+single-threaded target gets no TSan, etc. (no false effort, no borrowed-from-
+another-target artifact).
+
+```markdown
+| capability | present | evidence |
+|---|---|---|
+```
+
+- `capability`: a controlled vocabulary (extend as the corpus grows), e.g.
+  `inbound_c_abi`, `outbound_ffi`, `concurrency_async`,
+  `untrusted_deserialization`, `multi_tenant_authz`, `unsafe_simd`,
+  `network_protocol_parser`, `subprocess_exec`, `crypto_secrets`.
+- `present` ∈ {`yes`, `no`, `test_only`, `partial`}.
+- `evidence`: the concrete signal that decided the value, so it is auditable —
+  a grep hit, a dependency, a file (e.g. `extern "C" in src/ffi.rs`, `tokio in
+  Cargo.toml`, `serde derive on wire types`, or `grep empty`).
+
+**Consumer contract:** a stage enables the specialized checks mapped to each
+capability whose `present` is not `no`. The capability→check mapping (per stage,
+including which fuzzing rung) lives in `profiles/rust/capabilities.md`.
 
 ---
 
