@@ -44,6 +44,7 @@ from pathlib import Path
 
 from . import docker_ops, sandbox
 from . import capabilities as caps
+from .corpus import save_regression
 from .agent import color
 from .aggregate import aggregate, format_report as format_aggregate, AGG_MODES
 from .artifacts import CrashArtifact, RunResult, ReattackArtifact, RunScorecard
@@ -943,6 +944,12 @@ def main() -> int:
     p_reattack.add_argument("--dangerously-no-sandbox", dest="dangerously_no_sandbox",
                             action="store_true", help="See `run --help`.")
 
+    p_scorecard = sub.add_parser(
+        "scorecard",
+        help="Render + validate a reattack scorecard (0-bugs-without-a-reason is an error)")
+    p_scorecard.add_argument("results_dir", type=Path,
+                             help="Batch dir (reads <dir>/reattack/scorecard.json)")
+
     args = parser.parse_args()
 
     if args.command in ("run", "recon", "report", "patch", "reattack"):
@@ -962,6 +969,8 @@ def main() -> int:
         return _cmd_patch(args)
     if args.command == "reattack":
         return _cmd_reattack(args)
+    if args.command == "scorecard":
+        return _cmd_scorecard(args)
     return 1
 
 
@@ -987,10 +996,16 @@ def _cmd_run(args) -> int:
         return 1
     _warn_bedrock_model(args.model)
 
-    # Runs default is profile-aware: rust's single-run recall is noisy (L13), so
-    # default to the measured elbow of 5; cpp keeps its historical single run.
+    # Runs default is profile-aware AND capability-routed: rust's single-run recall
+    # is noisy (L13). If a capabilities.json is present, the per-class vote budget
+    # picks N (8 for the high-variance Rudra classes, 3 for stable parsers); else
+    # the measured elbow of 5. cpp keeps its historical single run.
     if args.runs is None:
-        args.runs = 5 if target.profile == "rust" else 1
+        if target.profile == "rust":
+            _inv = caps.load_optional(target.capabilities_path)
+            args.runs = _inv.vote_budget() if _inv else caps.DEFAULT_VOTE_BUDGET
+        else:
+            args.runs = 1
 
     print(f"Target: {target.name}")
     print(f"  image_tag:   {target.image_tag}")
@@ -1483,17 +1498,23 @@ def _dominant_capability(inv: "caps.CapabilityInventory | None") -> str | None:
 
 
 def _derive_findings(results_root: Path, mode: str) -> list[dict]:
-    """Turn a batch's aggregate candidates into reattack findings (crash_type→CWE)."""
+    """Turn a batch's aggregate candidates into reattack findings (crash_type→CWE).
+    CONTESTED candidates (flip-flops the static/grade layer didn't settle) are
+    listed FIRST — they are the auto-dispatch-to-dynamic case (P1.3)."""
     agg = aggregate(results_root, mode)
     out: list[dict] = []
     for i, c in enumerate(agg.candidates):
         op = c.operations[0] if c.operations else None
+        note = "CONTESTED (0 passed, flip-flop) — dynamic verdict authoritative; " if c.is_contested else ""
         out.append({
             "finding_id": f"cand_{i:02d}",
             "cwe": _crash_type_to_cwe(c.crash_type, op),
             "site": c.site,
-            "mechanism": f"{c.crash_type} — {c.vote_str()} votes across the batch",
+            "mechanism": f"{note}{c.crash_type} — {c.vote_str()} votes across the batch",
+            "contested": c.is_contested,
         })
+    # contested first, then by vote order already baked into agg.candidates
+    out.sort(key=lambda f: (not f.get("contested", False),))
     return out
 
 
@@ -1657,6 +1678,17 @@ def _cmd_reattack(args) -> int:
         out_dir.joinpath("reattack.json").write_text(art.to_json())
         if art.crash_input is not None:
             out_dir.joinpath("crash_input.bin").write_bytes(art.crash_input)
+        # Corpus-as-regression: a reproducing crash is persisted so a per-PR
+        # replay catches it if it ever returns (P2).
+        if art.reproduced and art.crash_input is not None:
+            try:
+                save_regression(
+                    reattack_root / "corpus", finding_id=art.finding_id, cwe=art.cwe,
+                    sanitizer=art.sanitizer, crash_input=art.crash_input,
+                    reproduction_command=f"cargo +nightly fuzz run reattack (via {art.template})",
+                    note=art.detail[:200])
+            except Exception as e:
+                print(f"[reattack:{i}] corpus save skipped: {type(e).__name__}: {e}", file=sys.stderr)
         _rline = f"[reattack:{i}] {art.verdict} ({art.residual_reason})"
         print(color(_rline, "bold") if art.reproduced else _rline)
         return art
@@ -1686,6 +1718,46 @@ def _cmd_reattack(args) -> int:
         print(color(_s, "bold") if a.reproduced else _s)
     print(f"  {len(sc.reproduced)}/{len(arts)} reproduced → {reattack_root}/SCORECARD.md")
     return 0 if sc.reproduced else 2
+
+
+def _cmd_scorecard(args) -> int:
+    """Render + validate a reattack scorecard. Enforces the P1.1 discipline:
+    every reattack must carry a residual_reason; a 'clean' verdict without a
+    real reason is an ERROR ("0 bugs found" is a lie the reason corrects)."""
+    sc_path = args.results_dir / "reattack" / "scorecard.json"
+    if not sc_path.exists():
+        print(f"error: no scorecard at {sc_path} (run `vuln-pipeline reattack` first)",
+              file=sys.stderr)
+        return 1
+    try:
+        sc = RunScorecard.from_dict(json.loads(sc_path.read_text()))
+    except (OSError, json.JSONDecodeError, ValueError, KeyError) as e:
+        print(f"error: unreadable/invalid scorecard: {e}", file=sys.stderr)
+        return 1
+
+    # Validate: no clean-without-residual, and residual matches verdict.
+    violations: list[str] = []
+    for a in sc.reattacks:
+        if a.verdict == "clean" and a.residual_reason in ("reproduced", ""):
+            violations.append(f"{a.finding_id}: clean verdict with no residual_reason")
+        if a.residual_reason == "uncharacterized":
+            violations.append(f"{a.finding_id}: uncharacterized — force a reason before ship")
+
+    print(f"Scorecard — {sc.target}: {len(sc.reproduced)}/{len(sc.reattacks)} reproduced")
+    for a in sc.reattacks:
+        line = f"  {a.finding_id:18s} {a.verdict:12s} {a.residual_reason:24s} {a.template} [{a.sanitizer}]"
+        print(color(line, "bold") if a.reproduced else line)
+    if sc.missing_capabilities:
+        print("  missing capabilities (routing map, not a failure):")
+        for m in sc.missing_capabilities:
+            print(f"    - {m.get('capability')}: {m.get('why_unexercised')}")
+    if violations:
+        print(color(f"\n  DISCIPLINE VIOLATIONS ({len(violations)}):", "red"), file=sys.stderr)
+        for v in violations:
+            print(f"    ✗ {v}", file=sys.stderr)
+        return 2
+    print("  ✓ every finding characterized (no clean-without-reason)")
+    return 0
 
 
 if __name__ == "__main__":

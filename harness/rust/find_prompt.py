@@ -212,6 +212,24 @@ suggested_oracle: miri            # miri | adversarial_impl | tsan | compile_pro
 Emit `<defer_dynamic>` OR `<poc_path>` — not both for the same sink. A deferral
 still requires `<dup_check>` (same site+class keying).
 
+### Alternate output — INSUFFICIENT CONTEXT
+
+If you cannot judge a candidate because the code you can SEE is not enough — the
+function was extracted from its crate and the caller/`Drop`/trait impl that would
+decide safety isn't in scope, only the safe public API is visible, or the guard
+that dominates the sink lives in a module you weren't given — do NOT guess CLEAN
+and do NOT force a low-confidence submission. Emit:
+
+<insufficient_context>
+site: parser::fill (src/parser.rs:88)
+missing: the `Drop` impl of the element type / the caller that sets `len` / the
+  cfg-gated module that guards this path — not in the provided scope.
+what_would_decide_it: seeing <name the file/impl/caller> would settle safe-vs-bug.
+</insufficient_context>
+
+This routes to a crate-level re-run with more scope (L14) instead of scoring a
+miss. Use it sparingly — only when more code, not more effort, is the blocker.
+
 ## CRITICAL: Do Not Stop Until Done
 
 Generous budget. If one field/parser is a dead end, try another (a sibling entry

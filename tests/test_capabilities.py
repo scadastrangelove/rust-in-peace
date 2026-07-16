@@ -84,3 +84,26 @@ def test_load_and_load_optional(tmp_path):
     assert cap.load_optional(tmp_path / "missing.json") is None
     with pytest.raises(cap.CapabilityError):
         cap.load(tmp_path / "missing.json")
+
+
+def test_vote_budget_per_class():
+    # high-variance Rudra classes get 8; stable parsers 3; unknown → default 5
+    assert cap.vote_budget("unsafe_trait_trust") == 8
+    assert cap.vote_budget("unsafe_generic_soundness") == 8
+    assert cap.vote_budget("untrusted_deserialization") == 3
+    assert cap.vote_budget("concurrency_async") == 3        # races were 3/3
+    assert cap.vote_budget("nonexistent") == cap.DEFAULT_VOTE_BUDGET == 5
+
+
+def test_inventory_vote_budget_is_max_over_active():
+    inv = cap.from_dict({"capabilities": {
+        "unsafe_trait_trust": "yes", "untrusted_deserialization": "yes"}})
+    assert inv.vote_budget() == 8                            # max(8, 3)
+    inv2 = cap.from_dict({"capabilities": {"untrusted_deserialization": "yes"}})
+    assert inv2.vote_budget() == 3
+    assert cap.from_dict({"capabilities": {}}).vote_budget() == 5   # none active → default
+    # a present==no capability does not count toward the budget
+    inv3 = cap.from_dict({"capabilities": {
+        "unsafe_trait_trust": {"present": "no", "evidence": "grep empty"},
+        "untrusted_deserialization": "yes"}})
+    assert inv3.vote_budget() == 3

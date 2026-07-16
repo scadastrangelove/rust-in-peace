@@ -125,6 +125,36 @@ def gates_for(capability: str) -> CapabilityGate | None:
     return _GATES.get(capability)
 
 
+# ── per-class vote budgeting (P1.3) ──────────────────────────────────────────
+# Route the union-of-N budget by capability. The high-variance Rudra classes
+# (raw-unsafe / trait-trust / generic-soundness) swung 2..8/11 across identical
+# runs (L13) — they need MORE votes to surface the tail. The plain-parser / panic
+# / race / uninit / leak classes had single-run recall already ~3/3, so 3 votes
+# is enough and 8 is waste. Absent/unknown → the measured elbow, 5.
+DEFAULT_VOTE_BUDGET = 5
+_HIGH_VARIANCE = 8    # raw-unsafe / soundness — the Rudra tail lives in the votes
+_STABLE = 3           # single-run recall already strong
+
+_VOTE_BUDGET: dict[str, int] = {
+    "unsafe_trait_trust": _HIGH_VARIANCE,
+    "unsafe_generic_soundness": _HIGH_VARIANCE,
+    "unsafe_simd": _HIGH_VARIANCE,
+    "inbound_c_abi": _HIGH_VARIANCE,          # new hand-written unsafe ptr/len/lifecycle
+    "untrusted_deserialization": _STABLE,
+    "network_protocol_parser": _STABLE,
+    "subprocess_exec": _STABLE,
+    "multi_tenant_authz": _STABLE,
+    "concurrency_async": _STABLE,             # races/uninit/leaks were 3/3
+    "crypto_secrets": _STABLE,
+    "outbound_ffi": DEFAULT_VOTE_BUDGET,
+}
+
+
+def vote_budget(capability: str) -> int:
+    """N (number of union-of-N find runs) this capability calls for."""
+    return _VOTE_BUDGET.get(capability, DEFAULT_VOTE_BUDGET)
+
+
 class CapabilityError(ValueError):
     """Malformed capabilities.json — a machine file the pipeline reads, so a bad
     `present` value fails loud rather than silently mis-routing."""
@@ -190,6 +220,15 @@ class CapabilityInventory:
                 if s not in seen:
                     seen.append(s)
         return seen
+
+    def vote_budget(self) -> int:
+        """The union-of-N budget this target calls for — the MAX over its active
+        capabilities (route to the most-variance-demanding class present). No
+        active capability → the default elbow (5)."""
+        active = self.active_capabilities()
+        if not active:
+            return DEFAULT_VOTE_BUDGET
+        return max(vote_budget(c) for c in active)
 
     def to_dict(self) -> dict[str, Any]:
         return {

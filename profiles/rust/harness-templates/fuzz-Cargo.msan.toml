@@ -1,0 +1,140 @@
+# fuzz/Cargo.toml — MSan variant of the cargo-fuzz project boilerplate.
+# Drop-in sibling of `fuzz-Cargo.toml.template`; identical package layout, ONLY the
+# build recipe differs. Use this ONLY for a CWE-908 uninitialized read where the
+# memory is *validly allocated* — a `MaybeUninit`/`set_len`-then-read of untouched
+# bytes. ASan sees NOTHING there (it validates addressability, not initialization);
+# MSan (`-Zsanitizer=memory`) is the only oracle that catches it.
+#
+# Lives at <target-crate>/fuzz/Cargo.toml. `EDITION` must match the target crate.
+# The path dep uses `package = "..."` because sample package names are hyphenated
+# (not valid Rust identifiers); the `use` in the target file uses the underscore
+# form (CRATE_IDENT).
+#
+# ─────────────────────────────────────────────────────────────────────────────
+#  WHY THIS FILE EXISTS — rust-mizan 0027 (the trap ASan walks straight past)
+# ─────────────────────────────────────────────────────────────────────────────
+# 0027 is an uninitialized read of memory that IS legitimately allocated: the code
+# `Vec::with_capacity(n)` + `set_len(n)` (or `MaybeUninit::assume_init`) and then
+# reads a byte the write path never touched. Every address it loads is inside a
+# live allocation, so ASan's shadow says "addressable, clean" — no red zone, no
+# poison, no report. The value is garbage, but *addressably valid*. ASan is blind
+# by construction here; it never had the signal.
+#
+# MSan tracks a DIFFERENT bit: per-byte "has this been written since alloc?"
+# (uninit = poisoned). It reports the moment a poisoned byte is BRANCHED on, used
+# in a syscall, or returned across the FFI/output boundary. That is the ONLY
+# sanitizer that turns 0027 into a crash. This is the `../find-to-fuzz.md` dispatch
+# row "CWE-908 uninitialized read (memory validly allocated) → MSan; ASan will
+# NOT see it" — and the `../find-to-fuzz.md` §5 residual "uninitialized read →
+# wrong sanitizer; rerun under MSan." The harness FILE is `index_arbitrary.rs`
+# with the uninit-read note (drive the `set_len`/`MaybeUninit` read path); THIS
+# Cargo.toml + build recipe is what makes MSan the oracle instead of ASan.
+#
+# GOTCHA (the MSan analog of L12 — DON'T end the harness on a bare `black_box`):
+# MSan only fires when a poisoned byte reaches a USE it instruments — a branch, a
+# syscall arg, or a value crossing the output/FFI boundary. `index_arbitrary.rs`
+# ends with `for x in c.iter() { std::hint::black_box(**x); }` — that tail is the
+# right shape for ASan (it forces the load, and the OOB address is what ASan
+# reports) but it is INERT for MSan: `black_box` is an opaque consume, not a
+# branch or an output, so a poisoned-but-in-bounds byte flows into it and MSan
+# stays silent. The harness compiles, runs clean, and the 0027 read still happens
+# — the exact silent miss L12 warns about, one layer down. When you point this
+# recipe at that harness you MUST rewrite the tail to route the read into a real
+# use, e.g. `let mut acc = 0u8; for x in c.iter() { if **x & 1 == 1 { acc ^= **x } }
+# std::process::exit((acc & 1) as i32);` — a data-dependent BRANCH plus an exit
+# code (output) is what makes MSan report "use of uninitialized value" at the load
+# site. A pure sum with no branch is weaker; prefer the conditional.
+#
+# ─────────────────────────────────────────────────────────────────────────────
+#  BUILD RECIPE — MSan needs an instrumented std (`-Zbuild-std`), or it lies
+# ─────────────────────────────────────────────────────────────────────────────
+# GOTCHA (the whole reason this is a separate file): MSan is a WHOLE-PROGRAM
+# analysis. Every byte in the process must be tracked, including bytes that
+# std/core/alloc write. If std is NOT instrumented, MSan cannot see std's stores,
+# treats std-written memory as still-poisoned, and fires a storm of FALSE
+# POSITIVES on the first `String`/`Vec`/formatting call — drowning the real 0027.
+# So `-Zbuild-std` is MANDATORY (rebuilds std from source under MSan); it is not a
+# tuning knob. This forces nightly + an explicit `--target` (build-std has no
+# host-target shortcut). ASan gets away with a prebuilt std; MSan never does.
+#
+#   # nightly is required (-Zsanitizer + -Zbuild-std are unstable):
+#   rustup toolchain install nightly
+#   rustup component add rust-src --toolchain nightly    # -Zbuild-std needs the std SOURCE
+#
+#   # -Zsanitizer=memory                : instrument the crate + (with build-std) std
+#   # -Zsanitizer-memory-track-origins  : report WHERE the poison was born
+#   #                                     (the alloc site) — turns "use of uninit"
+#   #                                     into an actionable stack; keep it on.
+#   export RUSTFLAGS="-Zsanitizer=memory -Zsanitizer-memory-track-origins"
+#
+#   # -Zbuild-std rebuilds std/core/alloc from source UNDER the same RUSTFLAGS.
+#   # --target is REQUIRED with build-std (no host fast-path). cargo-fuzz forwards
+#   # -Z flags to the underlying cargo build:
+#   cargo +nightly fuzz build fuzz_target \
+#       --target x86_64-unknown-linux-gnu \
+#       -Zbuild-std
+#
+#   # RUN env. MSan aborts on first use of uninit; make the report legible:
+#   export MSAN_OPTIONS="abort_on_error=1:halt_on_error=1:print_stats=1"
+#   cargo +nightly fuzz run fuzz_target \
+#       --target x86_64-unknown-linux-gnu \
+#       -Zbuild-std \
+#       -- -rss_limit_mb=4096 -max_total_time=90
+#
+# GOTCHA (build-std hygiene): if you switch RUSTFLAGS or toolchain, wipe
+# `fuzz/target/` — a std artifact built without `-Zsanitizer=memory` cached from an
+# earlier run reintroduces exactly the uninstrumented-std false positives
+# `-Zbuild-std` exists to prevent.
+#
+# ─────────────────────────────────────────────────────────────────────────────
+#  TAMM / DOCKER GOTCHA — MSan needs ASLR off (the "unable to disable ASLR")
+# ─────────────────────────────────────────────────────────────────────────────
+# GOTCHA: MSan (like all the LLVM sanitizers' shadow-memory scheme) maps its
+# shadow at FIXED addresses and must therefore DISABLE ASLR for the process
+# (personality(ADDR_NO_RANDOMIZE)). Docker's DEFAULT SECCOMP profile filters the
+# `personality` syscall, so the run dies at startup with the EXACT failure Stage
+# 3.9 hit on Tamm:
+#
+#     ==NN==ERROR: MemorySanitizer: unable to disable ASLR (personality: Operation not permitted)
+#
+# The block is a SECCOMP block, not a missing capability — so the load-bearing fix
+# is to stop filtering the syscall with `--security-opt seccomp=unconfined`.
+# `--privileged` also works (it implies seccomp=unconfined) and is the
+# proven-working invocation on the Tamm box; the narrower form is
+# `--security-opt seccomp=unconfined` (optionally `--cap-add=SYS_PTRACE`, but the
+# cap alone does NOT unblock `personality` — the seccomp opt is what does):
+#
+#     docker run --privileged -v "$PWD":/src -w /src <image> \
+#         bash -c 'cargo +nightly fuzz run fuzz_target \
+#                    --target x86_64-unknown-linux-gnu -Zbuild-std \
+#                    -- -rss_limit_mb=4096 -max_total_time=90'
+#
+# This is MSan-specific: the ASan/TSan variants of this boilerplate do NOT need it.
+# It bites here because 0027's only oracle is the one sanitizer that can't disable
+# ASLR from inside a default-seccomp container.
+#
+# ─────────────────────────────────────────────────────────────────────────────
+
+[package]
+name = "TARGET-fuzz"
+version = "0.0.0"
+publish = false
+edition = "EDITION"          # match the target crate's edition (2015/2018/2021)
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+arbitrary = { version = "1", features = ["derive"] }   # drop if the target is `|data: &[u8]|`
+TARGET_CRATE = { path = "..", package = "TARGET-crate" }  # , features = ["FEAT", ...] if the bug is feature-gated
+
+# fuzz/ is its own workspace so the parent workspace doesn't try to absorb it.
+[workspace]
+
+[[bin]]
+name = "fuzz_target"
+path = "fuzz_targets/fuzz_target.rs"
+test = false
+doc = false
+bench = false

@@ -40,12 +40,13 @@ RSS_LIMIT_MB = 4096         # OOM cap (§3)
 
 _TEMPLATES_DIR = Path(__file__).resolve().parents[2] / "profiles" / "rust" / "harness-templates"
 
-# Templates shipped in-repo today. dispatch() may route to a not-yet-shipped
-# template (grammar_parser/threaded_driver — P1.2); build_reattack falls back to
-# the nearest shipped skeleton + an inline note so the agent still has a base.
+# Templates shipped in-repo. dispatch() may still route to a not-yet-shipped
+# template; build_reattack falls back to the nearest shipped skeleton + an inline
+# note so the agent always has a base.
 SHIPPED_TEMPLATES = frozenset({
     "index_arbitrary.rs", "byte_parser.rs",
     "adversarial_impl.rs", "sendsync_compileproof.rs",
+    "grammar_parser.rs", "threaded_driver.rs",   # P1.2 dynamic-hole templates
 })
 
 
@@ -193,6 +194,67 @@ def classify_residual(verdict: str, output: str,
     if disp.fuzz_rung == "grammar":
         return "grammar-gated"
     return "uncharacterized"
+
+
+# ── L12 validator lint (P1.2) ────────────────────────────────────────────────
+# The element that gets moved / dropped / written MUST own heap, or a double-drop
+# / drop-of-uninit / OOB-write is a silent LOGIC error the sanitizer & Miri can't
+# see. This lint rejects a harness whose adversarial element is a Copy primitive —
+# the exact bug that made SmallVec::insert_many "clean" with a u32 element and a
+# precise Stacked-Borrows UB with Box<u32>.
+_COPY_PRIM = (r"u8|u16|u32|u64|u128|usize|i8|i16|i32|i64|i128|isize"
+              r"|f32|f64|bool|char|\(\)")
+_HEAP_MARKERS = ("Box<", "String", "Vec<", "Rc<", "Arc<", "Cow<", "CString", "PathBuf")
+_ITEM_TYPE = re.compile(r"type\s+Item\s*=\s*([^;]+);")
+_ELEM_NEWTYPE = re.compile(r"struct\s+\w+\s*\(\s*(?:pub\s+)?([\w:<>() ]+?)\s*\)\s*;")
+
+# Templates whose whole point is a heap-owning element (dup/uninit/OOB-write).
+_HEAP_ELEMENT_TEMPLATES = frozenset({
+    "adversarial_impl.rs", "index_arbitrary.rs", "grammar_parser.rs", "threaded_driver.rs",
+})
+
+
+def _is_copy_prim(t: str) -> bool:
+    return re.fullmatch(_COPY_PRIM, t.strip()) is not None
+
+
+def lint_adversarial_harness(src: str) -> list[str]:
+    """Return L12 warnings for a harness whose adversarial element is a bare Copy
+    type (invisible to Miri/ASan). Empty list == passes the lint."""
+    warns: list[str] = []
+    for m in _ITEM_TYPE.finditer(src):
+        t = m.group(1).strip()
+        if not any(h in t for h in _HEAP_MARKERS) and _is_copy_prim(t):
+            warns.append(
+                f"L12: `type Item = {t}` is a Copy element — a double-drop / "
+                f"drop-of-uninit is invisible to Miri/ASan. Use `Box<{t}>`/`String` "
+                f"so the bug becomes a sanitizer-visible invalid-free.")
+    for m in _ELEM_NEWTYPE.finditer(src):
+        t = m.group(1).strip()
+        if _is_copy_prim(t):
+            warns.append(
+                f"L12: element newtype wraps Copy `{t}` — wrap heap (`Box<{t}>`) so "
+                f"the double-drop/OOB-write is a sanitizer-visible invalid-free, not "
+                f"a silent logic error.")
+    return warns
+
+
+# ── residual → escalate one rung (P2, bounded max 1) ─────────────────────────
+# A clean run whose residual names a missing rung escalates to exactly that rung.
+# Out-of-fuzz-scope residuals (address-space-only, unreachable, build-failed) do
+# NOT escalate — more fuzz time won't help; report the residual.
+_ESCALATION: dict[str, Dispatch] = {
+    "needs-MSan": _UNINIT_MSAN,
+    "asan-on-C": _FMT_C,
+    "grammar-gated": _GRAMMAR,
+}
+
+
+def escalate_rung(residual_reason: str) -> Dispatch | None:
+    """The ONE next rung to try for a residual, or None if escalation is futile
+    (out of 64-bit fuzz scope / unreachable / build error). Bounded: max one
+    escalation per finding — the caller must not loop."""
+    return _ESCALATION.get(residual_reason)
 
 
 # ── step 2: the binding prompt (Profile.build_reattack) ──────────────────────
@@ -424,6 +486,20 @@ async def run_reattack(
         build_attempts = _int(parse_xml_tag(text, "build_attempts"))
 
         residual = classify_residual(verdict, crash_output, disp, agent_residual)
+
+        # L12 lint: read the generated harness and flag a Copy adversarial element.
+        # A clean run on a heap-element class whose harness uses a Copy element is
+        # a LIKELY-FALSE clean (the sanitizer was blind by construction) — annotate.
+        if harness_path and disp.template in _HEAP_ELEMENT_TEMPLATES:
+            try:
+                src = (docker_ops.read_file(container, harness_path) or b"").decode("utf-8", "replace")
+            except Exception:
+                src = ""
+            l12 = lint_adversarial_harness(src) if src else []
+            if l12:
+                detail = (detail + " | L12-LINT: " + " ".join(l12)).strip(" |")
+                if verdict == "clean":
+                    detail = "LIKELY-FALSE-CLEAN (Copy element blinds the oracle) :: " + detail
 
         crash_input = None
         if verdict == "reproduced":
