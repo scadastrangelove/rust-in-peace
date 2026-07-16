@@ -37,6 +37,7 @@ from .rust import grade_prompt as _rs_grade
 from .rust import judge_prompt as _rs_judge
 from .rust import report_prompt as _rs_report
 from .rust import patch_prompt as _rs_patch
+from .rust import find_to_fuzz as _rs_reattack
 
 
 @dataclass(frozen=True)
@@ -55,6 +56,10 @@ class Profile:
     build_report_prompt: Callable[..., str]
     build_patch_prompt: Callable[..., str]
     build_style_judge_prompt: Callable[..., str]
+    # find→fuzz reattack binder (P0.2). None → this profile has no dispatch-based
+    # reattack stage and uses the static `config.reattack_harness` script instead
+    # (cpp's model). rust wires find_to_fuzz.build_reattack.
+    build_reattack: Callable[..., str] | None = None
 
 
 _CPP = Profile(
@@ -79,6 +84,7 @@ _RUST = Profile(
     build_report_prompt=_rs_report.build_report_prompt,   # Rust primitive taxonomy + trust boundary
     build_patch_prompt=_rs_patch.build_patch_prompt,      # *.rs diff + parse-time-validation guidance
     build_style_judge_prompt=_rs_patch.build_style_judge_prompt,  # re-export of the base (language-agnostic)
+    build_reattack=_rs_reattack.build_reattack,           # dispatch(cwe/cap)→template→bind→validate
 )
 
 _REGISTRY: dict[str, Profile] = {"cpp": _CPP, "rust": _RUST}

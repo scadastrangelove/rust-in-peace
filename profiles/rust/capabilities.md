@@ -81,9 +81,32 @@ evidenced skip**, and it flips on automatically the day russcan ships its
 libhs-compatible C ABI (`inbound_c_abi: no → yes`): that shim is new hand-written
 unsafe pointer/length/lifecycle code the Rust-entry-point fuzzers don't cover.
 
+## Ranking axis (not a capability) — `reachable_from_public_api`
+
+Emitted at the top level of `capabilities.json`, `present ∈ {yes, no}`. It is not
+a check to gate on/off but a **ranking** signal: is the finding's sink actually
+driven by a public/exported entry on attacker-controlled input? A `no` expresses
+the `unreachable-as-extracted` case the capability keys cannot — real code with
+no public path to reach it (a function lifted out of its crate, an internal-only
+helper). It **down-ranks a finding before fuzz time is spent** (rust-mizan
+0013/0018/0028/0040 were all real-but-unreachable-as-extracted); absence ==
+`unknown`, so we only down-rank on an explicit, evidenced `no`.
+
+## `structure_gated` sub-signal
+
+When `untrusted_deserialization` is `yes` **and** the format is a
+magic/length/frame container a random byte stream almost never satisfies (0040's
+ID3/synchsafe case), tag it `structure_gated` in the evidence. The dispatcher
+uses this to jump straight to the grammar rung (`#[derive(Arbitrary)]` AST +
+`-dict=`) after a blind pass fails, instead of burning the whole budget on raw
+bytes — see [`find-to-fuzz.md`](find-to-fuzz.md) and the `grammar_parser.rs`
+template.
+
 ## Scope
 
-This is the doc-level contract: `threat-model` produces §9, and a reviewer (or a
-find/fuzz agent reading it) enables the matching rows by hand. Teaching the
-stages to *parse* §9 and auto-enable checks is a separate, larger step — see the
-note in the profile README.
+`threat-model` produces §9 **and** its machine twin `capabilities.json`.
+`harness/capabilities.py` parses it and each stage gates programmatically —
+`find` appends the mapped `scan-extras` sections, the `reattack` stage picks the
+sanitizer (`gates_for(cap).sanitizer`) and fuzzing rung, and every `present: no`
+row becomes a logged, evidenced skip. A reviewer can still read the table by
+hand, but the routing no longer depends on it: the code path is the contract.

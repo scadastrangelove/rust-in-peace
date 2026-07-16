@@ -68,6 +68,15 @@ a bare panic at the same site is the weaker representative of that root cause.
 the queue, or it's the same site but a genuinely different mechanism. Same
 crash class alone is NOT a match; same site + same underlying defect is.
 
+**Different defect at the same site is NEW, not DUP.** Dedup keys on (site +
+underlying DEFECT), never on the site frame alone. Two distinct defects that
+happen to share a top frame — e.g. an OOB *read* of an attacker offset AND a
+separate unchecked *allocation* sized by a different field, both in
+`parser::decode` — are TWO bugs, each warranting its own report. Collapsing them
+because the frame matches loses a real finding (the `real_latent` case from
+fp-rules R11). Before calling DUP, confirm the ROOT CAUSE matches, not just the
+frame; if the mechanism/defect differs, it's NEW even at an identical site.
+
 **DUP_SKIP** — same root cause as an existing bug_id and the existing report
 (if landed) is adequate.
 

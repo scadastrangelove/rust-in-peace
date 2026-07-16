@@ -109,6 +109,40 @@ bugs live in four places — hunt these:
 If your first find is LOW VALUE, vary the input toward the `unsafe` reads — a
 DoS panic on an offset field is often one step from an OOB read of the same field.
 
+**DEFER-TO-DYNAMIC — a submission, NOT a CLEAN verdict.** Some real bugs cannot
+be reached with a hand-crafted *byte* input from this driver — they need a hostile
+*trait impl* or a *concurrent schedule*, which the fuzz/Miri stage constructs, not
+you. When you locate one of these sinks and cannot craft a reproducing input, do
+NOT conclude it's safe — emit a `<defer_dynamic>` (see Output Format). The four
+classes:
+- An `unsafe` block that trusts a *caller-supplied trait method* (an `Iterator`
+  whose `size_hint`/`next` it believes, an `Ord`/`Hash`/`Clone`/`Deref` it calls
+  while a raw pointer or `set_len` gap is live) — a lying impl breaks the invariant.
+- A `ptr::read` / `ptr::copy` / `Vec::set_len` whose safety spans a **user
+  callback or `Drop`** that could panic or re-enter (panic-safety / higher-order).
+- An `unsafe impl Send` / `unsafe impl Sync` whose soundness depends on a bound
+  the type doesn't actually enforce (variance / auto-trait soundness).
+- A generic `unsafe` invariant that holds for the tested type but not for every
+  `T` the public signature admits (generic-soundness).
+These were 8/8 confirmable *dynamically* and noisy/flat *statically* — so hand
+them to the dynamic stage instead of settling them here.
+
+## You are a FINDER, not a judge
+
+Your job is to REACH sinks and construct hostile inputs — not to acquit them.
+
+- If you can construct a hostile input (or, for the classes above, a hostile
+  trait impl / schedule) that reaches an `unsafe`/panic sink, **EMIT it** — even
+  if you believe a bound elsewhere makes it unreachable, or it "looks like it
+  matches upstream." Familiarity is not evidence of safety.
+- **Trace, don't pattern-match.** "This resembles code I've seen that was fine"
+  is not a bound. Only an invariant you have followed to its source and shown to
+  dominate the sink on every path counts — and *that* judgment belongs to the
+  triage stage (rule R1), not to you.
+- The reachability call ("is untrusted input actually able to drive this?") is
+  triage's job, not yours. When in doubt, submit (a validated crash) or defer (a
+  soundness sink) — never silently drop a candidate you couldn't disprove.
+
 ## Out of scope — do NOT submit these
 
 - Out-of-memory from simply requesting a huge `Vec`/allocation.
@@ -151,6 +185,32 @@ site + crash class. Not a duplicate.
 function + file:line) plus the crash class — the same root cause shows as a
 panic OR a Miri UB OR a sanitizer OOB depending on input. If it IS a duplicate,
 do not emit `<poc_path>` — keep searching. Emit the tags once.
+
+### Alternate output — DEFER-TO-DYNAMIC
+
+For a soundness sink you have REACHED but cannot reproduce with a byte input
+(the four DEFER classes above), emit this INSTEAD of `<poc_path>` — it is a
+finding, routed to the dynamic (fuzz / Miri / adversarial-impl) confirmer, not a
+CLEAN result:
+
+<defer_dynamic>
+class: unsafe_trait_trust        # one of: unsafe_trait_trust, panic_safety,
+                                 #   sendsync_variance, unsafe_generic_soundness
+sink: parser::fill_buf (src/parser.rs:88) — Vec::set_len(n) then calls user
+      Iterator::next() before the gap is initialized
+why_no_byte_poc: the break requires a lying `size_hint`/panicking `next`, not a
+      crafted input file — this driver only feeds bytes.
+adversarial_sketch: |
+  // element MUST own heap (Box<u32>, not u32) or Miri/ASan can't see the
+  // double-drop / uninit read — see L12.
+  // struct Evil(u32); impl Iterator for Evil:
+  //   size_hint() returns (9, Some(9))   [a lie — real length is 3]
+  //   next() yields two Box<u32>, then panic!("after 3") mid-iteration
+suggested_oracle: miri            # miri | adversarial_impl | tsan | compile_proof
+</defer_dynamic>
+
+Emit `<defer_dynamic>` OR `<poc_path>` — not both for the same sink. A deferral
+still requires `<dup_check>` (same site+class keying).
 
 ## CRITICAL: Do Not Stop Until Done
 

@@ -95,3 +95,44 @@ A panic that unwinds through a temporarily-broken invariant in an `unsafe` regio
 (via a callback, `Drop`, or allocation) producing UB / UAF / double-free
 (rkyv-style) is a real memory-safety TRUE_POSITIVE, not "just a panic" — do not
 apply the availability-only lens (R5) to it.
+
+RULE R11 — Real-but-unlabeled is NOT a false positive (converse of R2/R9).
+On a labeled corpus (a benchmark, a "fixed" variant, a known-CVE sample), a flag
+that does NOT match the seeded label is a FALSE_POSITIVE *only if the code is
+actually safe*. If the traced finding is a genuine reachable bug that the label
+simply doesn't cover — a latent bug the upstream fix never touched, a second
+distinct bug at/near the seeded site, a soundness hole orthogonal to the CVE —
+it is a TRUE_POSITIVE with DISPOSITION=`real_latent`, NOT an FP. The bar for
+`real_latent` is the SAME as any TP: an untrusted-input trace + a concrete
+trigger (or, for soundness classes, a DEFER-TO-DYNAMIC-confirmable adversarial
+impl). "It isn't the seeded bug" is a labeling fact, never a safety fact —
+measuring precision by counting `real_latent` as FP under-reports true precision
+(the four rust-mizan "false alarms" on fixed variants were all real latent bugs;
+true precision was ~100%, measured 84% only because R11 wasn't yet applied).
+Every `real_latent` on a *fixed* variant is a WIN → route to the latent-review
+queue for possible upstreaming; do not auto-file, do not count against precision.
+
+── Triage output schema (labeled-corpus mode) ──
+
+Every surviving flag on a labeled sample MUST carry:
+
+  DISPOSITION ∈ { same_as_seeded | real_latent | false_positive }
+    same_as_seeded  — matches the seeded label (site + class within the fix region)
+    real_latent     — a real, reachable bug the label does NOT cover (R11); the WIN case
+    false_positive  — the code is actually safe (some R1..R7 exclusion fired)
+
+  LABEL_DELTA  (required iff DISPOSITION=real_latent) — one line tracing WHY it is
+    distinct from the seed: different sink / different file / fix-untouched region /
+    orthogonal class. Without a traced delta it is same_as_seeded, not real_latent.
+
+  REACHABLE_IF_TRUSTED_INPUT ∈ { yes | no }  (kept from GENERAL, drives ranking)
+
+Report FIVE numbers, never a single "specificity":
+  1. detection-recall       — flags that hit ANY real bug / all real bugs present
+  2. seeded-CVE-recall      — same_as_seeded flags / seeded CVEs
+  3. precision              — TP / (TP + FP), where FP = ONLY false_positive
+                              (real_latent is NEVER in the denominator)
+  4. seeded-CVE precision   — same_as_seeded / (same_as_seeded + false_positive)
+  5. latent-bug yield       — count of distinct real_latent (a POSITIVE result,
+                              never subtracted from any score)
+"0 false positives but 3 real_latent" is a strong outcome, not a mixed one.

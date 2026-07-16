@@ -33,6 +33,7 @@ import argparse
 import asyncio
 import json
 import os
+import re
 import signal
 import subprocess
 import sys
@@ -42,11 +43,14 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from . import docker_ops, sandbox
+from . import capabilities as caps
 from .agent import color
-from .artifacts import CrashArtifact, RunResult
-from .profiles import detector_for_output
+from .aggregate import aggregate, format_report as format_aggregate, AGG_MODES
+from .artifacts import CrashArtifact, RunResult, ReattackArtifact, RunScorecard
+from .profiles import detector_for_output, get_profile
 from .config import TargetConfig
 from .dedup import dedup
+from .rust.find_to_fuzz import run_reattack, dispatch as reattack_dispatch, DEFAULT_REATTACK_MAX_TURNS
 from .find import run_find, DEFAULT_FIND_MAX_TURNS
 from .grade import run_grade
 from .judge import run_judge, run_compare
@@ -803,7 +807,14 @@ def main() -> int:
     p_run = sub.add_parser("run", help="Run find+grade against a target")
     p_run.add_argument("target", help="Target name (under ./targets/) or path to target dir")
     p_run.add_argument("--find-only", action="store_true", help="Skip grade stage")
-    p_run.add_argument("--runs", type=int, default=1, help="Number of independent runs")
+    p_run.add_argument("--runs", type=int, default=None,
+                       help="Number of independent runs (default: 5 for profile:rust — the "
+                            "measured recall elbow, L13 — else 1). Recall is union-of-N; a "
+                            "second derivation of a site is the vote that proves it real.")
+    p_run.add_argument("--aggregate", choices=AGG_MODES, default="union",
+                       help="Cross-run combiner for the end-of-batch candidate view (default "
+                            "union: recall-first, FPs filtered downstream). 'majority' keeps "
+                            "only k*2>N — precision-first, NOT recommended for rust.")
     p_run.add_argument("--parallel", action="store_true",
                        help="Run all --runs concurrently (~1GB RAM per run)")
     p_run.add_argument("--auto-focus", dest="auto_focus", action="store_true",
@@ -908,9 +919,33 @@ def main() -> int:
     p_patch.add_argument("--engagement-context", type=Path, default=None,
                          help="Path to an authorization/engagement-scope file (see `run --help`)")
 
+    p_reattack = sub.add_parser(
+        "reattack",
+        help="find→fuzz bridge (rust): turn findings into reproducing fuzz harnesses")
+    p_reattack.add_argument("results_dir", type=Path,
+                            help="Batch dir (results/<target>/<ts>/); scorecard + artifacts written here")
+    p_reattack.add_argument("--findings", type=Path, default=None,
+                            help="JSON list of findings [{finding_id,cwe,site,mechanism,capability,"
+                                 "structure_gated,defer_sketch}]. Default: derive from the batch's "
+                                 "aggregate candidates (crash_type→CWE).")
+    p_reattack.add_argument("--model", default=os.environ.get("VULN_PIPELINE_MODEL"),
+                            help="Model string (required; or set VULN_PIPELINE_MODEL)")
+    p_reattack.add_argument("--parallel", action="store_true",
+                            help="Run reattack agents concurrently")
+    p_reattack.add_argument("--max-turns", type=int, default=DEFAULT_REATTACK_MAX_TURNS,
+                            help=f"Reattack-agent turn budget (default {DEFAULT_REATTACK_MAX_TURNS})")
+    p_reattack.add_argument("--aggregate", choices=AGG_MODES, default="union",
+                            help="When deriving findings from the batch, which candidate set (default union)")
+    p_reattack.add_argument("--targets-dir", type=Path, default=Path("targets"),
+                            help="Where to find target config dirs (default: ./targets)")
+    p_reattack.add_argument("--engagement-context", type=Path, default=None,
+                            help="Path to an authorization/engagement-scope file (see `run --help`)")
+    p_reattack.add_argument("--dangerously-no-sandbox", dest="dangerously_no_sandbox",
+                            action="store_true", help="See `run --help`.")
+
     args = parser.parse_args()
 
-    if args.command in ("run", "recon", "report", "patch"):
+    if args.command in ("run", "recon", "report", "patch", "reattack"):
         if err := sandbox.require(args.dangerously_no_sandbox):
             print(err, file=sys.stderr)
             return 1
@@ -925,6 +960,8 @@ def main() -> int:
         return _cmd_report(args)
     if args.command == "patch":
         return _cmd_patch(args)
+    if args.command == "reattack":
+        return _cmd_reattack(args)
     return 1
 
 
@@ -949,6 +986,11 @@ def _cmd_run(args) -> int:
         print("error: --model required (or set VULN_PIPELINE_MODEL)", file=sys.stderr)
         return 1
     _warn_bedrock_model(args.model)
+
+    # Runs default is profile-aware: rust's single-run recall is noisy (L13), so
+    # default to the measured elbow of 5; cpp keeps its historical single run.
+    if args.runs is None:
+        args.runs = 5 if target.profile == "rust" else 1
 
     print(f"Target: {target.name}")
     print(f"  image_tag:   {target.image_tag}")
@@ -995,6 +1037,19 @@ def _cmd_run(args) -> int:
         reports = results_root / "reports"
         n = sum(1 for _ in reports.glob("bug_*/report.json")) if reports.exists() else 0
         print(f"  {n} report(s) → {reports}/")
+
+    # ── Aggregate: union-of-N candidate view (recall-first) ──────────────────
+    # Merge the batch's runs into unique (class, site) candidates with vote
+    # counts. Written even for a single run (== the dedup view); the value shows
+    # at N>1, where a second independent hit is the vote that confirms a find.
+    try:
+        agg = aggregate(results_root, mode=args.aggregate)
+        (results_root / "aggregate.json").write_text(json.dumps(agg.to_dict(), indent=2))
+        if agg.candidates:
+            print("\n── Aggregate (" + args.aggregate + ") ─────────────────────────────────")
+            print(format_aggregate(agg, results_root), end="")
+    except Exception as e:
+        print(f"[aggregate] skipped: {type(e).__name__}: {e}", file=sys.stderr)
     return exit_code
 
 
@@ -1383,6 +1438,254 @@ def _cmd_patch(args) -> int:
         if r["status"] != "patch_verified":
             exit_code = 2
     return exit_code
+
+
+# ── reattack (find→fuzz bridge, rust) ────────────────────────────────────────
+
+def _crash_type_to_cwe(crash_type: str | None, operation: str | None) -> str:
+    """Map an ASan/panic crash class (what the batch carries) to the CWE that
+    drives find_to_fuzz.dispatch. Lossy but deterministic; a --findings file
+    with explicit CWEs is preferred when available."""
+    ct = (crash_type or "").lower()
+    op = (operation or "").upper()
+    if "use-after-free" in ct:
+        return "CWE-416"
+    if "double-free" in ct:
+        return "CWE-415"
+    if "uninitialized" in ct or "use-of-uninit" in ct:
+        return "CWE-908"
+    if "race" in ct:
+        return "CWE-362"
+    if "buffer-overflow" in ct or "buffer-underflow" in ct or "out-of-bounds" in ct:
+        return "CWE-787" if op == "WRITE" else "CWE-125"
+    if "index" in ct or "slice-range" in ct:
+        return "CWE-125"
+    if "arith-overflow" in ct or "capacity overflow" in ct:
+        return "CWE-190"
+    return "CWE-125"   # default OOB
+
+
+# The most-specific active capability refines dispatch (Miri vs ASan vs compiler).
+_CAP_PRIORITY = (
+    "unsafe_trait_trust", "unsafe_generic_soundness", "concurrency_async",
+    "unsafe_simd", "network_protocol_parser", "subprocess_exec",
+    "untrusted_deserialization",
+)
+
+
+def _dominant_capability(inv: "caps.CapabilityInventory | None") -> str | None:
+    if inv is None:
+        return None
+    for cap in _CAP_PRIORITY:
+        if inv.is_active(cap):
+            return cap
+    return None
+
+
+def _derive_findings(results_root: Path, mode: str) -> list[dict]:
+    """Turn a batch's aggregate candidates into reattack findings (crash_type→CWE)."""
+    agg = aggregate(results_root, mode)
+    out: list[dict] = []
+    for i, c in enumerate(agg.candidates):
+        op = c.operations[0] if c.operations else None
+        out.append({
+            "finding_id": f"cand_{i:02d}",
+            "cwe": _crash_type_to_cwe(c.crash_type, op),
+            "site": c.site,
+            "mechanism": f"{c.crash_type} — {c.vote_str()} votes across the batch",
+        })
+    return out
+
+
+def _safe_id(name: str) -> str:
+    return re.sub(r"[^A-Za-z0-9._-]", "_", str(name))[:80] or "finding"
+
+
+def _missing_capabilities(inv: "caps.CapabilityInventory | None",
+                          arts: list[ReattackArtifact]) -> list[dict]:
+    """Every §9 capability the run couldn't fully exercise (P1.1). Two sources:
+    active capabilities whose gate needs a non-default sanitizer (MSan/TSan —
+    a special Tamm image), and any reattack whose residual named a missing rung.
+    "0 bugs found" is never the whole story; this section is why."""
+    out: list[dict] = []
+    if inv is not None:
+        for g in inv.active_gates():
+            if g.sanitizer in ("msan", "tsan"):
+                out.append({
+                    "capability": g.capability,
+                    "evidence": inv.evidence(g.capability),
+                    "why_unexercised": f"needs {g.sanitizer.upper()} — not the cargo-fuzz ASan default "
+                                       f"(select the matching Tamm image per fuzzing.md)",
+                })
+    residual_gaps = {"needs-MSan", "asan-on-C", "grammar-gated", "address-space-only"}
+    for a in arts:
+        if a.residual_reason in residual_gaps:
+            out.append({
+                "capability": f"(finding {a.finding_id})",
+                "evidence": f"{a.cwe} at reattack template {a.template}",
+                "why_unexercised": f"residual={a.residual_reason} — {a.detail or 'see reattack.json'}",
+            })
+    return out
+
+
+def _write_scorecard_md(path: Path, sc: RunScorecard, reach: str) -> None:
+    lines = [
+        f"# Reattack scorecard — {sc.target}",
+        "",
+        f"{len(sc.reproduced)}/{len(sc.reattacks)} finding(s) reproduced dynamically. "
+        f"reachable_from_public_api: **{reach}**.",
+        "",
+        "| finding | CWE | template | sanitizer | verdict | residual |",
+        "|---|---|---|---|---|---|",
+    ]
+    for a in sc.reattacks:
+        lines.append(f"| {a.finding_id} | {a.cwe} | {a.template} | {a.sanitizer} "
+                     f"| {a.verdict} | {a.residual_reason} |")
+    if sc.missing_capabilities:
+        lines += ["", "## Missing capabilities (not a failure — a routing map)", ""]
+        for m in sc.missing_capabilities:
+            lines.append(f"- **{m['capability']}** — {m['why_unexercised']} "
+                         f"(evidence: {m['evidence']})")
+    lines.append("")
+    path.write_text("\n".join(lines))
+
+
+def _cmd_reattack(args) -> int:
+    root: Path = args.results_dir
+    if not root.is_dir():
+        print(f"error: {root} is not a directory", file=sys.stderr)
+        return 1
+
+    agent_env = _resolve_auth_env()
+    if agent_env is None:
+        print(NO_AUTH_MSG, file=sys.stderr)
+        return 1
+    if not args.model:
+        print("error: --model required (or set VULN_PIPELINE_MODEL)", file=sys.stderr)
+        return 1
+    _warn_bedrock_model(args.model)
+
+    # Findings: explicit JSON, else derive from the batch's aggregate candidates.
+    if args.findings:
+        try:
+            findings = json.loads(args.findings.read_text())
+        except (OSError, json.JSONDecodeError) as e:
+            print(f"error: --findings unreadable: {e}", file=sys.stderr)
+            return 1
+        if not isinstance(findings, list):
+            print("error: --findings must be a JSON list of finding objects", file=sys.stderr)
+            return 1
+    else:
+        findings = _derive_findings(root, args.aggregate)
+    if not findings:
+        print("No findings to reattack (empty --findings or no aggregate candidates).",
+              file=sys.stderr)
+        return 2
+
+    # Target: from a result.json in the batch, else a "target" key in the findings.
+    first_result = next(root.rglob("result.json"), None)
+    target_name = None
+    if first_result:
+        try:
+            target_name = json.loads(first_result.read_text()).get("target")
+        except (OSError, json.JSONDecodeError):
+            target_name = None
+    if not target_name:
+        target_name = next((f.get("target") for f in findings if f.get("target")), None)
+    if not target_name:
+        print("error: could not infer target (no result.json under the batch and no "
+              "'target' in findings)", file=sys.stderr)
+        return 1
+    try:
+        target = TargetConfig.load(args.targets_dir / target_name)
+    except Exception as e:
+        print(f"error: load target {target_name!r}: {e}", file=sys.stderr)
+        return 1
+    global _current_target_name
+    _current_target_name = target.name
+
+    profile = get_profile(target.profile)
+    if profile.build_reattack is None:
+        print(f"error: profile {target.profile!r} has no dispatch-based reattack — cpp uses "
+              f"the static config.reattack_harness (patch stage), not the find→fuzz bridge.",
+              file=sys.stderr)
+        return 1
+
+    if not docker_ops.image_exists(target.image_tag):
+        print(f"[build] Building {target.image_tag} ...")
+        docker_ops.build(target.dockerfile_dir, target.image_tag)
+
+    # Capabilities: refine dispatch + record the reachability down-rank.
+    inv = caps.load_optional(target.capabilities_path)
+    dom_cap = _dominant_capability(inv)
+    reach = inv.reachable_from_public_api() if inv else "unknown"
+    for f in findings:
+        f.setdefault("capability", dom_cap)
+
+    reattack_root = root / "reattack"
+    reattack_root.mkdir(parents=True, exist_ok=True)
+    print(color(f"[reattack] {len(findings)} finding(s) → {reattack_root}/", "find"))
+    print(f"  target: {target.name}  model: {args.model}  capability: {dom_cap or '-'}  "
+          f"reachable_from_public_api: {reach}")
+    if reach == "no":
+        print(color("  note: reachable_from_public_api=no — these are down-ranked "
+                    "(unreachable-as-extracted); reattack characterizes, doesn't prioritize.", "dim"))
+    system_prompt = build_system_prompt(args.engagement_context)
+
+    async def _one(i: int, f: dict) -> ReattackArtifact:
+        fid = _safe_id(f.get("finding_id") or f.get("site") or f"finding_{i}")
+        out_dir = reattack_root / fid
+        out_dir.mkdir(parents=True, exist_ok=True)
+        disp = reattack_dispatch(f.get("cwe"), f.get("capability"),
+                                 bool(f.get("structure_gated")))
+        print(color(f"[reattack:{i}] {f.get('cwe','?')} @ {f.get('site','?')} "
+                    f"→ {disp.template} / {disp.sanitizer}", "report"))
+        try:
+            art, _res, timings = await run_reattack(
+                f, target, model=args.model, max_turns=args.max_turns,
+                agent_env=agent_env, container_name=f"reattack_{target.name}_{i}",
+                transcript_path=str(out_dir / "reattack_transcript.jsonl"),
+                progress_prefix=f"[reattack:{i}]", system_prompt=system_prompt,
+            )
+        except Exception as e:
+            traceback.print_exc()
+            art = ReattackArtifact(
+                finding_id=fid, cwe=str(f.get("cwe") or "unknown"),
+                template=disp.template, sanitizer=disp.sanitizer,
+                verdict="build_failed", residual_reason="build-failed",
+                detail=f"{type(e).__name__}: {e}")
+        out_dir.joinpath("reattack.json").write_text(art.to_json())
+        if art.crash_input is not None:
+            out_dir.joinpath("crash_input.bin").write_bytes(art.crash_input)
+        _rline = f"[reattack:{i}] {art.verdict} ({art.residual_reason})"
+        print(color(_rline, "bold") if art.reproduced else _rline)
+        return art
+
+    async def _dispatch():
+        coros = [_one(i, f) for i, f in enumerate(findings)]
+        if args.parallel:
+            return await asyncio.gather(*coros, return_exceptions=True)
+        return [await c for c in coros]
+
+    raw = asyncio.run(_dispatch())
+    arts: list[ReattackArtifact] = []
+    for i, r in enumerate(raw):
+        if isinstance(r, BaseException):
+            print(f"  reattack {i}: error — {type(r).__name__}: {r}")
+            continue
+        arts.append(r)
+
+    sc = RunScorecard(target=target.name, reattacks=arts,
+                      missing_capabilities=_missing_capabilities(inv, arts))
+    (reattack_root / "scorecard.json").write_text(sc.to_json())
+    _write_scorecard_md(reattack_root / "SCORECARD.md", sc, reach)
+
+    print("\n── Reattack summary ────────────────────────────────────────────────")
+    for a in arts:
+        _s = f"  {a.finding_id:16s} {a.verdict:12s} {a.residual_reason:24s} {a.template}"
+        print(color(_s, "bold") if a.reproduced else _s)
+    print(f"  {len(sc.reproduced)}/{len(arts)} reproduced → {reattack_root}/SCORECARD.md")
+    return 0 if sc.reproduced else 2
 
 
 if __name__ == "__main__":

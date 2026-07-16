@@ -190,3 +190,109 @@ class RunResult:
     @classmethod
     def from_json(cls, s: str) -> RunResult:
         return cls.from_dict(json.loads(s))
+
+
+# ── find→fuzz reattack (P0.2) ────────────────────────────────────────────────
+# Fixed residual vocabulary: a non-reproduction is a capability/sanitizer-fit
+# map, never a bare "0 bugs" (find-to-fuzz.md §5). A `clean` verdict without a
+# residual_reason is rejected by the scorecard — force characterization.
+RESIDUAL_REASONS = (
+    "reproduced",              # not a residual — the harness crashed as intended
+    "grammar-gated",           # deep-structure parser; blind+coverage miss → grammar/dict rung
+    "address-space-only",      # real defect but only at >4 GiB / 32-bit — out of 64-bit fuzz scope
+    "asan-on-C",               # format-string / FFI into un-instrumented C — needs ASan-compiled dep
+    "needs-MSan",              # uninitialized read — ASan is blind to it, rerun under MSan
+    "unreachable-as-extracted",# no public entry drives the sink (reachable_from_public_api: no)
+    "build-failed",            # harness never compiled within the retry budget (agent API error)
+    "uncharacterized",         # clean but reason not yet established — MUST be replaced before ship
+)
+
+
+@dataclass(frozen=True)
+class ReattackArtifact:
+    """The find→fuzz bridge's output for one finding: the generated harness, the
+    sanitizer it ran under, whether it reproduced, and — if not — the fixed-enum
+    residual reason (find-to-fuzz.md §4/§5)."""
+    finding_id: str            # stable id of the source finding (e.g. bug_03 / a signature)
+    cwe: str                   # the CWE that drove dispatch (e.g. "CWE-125")
+    template: str              # harness-templates/ skeleton chosen
+    sanitizer: str             # asan|msan|miri|tsan|compile_proof|asan_on_c
+    verdict: str               # "reproduced" | "clean" | "build_failed"
+    residual_reason: str       # one of RESIDUAL_REASONS ("reproduced" iff verdict==reproduced)
+    harness_path: str | None = None    # path to the generated fuzz harness (in results dir)
+    crash_input: bytes | None = None   # the reproducing input, if any
+    crash_output: str = ""     # detector trace / panic (truncated)
+    build_attempts: int = 0    # compile retries the agent needed (compiler-as-oracle)
+    detail: str = ""           # free-text: features enabled, wrapper fn found, etc.
+
+    def __post_init__(self) -> None:
+        if self.residual_reason not in RESIDUAL_REASONS:
+            raise ValueError(
+                f"residual_reason={self.residual_reason!r} not in {RESIDUAL_REASONS}")
+        # Contract: a clean verdict must carry a real (non-'reproduced') residual —
+        # "0 bugs found" without a reason is the exact lie §5 forbids.
+        if self.verdict == "clean" and self.residual_reason == "reproduced":
+            raise ValueError("clean verdict requires a residual_reason (§5)")
+        if self.verdict == "reproduced" and self.residual_reason != "reproduced":
+            raise ValueError("reproduced verdict must have residual_reason='reproduced'")
+
+    @property
+    def reproduced(self) -> bool:
+        return self.verdict == "reproduced"
+
+    def to_dict(self) -> dict[str, Any]:
+        d = asdict(self)
+        d["crash_input"] = (base64.b64encode(self.crash_input).decode("ascii")
+                            if self.crash_input is not None else None)
+        return d
+
+    @classmethod
+    def from_dict(cls, d: dict[str, Any]) -> ReattackArtifact:
+        ci = d.get("crash_input")
+        return cls(
+            finding_id=d["finding_id"], cwe=d["cwe"], template=d["template"],
+            sanitizer=d["sanitizer"], verdict=d["verdict"],
+            residual_reason=d["residual_reason"],
+            harness_path=d.get("harness_path"),
+            crash_input=base64.b64decode(ci) if ci else None,
+            crash_output=d.get("crash_output", ""),
+            build_attempts=d.get("build_attempts", 0),
+            detail=d.get("detail", ""),
+        )
+
+    def to_json(self) -> str:
+        return json.dumps(self.to_dict(), indent=2)
+
+
+@dataclass
+class RunScorecard:
+    """Per-batch dynamic scorecard (P1.1). "0 bugs found" is forbidden output:
+    every finding lists its reattack verdict + residual, and every §9 capability
+    the run could not exercise is named under missing_capabilities."""
+    target: str
+    reattacks: list[ReattackArtifact] = field(default_factory=list)
+    missing_capabilities: list[dict] = field(default_factory=list)  # [{capability, evidence, why_unexercised}]
+
+    @property
+    def reproduced(self) -> list[ReattackArtifact]:
+        return [r for r in self.reattacks if r.reproduced]
+
+    def to_dict(self) -> dict[str, Any]:
+        return {
+            "target": self.target,
+            "n_reattacks": len(self.reattacks),
+            "n_reproduced": len(self.reproduced),
+            "reattacks": [r.to_dict() for r in self.reattacks],
+            "missing_capabilities": self.missing_capabilities,
+        }
+
+    @classmethod
+    def from_dict(cls, d: dict[str, Any]) -> RunScorecard:
+        return cls(
+            target=d["target"],
+            reattacks=[ReattackArtifact.from_dict(r) for r in d.get("reattacks", [])],
+            missing_capabilities=d.get("missing_capabilities", []),
+        )
+
+    def to_json(self) -> str:
+        return json.dumps(self.to_dict(), indent=2)
