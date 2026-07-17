@@ -1,0 +1,20 @@
+profile: rust
+image_tag: vuln-pipeline-dvra3-parser:latest
+github_url: "https://github.com/scadastrangelove/damn-vulnerable-rust-app"   # DVRA dvra-3 crates/parser (Apache-2.0), vendored standalone; oracle held out
+commit: "dvra-3 (benchmark)"
+binary_path: /work/riptarget
+source_root: /work/parser
+reattack_harness: /work/run_detectors.sh
+build_command: >-
+  cd /work/parser && RUSTFLAGS="-Zsanitizer=address" cargo +nightly build
+  -Zbuild-std --target x86_64-unknown-linux-gnu --bin riptarget &&
+  cp target/x86_64-unknown-linux-gnu/debug/riptarget /work/riptarget
+test_command: cd /work/parser && cargo +nightly test
+memory_limit: 6g
+build_timeout_s: 3600
+attack_surface: |
+  Public entry: dvra_parser::parse_vulnerable(&[u8]) over an untrusted byte
+  record stream (a 4-byte magic + count + length-prefixed records with escape
+  pairs). A graceful Err(...) return is correct handling (the driver prints
+  "reject:"), NOT a finding. A panic / OOB slice index / Miri-UB reachable from
+  the byte input is a finding. There is a hardened sibling entry for comparison.
