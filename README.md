@@ -19,7 +19,7 @@ reproduction.
 > (Apache-2.0) — the reference implementation for autonomous vulnerability
 > discovery and remediation with Claude ([blog](https://claude.com/blog/using-llms-to-secure-source-code),
 > [cookbook](https://platform.claude.com/cookbook/claude-agent-sdk-06-the-vulnerability-detection-agent)).
-> Upstream is a C/C++ + ASAN demo and is not maintained. This fork keeps that
+> Upstream is a C/C++ + ASan demo and is not maintained. This fork keeps that
 > intact as the default `cpp` profile and adds a first-class **`rust`** profile.
 > Maintained by Sergey Gordeychik ([contact](#contact)).
 
@@ -100,19 +100,9 @@ Adding another language = a new `harness/<lang>/` package + one `Profile` entry
 in `harness/profiles.py`; the orchestration doesn't change. Full details:
 [profiles/rust/README.md](profiles/rust/README.md).
 
-> 🔒 **Want a managed option?** Anthropic offers
-> [Claude Security](https://claude.com/product/claude-security), a hosted product
-> that finds and fixes vulnerabilities in your source code across multiple
-> projects. Claude Security scans your repository for vulnerabilities,
-> applies a multi-stage verification pipeline to reduce false positives, and
-> lets you manage findings through their lifecycle: triage, fix validation,
-> and rapid fix generation.
->
-> This repository is an open-source reference implementation based on general
-> best practices for finding vulnerabilities using Claude. You can use it to
-> build your own vulnerability finding pipeline, customize the logic, and it
-> can be used with whatever access you have to Claude APIs (including
-> Bedrock, Vertex, or Azure).
+> This is an open-source reference implementation for finding vulnerabilities
+> with Claude — build your own pipeline on it, customize the logic, and run it
+> with whatever Claude API access you have (Anthropic API, Bedrock, or Vertex).
 
 ## Contents
 
@@ -184,12 +174,10 @@ claude
 
 ## Ramp Up
 
-The most successful security teams we've partnered with are those 
-that have gotten hands-on the fastest. Though it's tempting to 
-spend months designing the perfect pipeline, we recommend starting
-small on Day 1 and building from there as learnings come. The
-steps below follow that pattern and set an ambitious (but reasonable)
-pace based on what we've seen.
+Security teams that get hands-on fastest tend to get the most out of a pipeline
+like this. It's tempting to spend months designing the perfect pipeline, but it's
+better to start small on Day 1 and build from there as learnings come. The steps
+below follow that pattern at an ambitious but reasonable pace.
 
 |                                                                                     |              |                                                              |
 |-------------------------------------------------------------------------------------|--------------|--------------------------------------------------------------|
@@ -416,16 +404,15 @@ Autonomous triage and patching are still open issues, and this reference
 harness doesn't fully solve them. The verification strategies in `/patch`
 help raise the bar, but severity and prioritization are ultimately
 judgments about your environment, and verified patches are not always
-upstreamable. Many partners have reported these steps as their current
-bottlenecks, and you should budget real engineering time for them.
+upstreamable. These steps are common bottlenecks — budget real engineering time
+for them.
 
 For more details, see [docs/triage.md](docs/triage.md) and 
 [docs/patching.md](docs/patching.md).
 
 ## Looking Forward
 
-After the initial ramp up, the teams we've worked with have tended to invest in a
-few directions:
+After the initial ramp up, teams tend to invest in a few directions:
 
 1. Reviewing all their internal repos and key open-source dependencies,
 ranking which are the most important to scan (e.g., based on their exposure, 
