@@ -1,11 +1,14 @@
 # rust-in-peace 🦀🤘
 
 **Agentic security review for Rust.** An autonomous
-recon → find → triage → report → patch loop for the bugs that actually bite
-Rust: memory-safety in `unsafe`/FFI, panic-DoS from untrusted input, and
-parser/deserialization trust (an integrity check is not a bounds check).
-Detectors: **Miri** (undefined behavior), **AddressSanitizer**, **panic/abort**,
-and **hang-timeout** — plus `cargo-fuzz` for reachability.
+recon → find → grade → **find→fuzz** → report → patch loop for the bugs that
+actually bite Rust: memory-safety in `unsafe`/FFI, panic-DoS from untrusted
+input, deserialization trust (an integrity check is not a bounds check), and
+`Send`/`Sync` + panic-safety soundness. **Static analysis drives the dynamic
+stage** — the threat model routes which sanitizer, fuzz rung, and vote budget
+each finding gets. Detectors: **Miri** (undefined behavior), **AddressSanitizer**,
+**panic/abort**, **hang-timeout**, and `cargo-fuzz` for execution-verified
+reproduction.
 
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 ![Target: Rust](https://img.shields.io/badge/target-Rust-orange.svg)
@@ -22,33 +25,75 @@ and **hang-timeout** — plus `cargo-fuzz` for reachability.
 
 ## What this fork adds
 
-- A **profile registry** (`harness/profiles.py`): the pipeline resolves its
-  language/detector-specific pieces (find prompt, crash detector, grade/judge/
-  report/patch prompts) from a `profile:` field in a target's `config.yaml`.
-  `cpp` is the default; **`rust`** is a complete second profile.
-- The **`rust` profile** (`harness/rust/`): a Rust find prompt, a
-  Miri/panic/ASAN/hang crash detector, Rust-tuned grade/judge/report/patch
-  prompts, and interactive-skill tuning (`/vuln-scan --extra`,
-  `/triage --fp-rules`). See [profiles/rust/README.md](profiles/rust/README.md).
-- A runnable **`rust-canary`** demo target (`targets/rust-canary/`): a
-  deliberately-vulnerable crate with seeded unsafe-OOB / panic-DoS /
-  unbounded-loop bugs and one safe decoy (a triage false positive).
+Upstream is a C/C++ + ASan demo. This fork keeps that intact as the `cpp` profile
+and builds out a **first-class Rust security pipeline** — the profile this repo
+exists for:
+
+- **Profile registry** (`harness/profiles.py`) — the pipeline resolves its
+  language/detector pieces (find/grade/judge/report/patch prompts, crash
+  detector, find→fuzz binder) from a `profile:` field in `config.yaml`. Adding a
+  language is a new `harness/<lang>/` package + one registry entry; the
+  orchestration is unchanged.
+- **The `rust` profile** (`harness/rust/`) — a Rust find prompt, a
+  Miri / AddressSanitizer / panic / hang crash detector, Rust-tuned
+  grade/judge/report/patch prompts, and the Rust bug taxonomy: unsafe/FFI memory
+  safety, panic-DoS, deserialization trust, and `Send`/`Sync` + panic-safety
+  soundness. See [profiles/rust/README.md](profiles/rust/README.md).
+- **Recall-first union-of-N** — single-run recall is noisy, so `find` runs N
+  times and merges candidates by **(CWE + crash-site)** — not exact line —
+  keeping every candidate ≥1 run found, tagged `votes: k/N`
+  (`--runs N --aggregate union`; N defaults to a per-class **vote budget** for
+  `profile: rust`). A second independent derivation of a site is the vote that
+  proves it real.
+- **Static analysis drives the fuzzing** — `/threat-model` emits a
+  machine-readable `capabilities.json` (§9) beside `config.yaml`, and each stage
+  routes on it *programmatically*: which `scan-extras` brief `find` appends,
+  which sanitizer + fuzz rung `find→fuzz` picks, and the per-class vote budget.
+  An absent capability is a logged, evidenced skip (no FFI-ABI fuzz on a
+  pure-Rust lib, no TSan on a single-threaded target).
+- **find→fuzz bridge** (`vuln-pipeline reattack`) — turns a static finding into a
+  *reproducing* dynamic harness: `dispatch(CWE, capability) → template →
+  agent-bound harness → cargo-fuzz / Miri build + validate`, so a graded
+  candidate becomes an execution-verified crash. Soundness classes with no byte
+  input (trait-trust, panic-safety, `Send`/`Sync`) are **DEFER-TO-DYNAMIC** and
+  routed to Miri / a compile-proof / an adversarial-impl harness instead of being
+  reasoned into CLEAN.
+- **Scorecard discipline** (`vuln-pipeline scorecard`) — "0 bugs found" is
+  forbidden output: every non-reproduction carries a `residual_reason` from a
+  fixed vocabulary (`grammar-gated` / `needs-MSan` / `asan-on-C` /
+  `unreachable-as-extracted` / …); a clean verdict with no reason is a discipline
+  violation.
+- **Triage with a 3-way disposition** — findings resolve to
+  `real` / `real_latent` / `false_positive` under Rust FP-precedents (R1–R11);
+  a real-but-unlabeled bug is a win, never counted as a false positive.
+- **Worked targets + a benchmark study** — a `rust-canary` demo target
+  (seeded unsafe-OOB / panic-DoS / unbounded-loop + one triage-FP decoy), and
+  [`targets/dvra3-parser`](targets/dvra3-parser): a run against the
+  [Damn Vulnerable Rust App](https://github.com/scadastrangelove/damn-vulnerable-rust-app)
+  benchmark — blind DVRA-003 crash reproduction (the found PoC is bit-identical
+  to the planted gold seed) plus a three-build recall study. The neutralized
+  no-hints tree is contributed back as `dvra-3-blind`.
 
 ## Quickstart (Rust)
 
-Interactive skills — read-only, no Docker, usable today (from the repo root in
-Claude Code):
+**Static skills — read-only, no Docker, usable today** (repo root, in Claude Code).
+`/threat-model` also emits the `capabilities.json` that later routes the dynamic
+stage:
 
 ```
+/threat-model bootstrap <your-crate>          # → THREAT_MODEL.md §9 + capabilities.json
 /vuln-scan <your-crate>/src --extra profiles/rust/scan-extras.txt
 /triage VULN-FINDINGS.json --fp-rules profiles/rust/fp-rules.txt
 ```
 
-Autonomous pipeline on the demo target (executes code — runs sandboxed):
+**Autonomous pipeline** on a Rust target (executes code — runs sandboxed). N and
+the sanitizer/fuzz rung come from `capabilities.json`; union-of-N is recall-first:
 
 ```
-docker build -t vuln-pipeline-rust-canary:latest targets/rust-canary
-# rust-canary/config.yaml sets `profile: rust`; run the pipeline against it.
+export CLAUDE_CODE_OAUTH_TOKEN=...       # or ANTHROPIC_API_KEY / Bedrock — see docs/agent-sandbox.md
+bin/vp-sandboxed run rust-canary --parallel --stream --aggregate union   # recon → find(union) → grade → judge → report
+vuln-pipeline reattack  results/rust-canary/<ts>/ --aggregate union      # find→fuzz: static finding → reproducing cargo-fuzz/Miri harness
+vuln-pipeline scorecard results/rust-canary/<ts>/                        # discipline gate: no clean-without-a-residual-reason
 ```
 
 Adding another language = a new `harness/<lang>/` package + one `Profile` entry
@@ -75,21 +120,24 @@ in `harness/profiles.py`; the orchestration doesn't change. Full details:
   `/triage`, `/patch`, `/customize`: interactive scoping, scanning, triage,
   and patching. Open this repo in Claude Code and run `/quickstart` to get
   oriented.
-- **`harness/`**: the autonomous reference pipeline (recon → find → verify
-  → report → patch), configured for finding C/C++ memory vulnerabilities
-  using Docker and ASAN. This harness is a **reference, not a product**. 
-  The general shape, prompts, and sandboxing are reusable, but the harness
-  will not work on every codebase out of the box. Run `/customize` to port it 
-  to your language, detector, or vuln class.
+- **`harness/`**: the autonomous pipeline (recon → find → grade → judge →
+  report, plus the `reattack` find→fuzz bridge, the `scorecard` gate, and
+  `patch`), driven by profiles. The `rust` profile finds Rust memory-safety /
+  panic / soundness bugs with Miri + AddressSanitizer + cargo-fuzz; the retained
+  `cpp` profile finds C/C++ memory bugs with ASan. This harness is a
+  **reference, not a product** — the shape, prompts, and sandboxing are reusable,
+  but it will not work on every codebase out of the box. Run `/customize` to port
+  it to your language, detector, or vuln class.
 - **Profiles** (`harness/profiles.py`): the pipeline selects its
-  language/detector-specific pieces (find prompt, crash detector, grade/judge/
-  report/patch prompts) by a `profile:` field in a target's `config.yaml`.
-  `cpp` (C/C++ + ASAN) is the default; **`rust`** is a full worked fork for Rust
-  security — Miri / sanitizer / panic / hang detectors and the Rust bug taxonomy
-  (unsafe/FFI, panic-DoS, deserialization trust). See
-  [profiles/rust/README.md](profiles/rust/README.md) and the `targets/rust-canary`
-  demo target. Adding another language = a new `harness/<lang>/` package + one
-  registry entry; the orchestration doesn't change.
+  language/detector pieces (find prompt, crash detector, grade/judge/report/patch
+  prompts, find→fuzz binder) by a `profile:` field in `config.yaml`. **`rust`** is
+  the worked profile this fork is built around — Miri / sanitizer / panic / hang
+  detectors, the Rust bug taxonomy (unsafe/FFI, panic-DoS, deserialization trust,
+  `Send`/`Sync` soundness), capability-routed fuzzing, and recall-first
+  union-of-N. `cpp` (C/C++ + ASan) is the retained upstream default. See
+  [profiles/rust/README.md](profiles/rust/README.md), the `targets/rust-canary`
+  demo, and [`targets/dvra3-parser`](targets/dvra3-parser) (a DVRA benchmark run).
+  Adding another language = a new `harness/<lang>/` package + one registry entry.
 
 > ⚠️ **Security:** `/quickstart`, `/threat-model`, `/vuln-scan`, and `/triage`
 > only read and write files. Running `/patch` on static findings (`TRIAGE.json`
@@ -124,7 +172,10 @@ claude
 - [**Security**](docs/security.md) · Sandboxing, what not to mount
 - [**Agent sandbox**](docs/agent-sandbox.md) · gVisor isolation + egress allowlist for every agent
 - [**Customize**](docs/customizing.md) · Port to my stack; which files change and why
-- [**Rust profile**](profiles/rust/README.md) · A worked fork for Rust security (unsafe/FFI, panic-DoS, deserialization trust) — Miri / sanitizer / panic / hang detectors, selected with `profile: rust`
+- [**Rust profile**](profiles/rust/README.md) · A worked profile for Rust security (unsafe/FFI, panic-DoS, deserialization trust, `Send`/`Sync` soundness) — Miri / sanitizer / panic / hang detectors, selected with `profile: rust`
+- [**Capability routing**](profiles/rust/capabilities.md) · How `capabilities.json` (threat-model §9) gates the fuzz rung, sanitizer, and per-class vote budget — an absent capability is an evidenced skip
+- [**find→fuzz**](profiles/rust/find-to-fuzz.md) · Turning a static finding into a reproducing cargo-fuzz/Miri harness (dispatch → template → build + validate)
+- [**DVRA benchmark run**](targets/dvra3-parser) · A worked run against Damn Vulnerable Rust App — blind DVRA-003 reproduction + a three-build recall study
 - [**Patching**](docs/patching.md) · Generate and verify fixes for verified crashes
 - [**Troubleshooting**](docs/troubleshooting.md) · Duplicates, rate limits, subagent model pinning
 - [**Safeguards**](https://support.claude.com/en/articles/14604842-real-time-cyber-safeguards-on-claude) · Block for dangerous cyber work
@@ -143,7 +194,7 @@ pace based on what we've seen.
 |                                                                                     |              |                                                              |
 |-------------------------------------------------------------------------------------|--------------|--------------------------------------------------------------|
 | [Step 1](#step-1-day-1-build-a-threat-model-and-run-your-first-static-scan--triage) | **Day 1**    | Build a threat model and run your first static scan + triage |
-| [Step 2](#step-2-day-2-run-the-reference-pipeline-on-a-cc-library)                  | **Day 2**    | Run the reference pipeline on a C/C++ library                | 
+| [Step 2](#step-2-day-2-run-the-autonomous-pipeline-on-a-target)                     | **Day 2**    | Run the autonomous pipeline on a target (Rust or C/C++)      | 
 | [Step 3](#step-3-days-3-5-customize-the-pipeline-for-your-target)                   | **Days 3-5** | Customize the pipeline for your target                       |
 | [Step 4](#step-4-week-2-start-autonomous-scanning-triage-and-patching)              | **Week 2**   | Start autonomous scanning, triage, and patching              | 
 
@@ -193,14 +244,15 @@ any non-canary targets. In Step 2, you'll produce *execution-verified* findings.
 > curated fixture instead (`/triage .claude/skills/triage/fixtures/canary-findings.json
 > --repo targets/canary`) or point the Step 1 skills at your own code.
 
-### Step 2 (Day 2): Run the reference pipeline on a C/C++ library
+### Step 2 (Day 2): Run the autonomous pipeline on a target
 
-On Day 2, you'll move from interactive skills to your first autonomous
-run using the reference pipeline. You'll run the full recon → find → 
-verify → report loop in your environment on a known-vulnerable open-source
-library, then generate a candidate patch for what it finds. You'll finish
-with a set of reproducible crashes, exploitability reports, and candidate patches,
-along with a feel for how the pipeline works.
+On Day 2, you'll move from interactive skills to your first autonomous run.
+You'll run the full recon → find → grade → judge → report loop in your
+environment on a known-vulnerable target — the `rust` profile against a Rust
+crate, or the retained `cpp` profile against a C/C++ library — then turn the
+findings into reproducing fuzz harnesses (`reattack`) and generate candidate
+patches. You'll finish with a set of reproducible crashes, exploitability
+reports, and candidate patches, along with a feel for how the pipeline works.
 
 Running the pipeline is simple:
 
@@ -210,17 +262,21 @@ python3 -m venv .venv && .venv/bin/pip install -e .
 ./scripts/setup_sandbox.sh   # installs gVisor, builds the agent images, and verifies isolation; note: requires Docker
 export ANTHROPIC_API_KEY=sk-ant-...   # or CLAUDE_CODE_OAUTH_TOKEN, or Bedrock — see docs/agent-sandbox.md
 
-# Run the recon → find → verify → report loop
-bin/vp-sandboxed run drlibs --model <model-id> --runs 3 --parallel --stream --auto-focus
+# Run recon → find(union) → grade → judge → report on the rust demo target
+# (omit --runs for profile:rust to use the capability-routed vote budget)
+bin/vp-sandboxed run rust-canary --model <model-id> --parallel --stream --auto-focus --aggregate union
+# Turn the graded findings into reproducing cargo-fuzz/Miri harnesses, then gate on the scorecard
+bin/vp-sandboxed reattack results/rust-canary/<timestamp>/ --model <model-id> --aggregate union
+vuln-pipeline scorecard   results/rust-canary/<timestamp>/
 # Generate a candidate patch for each finding
-bin/vp-sandboxed patch results/drlibs/<timestamp>/ --model <model-id>
+bin/vp-sandboxed patch    results/rust-canary/<timestamp>/ --model <model-id>
 
 # Or, ask Claude Code to launch the pipeline and watch the run for you
 claude
-> run the pipeline on drlibs and explain findings as they come
+> run the pipeline on rust-canary and explain findings as they come
 ```
 
-Results from the loop land in a `results/drlibs/<timestamp>/` directory. With 
+Results from the loop land in a `results/rust-canary/<timestamp>/` directory. With
 the `--stream` flag, the first report will appear in minutes under `reports/bug_NN/`.
 
 > ⚠️ **`run` spawns autonomous agents.** The pipeline runs each agent
@@ -229,34 +285,46 @@ the `--stream` flag, the first report will appear in minutes under `reports/bug_
 > overridden. For more information, see [docs/security.md](docs/security.md)
 > and [docs/agent-sandbox.md](docs/agent-sandbox.md).
 
-Under the hood, the pipeline walks through seven stages:
+Under the hood, the pipeline walks through these stages:
 
-1. **Build**: Compiles the target into a Docker image with ASAN (the memory
-error detector for C and C++). The pipeline builds this image automatically
-on first run using the target's `Dockerfile`.
-2. **Recon**: A lightweight agent reads the source inside a network-isolated
-container and proposes a partition, i.e., *"here are N distinct input-parsing 
-subsystems worth attacking separately"*, so that parallel find agents explore
-different areas instead of converging on the same bug. Without the `--auto-focus`
-flag, the pipeline uses the `focus_areas` list from the target's `config.yaml`.
-3. **Find**: N agents run in parallel, each in its own isolated container.
-Each agent reads the source, crafts malformed inputs, and runs the ASAN
-binary until a given input produces a crash 3 out of 3 times.
-4. **Verify**: A separate grader agent reproduces each crash in a fresh
-container that the find agent hasn't touched. The only thing that crosses over
-from the find agent to the grader is the proof of concept it produced.
-5. **Dedupe**: A judge agent compares verified crashes against bugs already
-reported and decides whether each is a new bug, a better example of a known
-bug, or a duplicate to skip.
-6. **Report**: A report agent writes a structured exploitability analysis per
-unique bug, including details on primitive class, reachability, escalation
-path, and severity.
-7. **Patch** (the separate patch command above): A patch agent writes a proposed
-fix, and a grader agent confirms that the new code builds, that the original 
-proof of concept input no longer crashes, that the target's test suite still 
-passes, and that a fresh find agent can't find a way around the fix.
+1. **Build**: Compiles the target into a Docker image with its detectors. For
+`rust` that's a nightly toolchain with an AddressSanitizer `-Zbuild-std` driver
+plus Miri and cargo-fuzz; for `cpp`, clang + ASan. Built automatically on first
+run from the target's `Dockerfile`.
+2. **Recon**: A lightweight agent reads the source in a network-isolated
+container and proposes a partition — *"here are N distinct input-parsing
+subsystems worth attacking separately"* — so parallel find agents explore
+different areas. Without `--auto-focus` the pipeline uses `focus_areas` from
+`config.yaml`; the threat model's `capabilities.json` also gates which
+specialized briefs and rungs each area gets.
+3. **Find (union-of-N)**: N agents run in parallel, each in its own container,
+crafting inputs — or, for Rust, hostile trait impls / schedules — until a
+detector fires reproducibly. Runs are **merged by (CWE + crash-site)**, keeping
+every candidate ≥1 run found with a `votes: k/N` tag: recall-first, because
+single-run recall is noisy. N defaults to a per-class vote budget for
+`profile: rust`.
+4. **Grade**: A separate grader agent reproduces each crash in a fresh container
+the find agent never touched; only the proof-of-concept crosses over.
+5. **Dedupe (judge)**: A judge agent decides whether each verified crash is new,
+a better example of a known bug, or a duplicate — keyed on root cause, not just
+the crash class.
+6. **find→fuzz (`reattack`)**: Turns a graded finding into a *reproducing*
+harness — `dispatch(CWE, capability) → template → agent-bound cargo-fuzz/Miri
+harness → build + validate`. Soundness classes with no byte input are
+DEFER-TO-DYNAMIC (Miri / compile-proof / adversarial-impl); every
+non-reproduction records a `residual_reason`.
+7. **Scorecard**: A no-agent gate that rejects a clean verdict lacking a
+`residual_reason` — "0 bugs found" is not an acceptable output.
+8. **Report**: A report agent writes a structured exploitability analysis per
+unique bug — primitive class, reachability, escalation path, severity.
+9. **Patch** (the separate patch command above): A patch agent writes a fix; a
+grader confirms it builds, the original PoC no longer crashes, the test suite
+still passes, and a fresh find agent can't route around it.
 
-For more details, see [docs/pipeline.md](docs/pipeline.md).
+For more details, see [docs/pipeline.md](docs/pipeline.md),
+[profiles/rust/find-to-fuzz.md](profiles/rust/find-to-fuzz.md) (the find→fuzz
+dispatch), and [profiles/rust/capabilities.md](profiles/rust/capabilities.md)
+(capability routing).
 
 ### Step 3 (Days 3-5): Customize the pipeline for your target
 
@@ -266,15 +334,15 @@ pipeline to your stack. By the end of the week, you'll have a `targets/<your-ser
 directory that the pipeline can run against, validated with a single smoke run
 of the pipeline, and ready to scale up in Step 4.
 
-While the reference pipeline is designed for finding memory vulnerabilities in C and C++
-code, its shape is generic. Porting it to a new vuln class or language just means
-answering the following questions for your target stack:
+The `rust` and `cpp` profiles are worked examples, but the pipeline's shape is
+generic. Porting it to a new vuln class or language just means answering the
+following questions for your target stack:
 
-| Question                                | C/C++ Reference                   | Your target (examples)                         |
-|-----------------------------------------|-----------------------------------|------------------------------------------------|
-| What signals a finding?                 | ASAN crash signature              | exception / canary file / DNS callback         |
-| What does a proof of concept look like? | crashing input file               | HTTP request sequence / tx list / test harness |
-| How is the target built and run?        | `Dockerfile` (using clang + ASAN) | your language's build in a container           |
+| Question | `cpp` profile | `rust` profile | Your target (examples) |
+|---|---|---|---|
+| What signals a finding? | ASan crash signature | Miri UB / ASan / panic / hang | exception / canary file / DNS callback |
+| What does a proof of concept look like? | crashing input file | a crashing input, or a hostile trait impl / schedule | HTTP request sequence / tx list / test harness |
+| How is the target built and run? | `Dockerfile` (clang + ASan) | `Dockerfile` (nightly + ASan `-Zbuild-std` + Miri + cargo-fuzz) | your language's build in a container |
 
 Before customizing, point the Step 1 skills at your own code. As a reminder,
 they're read- and write-only, so they can run unsandboxed.
@@ -313,8 +381,12 @@ pipeline scans, triage the findings from across those runs, patch based
 on prioritization, and repeat.
 
 ```bash
-# Scan - run a wave of parallel runs against your target
-bin/vp-sandboxed run my-service --model <model-id> --runs 5 --parallel --stream --auto-focus
+# Scan - a recall-first wave (union-of-N; omit --runs on profile:rust for the capability-routed budget)
+bin/vp-sandboxed run my-service --model <model-id> --runs 5 --parallel --stream --auto-focus --aggregate union
+
+# find→fuzz - turn the wave's candidates into reproducing harnesses, then gate on the scorecard
+bin/vp-sandboxed reattack results/my-service/<timestamp>/ --model <model-id> --aggregate union
+vuln-pipeline scorecard   results/my-service/<timestamp>/
 
 # Triage - dedupe and rank every finding across all waves using your threat model
 > /triage results/my-service/ --repo ~/code/my-service --auto --votes 5
@@ -324,7 +396,7 @@ bin/vp-sandboxed run my-service --model <model-id> --runs 5 --parallel --stream 
 ```
 
 > ⚠️ Follow the same sandboxing guidelines as in 
-> [Step 2](#step-2-day-2-run-the-reference-pipeline-on-a-cc-library)
+> [Step 2](#step-2-day-2-run-the-autonomous-pipeline-on-a-target)
 
 A given pipeline run already verifies and deduplicates its own findings.
 `/triage` works across many pipeline runs. When pointed at the `results/`
