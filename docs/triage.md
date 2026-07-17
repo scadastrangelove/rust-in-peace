@@ -36,7 +36,7 @@ other downstream use).
   authenticated path = Medium; three or more, or local-only = Low. You can swap
   in your own scoring standard when the skill asks at the start of a run.
 
-To see the full reasoning behind both, read the [blog post's triage section](blog-post.md#5-triage-deduplicate-by-root-cause-rank-by-preconditions-and-impact).
+To see the full reasoning behind both, read the [blog post's triage section](https://claude.com/blog/using-llms-to-secure-source-code).
 
 ## Run it
 
@@ -77,7 +77,7 @@ re-converging on the same crashes (see
 
 ## After triage: patch
 
-For pipeline-produced crashes (which include a PoC and ASAN trace), `bin/vp-sandboxed patch`
+For pipeline-produced crashes (which include a PoC and ASan trace), `bin/vp-sandboxed patch`
 generates and verifies a fix per crash. See [patching.md](patching.md).
 For findings without a runnable PoC, see
 [patching.md's static mode](patching.md#campaign-style-patching-the-patch-skill-static-mode).

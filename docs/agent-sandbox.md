@@ -2,7 +2,7 @@
 
 > This document describes the sandboxing implementation details for
 > this reference harness. For general sandboxing recommendations and best
-> practices, see the [blog post's sandboxing section](blog-post.md#2-sandbox-run-agents-safely-and-verify-exploitability).
+> practices, see the [blog post's sandboxing section](https://claude.com/blog/using-llms-to-secure-source-code).
 
 The reference pipeline consists of both deterministic orchestration code and
 non-deterministic agents. The orchestration code (the `vuln-pipeline` process

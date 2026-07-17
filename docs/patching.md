@@ -52,7 +52,7 @@ iteration.
 
 A patch agent runs in a sandboxed container (see 
 [agent-sandbox.md](agent-sandbox.md) for details) with the source, the
-proof of concept, the reproduction command, and the ASAN trace. Its prompt
+proof of concept, the reproduction command, and the ASan trace. Its prompt
 pushes it to fix the root cause rather than narrowly address the crash site,
 to look for sibling call sites with the same bug, and to keep the diff as 
 minimal as possible.
@@ -63,7 +63,7 @@ The grader never sees the patch agent's reasoning, so it can't be talked into
 approving a bad fix. It applies the diff and climbs the verification ladder
 described below, stopping if any tier fails.
 
-If a tier fails, the evidence of the failure (e.g., compiler error, ASAN trace)
+If a tier fails, the evidence of the failure (e.g., compiler error, ASan trace)
 goes into the next attempt's prompt, and the patch loop runs again, up to
 `--max-iterations` times.
 
@@ -82,7 +82,7 @@ review the patch's style, but it is only advisory.
 | **Build**     | Does the patched tree compile?       | `git apply` + `build_command` exit code                             | `t0_builds`                  |
 | **Reproduce** | Is the original crash gone?          | Exit 0 AND no `AddressSanitizer:` in output                         | `t1_poc_stops`               |
 | **Regress**   | Did it break existing behavior?      | `test_command` exit code (skipped if none)                          | `t2_tests_pass`              |
-| **Re-attack** | Root cause gone, or just this input? | A fresh 50-turn find-agent attacks the patched binary; ASAN decides | `re_attack_clean`            |
+| **Re-attack** | Root cause gone, or just this input? | A fresh 50-turn find-agent attacks the patched binary; ASan decides | `re_attack_clean`            |
 | **Style**     | Would a maintainer accept it?        | LLM judge 0-10; **advisory only, never gates**                      | `t3_style_score`             |
 
 A patch passes when build, reproduce, regress (or no suite), and re-attack are
@@ -128,7 +128,7 @@ a minimal diff, but its idea of minimal is anchored to the finding it just
 reasoned through. A fresh-context pass asked only to *"simplify to the
 smallest change that fixes the root cause"* reliably trims the diff.
 
-> ⚠️ The patch agent's prompt reads target-derived data (the ASAN trace, the
+> ⚠️ The patch agent's prompt reads target-derived data (the ASan trace, the
 > exploitability report, and on retry the build / test output). The pipeline fences
 > those with per-call random delimiters and instructs the agent to treat them
 > as data, not instructions. But prompt-level fencing is a mitigation, not a
@@ -208,7 +208,7 @@ following workflow:
    migration plan: which pattern is unsafe, what the safe replacement is, 
    and where the call sites are.
 2. **Turn the plan into tests.** Write one test per call site that fails now
-   and passes once that call site is migrated. This suite plays the role ASAN
+   and passes once that call site is migrated. This suite plays the role ASan
    plays in the pipeline, i.e., the check that decides when you're done.
 3. **Split into tickets.** Group the tests into chunks that can be merged
    independently, each small enough to review.

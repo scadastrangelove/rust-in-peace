@@ -61,7 +61,7 @@ single agent's conversation after an API error.
 The most common cause of false positives isn't the model misreading code, it's 
 the model not knowing your trust boundaries. If a whole class of findings is
 wrong in the same way, write the missing assumption into your `THREAT_MODEL.md`.
-The blog post's [threat-model section](blog-post.md#1-threat-model-define-what-counts-as-a-vulnerability)
+The blog post's [threat-model section](https://claude.com/blog/using-llms-to-secure-source-code)
 describes this in detail and explains why this is the place to start.
 
 Two other fixes may also help:
