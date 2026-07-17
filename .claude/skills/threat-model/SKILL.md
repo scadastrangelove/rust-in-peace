@@ -35,9 +35,10 @@ detector. A good threat model tells the pipeline where to look and tells triage
 which findings matter.
 
 **Litmus test:** If patching one line of code makes an entry disappear, it was
-a vulnerability, not a threat. A threat ("attacker achieves RCE via untrusted
-media parsing") still stands after every known bug is fixed; a vulnerability
-("`dr_wav.h:412` doesn't bounds-check `chunk_size`") does not. This skill
+a vulnerability, not a threat. A threat ("attacker achieves memory disclosure
+via untrusted binary parsing") still stands after every known bug is fixed; a
+vulnerability ("`Table::sum_record` reads an `unsafe` slice at an
+attacker-controlled `data_off` without a bounds check") does not. This skill
 produces threats. Vulnerabilities appear only as **evidence** that raises a
 threat's likelihood score.
 

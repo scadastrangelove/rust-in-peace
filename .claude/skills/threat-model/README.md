@@ -114,8 +114,11 @@ is scratch; add it to `.gitignore`.
 
 `<target-dir>/THREAT_MODEL.md` with seven sections: system context, assets,
 entry points & trust boundaries, threats (the table), deprioritized, open
-questions, provenance. See `schema.md` for the full contract; a worked
-example lives at `targets/drlibs/THREAT_MODEL.md`.
+questions, provenance. See `schema.md` for the full contract. Worked
+examples live at `targets/rust-canary/THREAT_MODEL.md` (the rust profile —
+a binary parser whose threats are OOB read, panic-DoS, and hang-DoS, with a
+deliberate invariant-bounded `unsafe` read carried as a triage
+false-positive) and `targets/drlibs/THREAT_MODEL.md` (the cpp base).
 
 ## References
 

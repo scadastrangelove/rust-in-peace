@@ -1,18 +1,37 @@
 # Adding a new target
 
 A target is a directory under `targets/` containing everything the pipeline
-needs to build an ASAN-instrumented binary and point the find-agent at it.
+needs to build the target and point the find-agent at it. Each target
+declares a **profile**:
+
+- `profile: cpp` (the retained base) — builds an ASAN-instrumented binary;
+  the oracle is an ASAN abort.
+- `profile: rust` (the headline) — builds an ASAN + panic driver and wires
+  the multi-detector oracle (Miri / ASan / panic / hang) via
+  `run_detectors.sh`. See `targets/rust-canary/` for the reference authoring
+  path (`config.yaml` + `Dockerfile` + `run_detectors.sh`).
 
 ## Required files
 
 ### `config.yaml`
 
 ```yaml
+profile: cpp                            # cpp (ASAN binary) | rust (Miri/ASan/panic/hang)
 image_tag: vuln-pipeline-<name>:latest   # docker tag to build/run
 github_url: https://github.com/...      # for the prompt (agent reads source, needs context)
 commit: <full-sha>                      # pin exactly what you tested
 binary_path: /work/entry                # path INSIDE the container
 source_root: /work                      # path INSIDE the container
+```
+
+For `profile: rust`, two more fields wire the multi-detector oracle:
+
+```yaml
+reattack_harness: /work/run_detectors.sh  # find-agent drives this instead of the bare
+                                          # binary; patch re-attack reuses the same oracle
+# capabilities.json is auto-detected at targets/<name>/capabilities.json
+# (or set capabilities_path: to point elsewhere) — it routes the
+# capability-matched cargo-fuzz harnesses.
 ```
 
 Optional fields:
@@ -54,7 +73,7 @@ Must produce an image where:
 - `python3`, `xxd`, `file`, `gdb` are available (agent uses these to craft inputs)
 - `/bin/bash` works (container entrypoint)
 
-Template:
+Template (`cpp`):
 
 ```dockerfile
 FROM gcc:14
@@ -74,13 +93,55 @@ CMD ["/bin/bash"]
 **Flags:** `-O1` per ASAN docs (O0 too slow, O2+ can optimize bugs away).
 `-fno-omit-frame-pointer` for readable stack traces.
 
-### `entry.c`
+Template (`rust`) — mirrors `targets/rust-canary/Dockerfile`. Nightly is
+required for `-Zsanitizer`, Miri, and `cargo-fuzz`; `rust-src` backs
+`-Zbuild-std`:
+
+```dockerfile
+FROM rust:1-bookworm
+WORKDIR /work
+RUN apt-get update && apt-get install -y --no-install-recommends python3 xxd file gdb && rm -rf /var/lib/apt/lists/*
+
+RUN rustup toolchain install nightly --profile minimal \
+        --component miri --component rust-src --component llvm-tools-preview \
+    && rustup default nightly \
+    && cargo install cargo-fuzz --locked
+
+COPY crate /work/crate
+COPY run_detectors.sh /work/run_detectors.sh
+RUN chmod +x /work/run_detectors.sh
+
+# Fast oracle: the ASAN + panic driver (a `--bin` target, not a C wrapper).
+ENV RUST_BACKTRACE=1 ASAN_OPTIONS=detect_leaks=0:abort_on_error=1
+RUN cd /work/crate && \
+    RUSTFLAGS="-Zsanitizer=address" cargo +nightly build \
+        -Zbuild-std --target x86_64-unknown-linux-gnu --bin entry && \
+    cp target/x86_64-unknown-linux-gnu/debug/entry /work/entry
+
+CMD ["/bin/bash"]
+```
+
+`run_detectors.sh` (referenced by `reattack_harness`) wires the fast driver
+plus a `timeout` hang-check and `cargo +nightly miri run` as the deeper UB
+oracle; copy `targets/rust-canary/run_detectors.sh` and adapt the crate/bin
+names.
+
+### The driver
 
 A thin wrapper: `./entry <input_file>` → run the parser on the file, exit.
-Keep it minimal — it defines the attack surface. ASAN abort happens before
-`return 0` if there's memory corruption.
+Keep it minimal — it defines the attack surface.
+
+- `cpp`: an `entry.c` wrapper compiled with ASAN. The ASAN abort happens
+  before `return 0` if there's memory corruption.
+- `rust`: a `--bin entry` target in the crate, driven by `run_detectors.sh`.
+  The oracle is broader than one abort: Miri UB, a panic-abort (non-zero
+  exit), or a hang-timeout each count as a crash. A `reject:` line is
+  graceful error handling, not a crash.
 
 ## Zero pipeline changes
 
 The pipeline reads `config.yaml` and runs `docker build` on this directory.
-No Python edits needed to add a target.
+No Python edits needed to add a target. Switching stacks is data-only too:
+setting `profile: rust` in `config.yaml` (plus a `capabilities.json` and a
+`run_detectors.sh` wired via `reattack_harness`) is exactly what selects the
+rust prompts and the Miri/panic/hang detectors — no Python changes.

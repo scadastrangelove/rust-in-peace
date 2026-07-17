@@ -141,8 +141,9 @@ seeds:
 | **DB parse** | `Database::load(&bytes)` | operator-controlled → **latent**, but the whole "crafted-DB" bug class lives here | the checked-in `.db` fixtures; mutate header fields / offsets / counts |
 | **Scan** | `db.scan_block(buf, …)` | **attacker-controlled → live** | the `.corpus` files + random / edge-length buffers |
 
-The Stage-1 blind harness over both surfaces ships in the target as the
-`panic_fuzz` bin (seeded from the fixtures, structural + length mutations). It is
+The Stage-1 blind harness over both surfaces is driven by the target's
+`riptarget` entry point via `run_detectors.sh` (seeded from the fixtures,
+structural + length mutations). It is
 the cheap first net; Stage 3/4 (cargo-fuzz over `Database::load`, AFL + rustc
 sancov) run from the target's Dockerfile, which already installs cargo-fuzz and a
 nightly toolchain.
