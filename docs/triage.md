@@ -77,7 +77,7 @@ re-converging on the same crashes (see
 
 ## After triage: patch
 
-For pipeline-produced crashes (which include a PoC and ASan trace), `bin/vp-sandboxed patch`
+For pipeline-produced crashes (which include a PoC and sanitizer/detector trace), `bin/vp-sandboxed patch`
 generates and verifies a fix per crash. See [patching.md](patching.md).
 For findings without a runnable PoC, see
 [patching.md's static mode](patching.md#campaign-style-patching-the-patch-skill-static-mode).

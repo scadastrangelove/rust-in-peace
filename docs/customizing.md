@@ -97,6 +97,21 @@ The orchestration (`harness/cli.py`, `harness/find.py`, `harness/grade.py`,
 `harness/report.py`) is mostly generic plumbing and usually survives a port
 with minimal changes.
 
+Beyond the file-by-file swaps above, the `rust` profile adds rust-first
+machinery that a porter should know exists and may want to carry over:
+
+- **find→fuzz `reattack` bridge** (`harness/rust/find_to_fuzz.py` +
+  `profiles/rust/harness-templates/`): turns graded findings into reproducing
+  cargo-fuzz harnesses (`vuln-pipeline reattack`).
+- **`scorecard`** (`vuln-pipeline scorecard`): gates the reattack bridge and
+  enforces the "0-bugs-without-a-reason" discipline.
+- **Capability routing** (`harness/capabilities.py`, driven by a target's
+  `capabilities.json`): routes fuzzing to the fuzz templates that fit the
+  target's shape.
+
+These are profile-specific pieces, not part of the generic plumbing, so a new
+port decides for itself whether to reuse or fork them.
+
 ## Tune the interactive skills
 
 If you don't need a full port and just want `/vuln-scan` and `/triage` to

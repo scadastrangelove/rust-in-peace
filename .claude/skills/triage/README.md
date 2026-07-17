@@ -53,10 +53,15 @@ Common invocations:
 
 ```
 /triage VULN-FINDINGS.json                          # vuln-scan output, repo = cwd
+/triage VULN-FINDINGS.json --fp-rules profiles/rust/fp-rules.txt   # rust profile: R1–R11 precedents
 /triage results/mytarget/2026-04-14/ --repo .       # vuln-pipeline output
 /triage scanner_export/ --votes 5 --repo ~/src/app  # high-stakes batch, 5-vote verify
 /triage backlog.md --auto --votes 1                 # quick first pass on a markdown report
 ```
+
+For a Rust target, `--fp-rules profiles/rust/fp-rules.txt` loads the rust
+profile's R1–R11 false-positive precedents into the verifier's exclusion
+rules — the triage half of the `--extra profiles/rust/scan-extras.txt` scan.
 
 ## Output
 
@@ -92,4 +97,4 @@ start over. `./.triage-state/` is scratch; add it to `.gitignore`.
 
 ## Questions
 
-Reach out to your Anthropic contact.
+Open an issue on this repo.

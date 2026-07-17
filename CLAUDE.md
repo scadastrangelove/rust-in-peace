@@ -11,21 +11,28 @@ This repo has two halves:
   pipeline to another stack). Route the user to these for scoping, static
   review, Q&A, and post-run triage. (`/verify` is contributor tooling for
   validating harness changes on docker-less hosts, not part of the user flow.)
-- **`vuln-pipeline`** (`harness/`) — the autonomous pipeline. Docker + ASAN,
+- **`vuln-pipeline`** (`harness/`) — the autonomous pipeline. Docker +
+  capability-routed detectors (rust: Miri/ASan/panic/hang + cargo-fuzz; cpp: ASan),
   executes target code, needs a sandbox (see `docs/security.md`). Route here
   when the user wants to actually find and verify crashes.
 
 Docs for each topic are in `docs/`; targets are in `targets/` (canary is the
-fast smoke test). The rest of this file is the pipeline operator guide.
+fast smoke test). The pipeline is profile-driven (`profiles/`): `rust` is the
+primary profile — capabilities-routed detectors (`capabilities.json`), the
+find→fuzz `reattack` bridge, the `scorecard` discipline, and the DVRA benchmark
+(`targets/dvra3-parser`) — with `cpp` retained as the base profile. The rest of
+this file is the pipeline operator guide.
 
 ---
 
 # vuln-pipeline
 
-Execution-verified vulnerability discovery for C/C++ targets. A find-agent reads
-source, crafts inputs, runs an ASAN-instrumented binary until it lands a 3/3
-reproducing crash. A grade-agent in a fresh container verifies it. Output is a
-crashing input file, not prose.
+Execution-verified vulnerability discovery. The `rust` profile is the reason this
+fork exists: a find-agent reads source, crafts inputs, and drives capability-routed
+detectors (Miri / ASan / panic / hang, plus cargo-fuzz) until it lands a 3/3
+reproducing crash. The retained `cpp` base runs the same loop over an
+ASan-instrumented C/C++ binary. A grade-agent in a fresh container verifies it.
+Output is a crashing input file, not prose.
 
 ## When the user asks you to run it
 
@@ -54,7 +61,8 @@ Each pipeline phase is a standalone subcommand:
 
 ```bash
 vuln-pipeline recon <target> --model <model>        # propose focus_areas (YAML → stdout)
-vuln-pipeline run <target> --model <model>          # find + grade, one run
+vuln-pipeline run <target> --model <model>          # find + grade, one run (profile from config.yaml: rust or cpp)
+vuln-pipeline run <target> --aggregate union        # union-of-N cross-run combiner (default; recall-first)
 vuln-pipeline run <target> --runs N --parallel      # N concurrent finds, round-robin over focus_areas
 vuln-pipeline run <target> --auto-focus             # recon first, use its partition
 vuln-pipeline run <target> --stream                 # judge + report stream in as grades land (recommended)
@@ -66,6 +74,8 @@ vuln-pipeline report results/<target>/<ts>/         # batch-mode: exploitability
 vuln-pipeline report results/<target>/<ts>/ --fresh # ignore existing bug_NN/report.json checkpoints
 vuln-pipeline patch results/<target>/<ts>/          # generate + verify a fix per unique crash
 vuln-pipeline patch results/<target>/<ts>/ --bug N --no-reattack  # one bug, faster (skip re-attack tier)
+vuln-pipeline reattack results/<target>/<ts>/ --aggregate union  # find→fuzz bridge (rust): findings → reproducing fuzz harnesses
+vuln-pipeline scorecard results/<target>/<ts>/      # gate on the reattack scorecard (rust)
 ```
 
 Results → `results/<target>/<timestamp>/`. For `--runs N`: subdirs `run_000/`,
@@ -147,22 +157,30 @@ each unique crash: a patch agent in a fresh sandboxed container writes
 a fix and emits a `git diff`; a separate grader container walks the
 verification ladder — T0 apply + rebuild → T1 original PoC no longer crashes
 → T2 target test suite passes → re-attack: a 50-turn find-agent attacks the
-patched binary (T3 is an opt-in advisory style judge via `--style`; see
-`docs/patching.md`). On a failing tier the evidence is fed back and the patch
+patched target (for the rust profile, the patched crate re-driven through the
+detectors, not a "binary"; the standalone `vuln-pipeline reattack` find→fuzz bridge
+is the broader concept). T3 is an opt-in advisory style judge via `--style`; see
+`docs/patching.md`. On a failing tier the evidence is fed back and the patch
 agent iterates (≤5). Output: `reports/bug_NN/{patch.diff, patch_result.json}`;
 tier results land as `t0_builds`/`t1_poc_stops`/`t2_tests_pass`/`re_attack_clean`.
 
 **Before launching, check the target's `config.yaml` has a `build_command`.**
 Without it the grader can't recompile after applying the diff and the CLI
-will error early. The four shipped targets have it.
+will error early. The shipped targets (7, across both profiles) have it.
 
 **Tell the user the ladder verifies the crash is gone, not that the diff is
 safe to upstream.** Surface `patch.diff` for human review and point at
 `docs/patching.md#reviewing-generated-patches` for what to look for. Don't
 offer to apply the diff to anything outside the pipeline containers.
 
-For a quick demo without a prior find run, point at the canary fixture:
+For a quick patch demo without a prior find run, point at the cpp canary fixture:
 `vuln-pipeline patch targets/canary/fixtures/results_sample --model <m>`.
+
+For a rust end-to-end worked run, drive `rust-canary` through find → find→fuzz →
+scorecard (the `dvra3-parser` DVRA benchmark takes the same path):
+`vuln-pipeline run rust-canary --auto-focus --aggregate union --model <m>`, then
+`vuln-pipeline reattack results/rust-canary/<ts>/ --aggregate union --model <m>`,
+then `vuln-pipeline scorecard results/rust-canary/<ts>/`.
 
 **`--accept-dos` (off by default)** lowers the find-agent's submission floor
 for benchmark/validation runs. The default quality bar rules out DoS-class
@@ -190,9 +208,9 @@ Two layers, both agent-judged:
 alongside `<poc_path>` with their reasoning for why the crash is distinct from
 what's already in `found_bugs.jsonl`. The pipeline rejects submissions without
 it. The agent makes the judgment (it knows root cause); the pipeline enforces
-that the judgment happened. Entries in the jsonl are raw ASAN excerpts
-(SUMMARY line + top frames) — agents compare semantically, not by string
-match.
+that the judgment happened. Entries in the jsonl are raw detector excerpts
+(ASan SUMMARY / Miri diagnostic / panic backtrace + top frames) — agents
+compare semantically, not by string match.
 
 **Report-gate (`--stream` only):** a judge agent reads each graded crash
 against the `reports/manifest.jsonl` and decides NEW / DUP_BETTER / DUP_SKIP.
@@ -248,20 +266,29 @@ available set.
 
 ## Adding a target
 
-Directory under `targets/` with a Dockerfile (ASAN build) + `config.yaml`. No
+Directory under `targets/` with a Dockerfile (detector build for the target's
+profile — rust: Miri/ASan/panic/hang; cpp: ASan) + `config.yaml` (`profile:` picks
+the profile; rust targets also ship `capabilities.json` for detector routing). No
 pipeline code changes. See `targets/README.md`.
 
-**Shipped targets:** `canary` is the fast-iteration smoke test (~6min, 3
-planted bugs). `drlibs`, `alsa`, and `htslib` are real-world CVE demo
+**Shipped targets (7):** `canary` is the fast-iteration cpp smoke test (~6min, 3
+planted bugs). `drlibs`, `alsa`, and `htslib` are real-world cpp CVE demo
 targets — pinned to vulnerable commits, with per-target READMEs documenting
-the CVEs and expected find times. htslib is the harder of the set (CRAM
-container format, 10-CVE cluster).
+the CVEs and expected find times (htslib is the harder of the set: CRAM
+container format, 10-CVE cluster). The rust targets: `rust-canary` (the rust
+smoke test — seeded Miri-UB / panic / hang bugs plus a triage decoy), `russcan`
+(the Vectorscan→Rust port's DB-parse surface), and `dvra3-parser` (the DVRA-3
+benchmark — capability-routed, planted DVRA-003 stale-offset defect).
 
 ## Tests
 
 `pytest tests/`. Unit coverage spans tag/XML parsing, artifact serialization,
-ASAN signature extraction, focus-area rendering, dedup signatures,
+detector signature extraction, focus-area rendering, dedup signatures,
 `found_bugs.jsonl` handling, the judge and compare agents, report parsing, the
 T0–T3 patch-grade ladder, the `/threat-model` and `/triage` skill checkpoint
-files, and system-prompt construction. No integration tests — canary is the
-fast integration path (`--runs 3 --parallel --max-turns 50`).
+files, and system-prompt construction. The rust profile adds the find→fuzz bridge
+(`test_find_to_fuzz.py`), union-of-N aggregation (`test_aggregate.py`), the
+feedback loops (`test_feedback.py`), capability routing (`test_capabilities.py`),
+and corpus replay (`test_corpus.py`). No integration tests — `canary` is the fast
+cpp integration path and `rust-canary` the rust one
+(`--runs 3 --parallel --max-turns 50`).

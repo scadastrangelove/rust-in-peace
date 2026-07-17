@@ -125,7 +125,7 @@ caps aren't enforced.
 
 ```bash
 export ANTHROPIC_API_KEY=...   # or CLAUDE_CODE_USE_BEDROCK=1 + AWS_* — see above
-bin/vp-sandboxed run drlibs --model <model-id> --runs 3 --parallel --stream
+bin/vp-sandboxed run rust-canary --model <model-id> --runs 3 --parallel --stream
 ```
 
 `bin/vp-sandboxed` is a small wrapper around the normal `vuln-pipeline`
@@ -138,20 +138,20 @@ pipeline with the isolation described above.
 
 ```bash
 # 1. Is gVisor actually in use? Confirm the two lines print different kernel versions
-docker run --rm --runtime=runsc vuln-pipeline-drlibs-latest-agent:latest uname -r
+docker run --rm --runtime=runsc vuln-pipeline-rust-canary-latest-agent:latest uname -r
 uname -r
 
 # 2. Is the host filesystem unreachable? Confirm the cat fails with "No such file or directory"
 echo host > /tmp/probe-$$; \
-  docker run --rm --runtime=runsc vuln-pipeline-drlibs-latest-agent:latest cat /tmp/probe-$$
+  docker run --rm --runtime=runsc vuln-pipeline-rust-canary-latest-agent:latest cat /tmp/probe-$$
 
 # 3. Can the model API be reached? Confirm any HTTP status code is printed
 docker run --rm --runtime=runsc --network=vp-internal -e HTTPS_PROXY=http://<proxy_ip>:3128 \
-  vuln-pipeline-drlibs-latest-agent:latest sh -c 'curl -sI https://api.anthropic.com/ -o /dev/null -w "%{http_code}\n"'
+  vuln-pipeline-rust-canary-latest-agent:latest sh -c 'curl -sI https://api.anthropic.com/ -o /dev/null -w "%{http_code}\n"'
 
 # 4. Can another host be reached? Confirm connection is refused
 docker run --rm --runtime=runsc --network=vp-internal -e HTTPS_PROXY=http://<proxy_ip>:3128 \
-  vuln-pipeline-drlibs-latest-agent:latest sh -c 'curl -sI https://example.com/ -o /dev/null -w "%{http_code}\n"'
+  vuln-pipeline-rust-canary-latest-agent:latest sh -c 'curl -sI https://example.com/ -o /dev/null -w "%{http_code}\n"'
 ```
 
 ## Opting out

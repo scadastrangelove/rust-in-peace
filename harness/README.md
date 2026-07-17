@@ -1,10 +1,15 @@
 # Harness: autonomous vulnerability discovery
 
 This package is the reference pipeline: an autonomous, multi-agent harness
-for finding, verifying, reporting, and patching memory-safety bugs in C/C++
-codebases. It runs Claude Code agents inside gVisor-isolated containers,
-builds ASAN-instrumented targets, and grades every finding with an
-executable oracle (the PoC crashes, or it doesn't).
+for finding, verifying, reporting, and patching memory-safety bugs. It ships
+two target profiles: **`rust`** (the headline — Miri / ASan / panic / hang
+detectors, capability-routed `cargo-fuzz`, recall-first union-of-N
+aggregation, the find→fuzz `reattack` bridge, and the `scorecard`
+discipline) and **`cpp`** (the retained upstream base — ASAN-instrumented
+C/C++ targets). It runs Claude Code agents inside gVisor-isolated
+containers, builds instrumented targets, and grades every finding with an
+executable oracle (the PoC crashes — or trips Miri/panic/hang — or it
+doesn't).
 
 This README is the copy-paste path to a demo. For the architecture, every
 CLI flag, and rate-limit math, see [`docs/pipeline.md`](../docs/pipeline.md).
@@ -22,8 +27,19 @@ CLI flag, and rate-limit math, see [`docs/pipeline.md`](../docs/pipeline.md).
 - Docker.
 - Python 3.11+.
 - An Anthropic API key or Claude Code OAuth token.
+- For `rust`-profile targets, the toolchain lives *in the target image*, not
+  on the host: the Dockerfile installs a nightly toolchain with `rust-src`
+  (for `-Zbuild-std`), `miri`, and `cargo-fuzz`. See
+  `targets/rust-canary/Dockerfile` for the reference build.
 
 ## Demo: find real CVEs in dr_libs
+
+> **Want the rust headline instead?** This dr_libs walkthrough is a `cpp`
+> (C/ASAN) demo. For the `rust` profile, start with the `rust-canary`
+> smoke test (planted UB, `profile: rust`, full source in the repo), then
+> the `dvra3-parser` DVRA benchmark or the `russcan` real-world target.
+> The end-to-end rust loop — find → reattack (find→fuzz) → union-of-N →
+> scorecard — is documented in [`docs/pipeline.md`](../docs/pipeline.md).
 
 The `drlibs` target scans [mackron/dr_libs](https://github.com/mackron/dr_libs)
 at a commit with two known CVEs (a heap OOB write in `dr_wav.h` and an
@@ -53,7 +69,10 @@ export VULN_PIPELINE_MODEL=<model-id>      # Claude Opus recommended; override p
 
 ### Run (end to end)
 
-One command runs **recon → find → grade → judge → report**:
+One command runs **recon → find → grade → judge → report**. From there the
+rust loop continues with **reattack (find→fuzz) → union-of-N aggregation →
+scorecard** — see the stage diagram in
+[`docs/pipeline.md`](../docs/pipeline.md):
 
 ```bash
 bin/vp-sandboxed run drlibs --auto-focus --runs 3 --parallel --stream
@@ -157,10 +176,21 @@ burning find tokens. `alsa` and `htslib` are additional real-world CVE demo
 targets; like `drlibs`, their source is fetched at Docker build time. Each
 has its own `targets/<name>/README.md`.
 
+The `rust`-profile targets (all set `profile: rust`):
+
+- `rust-canary` — the rust smoke test: planted UB, full source in the repo,
+  the reference for authoring a rust target (`Dockerfile` + `run_detectors.sh`).
+- `dvra3-parser` — the DVRA benchmark target.
+- `russcan` — a real-world rust target.
+
 ## Port to your stack
 
 The C/C++/ASAN specifics live in `prompts/`, `asan.py`, and
 `patch_grade.py:_t1_passes()`. The orchestration (`cli.py`, `find.py`,
-`grade.py`, `report.py`) is mostly domain-neutral. See
+`grade.py`, `report.py`) is mostly domain-neutral. The `rust` profile is the
+worked example of a *second* stack bolted onto that neutral core: see
+`harness/rust/` (its own find/grade/judge/patch/report prompts plus
+`detect.py` and `find_to_fuzz.py`), `harness/profiles.py` (profile routing),
+and `harness/capabilities.py` (capability-routed fuzzing). See
 [`docs/customizing.md`](../docs/customizing.md), or run `/customize` in
 Claude Code from the repo root.

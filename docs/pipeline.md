@@ -46,9 +46,11 @@ happening mid-run, and stop early without losing anything.
 
 ![Overview of the demo pipeline stages.](../static/harness-diagram.png)
 
-**Build.** The target's `Dockerfile` is built into an ASan-instrumented image
-the first time you run a scan against it. The same image is reused for find, grade,
-and re-attack, so every agent sees the same code in the same environment.
+**Build.** The target's `Dockerfile` is built into a detector-instrumented image
+the first time you run a scan against it (the detector is profile-dependent: ASan
+for the cpp base; Miri/sanitizer/panic/hang for rust). The same image is reused
+for find, grade, and re-attack, so every agent sees the same code in the same
+environment.
 
 **Recon** (optional). An agent reads the source tree and proposes a partition
 of the attack surface (*"here are 8 distinct parsers worth attacking
@@ -59,13 +61,16 @@ in the target's `config.yaml`.
 
 **Find.** The core part of the loop. Each run gets one agent in its own 
 network-isolated container. The agent reads the source, crafts malformed inputs, 
-and runs the ASan binary until an input crashes 3 out of 3 times. It outputs
+and runs the detector-instrumented binary until an input crashes 3 out of 3 times
+(the detector is profile-dependent: ASan for cpp; Miri/sanitizer/panic/hang for
+rust). It outputs
 the crashing input file (not a written report). Parallel find agents share a 
 `found_bugs.jsonl` log and must justify why their addition is not a duplicate 
 of something already listed before adding to it.
 
 **Grade.** A second agent in a fresh container re-runs the PoC and checks that the 
-crash is real (i.e., it reproduces, it's in project code, and it isn't just memory 
+crash is real (i.e., it reproduces under the profile's detector — ASan for cpp,
+Miri/sanitizer/panic/hang for rust — it's in project code, and it isn't just memory 
 exhaustion). The only thing that crosses from the find container to the grader is 
 the PoC bytes, so the grader isn't influenced by the find agent's reasoning. 
 Flaky-but-real crashes (races, heap-layout-dependent) can pass this step, though
@@ -91,7 +96,7 @@ The `--novelty` modifier (off by default) lets the orchestrator check the upstre
 git history so the report can include whether the bug has already been fixed there.
 
 **Dedup.** A separate command that can be run post-hoc to cluster the pipeline
-results by ASan signature. It's useful for a quick summary of "these N crashes
+results by detector signature (ASan for cpp; Miri/panic/hang for rust). It's useful for a quick summary of "these N crashes
 cluster into M signatures".
 
 **Patch.** A separate command that generates a candidate patch for each unique

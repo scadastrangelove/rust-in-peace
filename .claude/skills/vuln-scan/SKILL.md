@@ -50,7 +50,10 @@ shell interpreter.
 - `--extra <file>` — append the contents of `<file>` to the review brief
   (after the category list). Use to add org-specific vulnerability classes,
   compliance checks, or stack-specific patterns. Plain text; same shape as
-  the category blocks below.
+  the category blocks below. **For a Rust target this is the canonical
+  invocation:** `--extra profiles/rust/scan-extras.txt` adds the Rust vuln
+  classes (unsafe/FFI, panic-DoS, deserialization-trust, Send/Sync
+  soundness), then triage with `--fp-rules profiles/rust/fp-rules.txt`.
 - `--no-score` — skip the Step 3b confidence pass (saves a round of
   subagents). Findings keep the scanner's self-reported confidence only.
 
@@ -99,12 +102,21 @@ step does the rigorous verification; your job is to not miss things.
 
 WHAT TO LOOK FOR:
 
-  MEMORY SAFETY (C/C++ and unsafe/FFI blocks) — HIGH VALUE:
+  MEMORY SAFETY (C/C++, and Rust `unsafe`/FFI blocks equally) — HIGH VALUE:
   - heap-buffer-overflow / stack-buffer-overflow / global-buffer-overflow
   - heap-use-after-free / double-free
   - integer overflow feeding an allocation or index
   - format-string bugs
   - unbounded recursion or allocation driven by untrusted size fields
+  - Rust unsafe/FFI: unchecked pointer/slice from untrusted offsets or lengths,
+    unsound transmute, broken FFI ABI/lifetime assumptions
+
+  RUST-NATIVE — HIGH VALUE:
+  - panic-DoS: untrusted input reaching panic/unwrap/expect/slice-index/arithmetic
+  - deserialization-trust: integrity/checksum treated as a bounds guarantee;
+    untrusted structured input feeding unchecked offsets or counts
+  - Send/Sync + panic-safety soundness: unsound Send/Sync impls, data races,
+    broken invariants across an unwind boundary
 
   INJECTION & CODE EXECUTION — HIGH VALUE:
   - SQL / command / LDAP / XPath / NoSQL / template injection
@@ -262,7 +274,10 @@ Tell the user:
 1. Counts: N findings (H/M/L split, X low-confidence), across K focus
    areas, from M source files.
 2. Top 3 by confidence, one line each.
-3. Next step: `> /triage <target-dir>/VULN-FINDINGS.json --repo <target-dir>`
+3. Next step: `> /triage <target-dir>/VULN-FINDINGS.json --repo <target-dir>`.
+   If the target is Rust, hand back the profile-aware pair: this scan should
+   have run with `--extra profiles/rust/scan-extras.txt`, and triage should
+   carry `--fp-rules profiles/rust/fp-rules.txt`.
 4. Remind: these are **static candidates**, not verified. For
    execution-verified crashes, `vuln-pipeline run <target>` (README Step 2).
 
@@ -289,3 +304,8 @@ exclusions, per-finding confidence pass, and
 `exploit_scenario`/`recommendation` output fields are adapted from
 [`anthropics/claude-code-security-review`](https://github.com/anthropics/claude-code-security-review)'s
 `/security-review` command.
+
+This fork adds a first-class **`rust` profile**: `profiles/rust/scan-extras.txt`
+is the maintained `--extra` brief that extends the category menu with the
+Rust-native vuln classes (unsafe/FFI, panic-DoS, deserialization-trust,
+Send/Sync soundness), paired with `profiles/rust/fp-rules.txt` for triage.

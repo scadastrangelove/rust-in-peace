@@ -36,10 +36,15 @@ Your target's `config.yaml` needs a `build_command` and optionally a
 with this repo already have these.
 
 ```bash
-# After a pipeline run has produced results/<target>/<ts>/
+# After a pipeline run has produced results/<target>/<ts>/, patch its crashes.
+# For rust, run the demo target first, then patch what it found:
+bin/vp-sandboxed run   rust-canary --model <model> --stream
+bin/vp-sandboxed patch results/rust-canary/<ts>/ --model <model>
+
+# For any target, patch an existing results directory directly:
 bin/vp-sandboxed patch results/<target>/<ts>/ --model <model>
 
-# Or try it standalone on the pre-baked canary fixture (no pipeline run needed)
+# Or try it standalone on the pre-baked cpp canary fixture (no pipeline run needed)
 bin/vp-sandboxed patch targets/canary/fixtures/results_sample --model <model>
 ```
 
@@ -52,7 +57,8 @@ iteration.
 
 A patch agent runs in a sandboxed container (see 
 [agent-sandbox.md](agent-sandbox.md) for details) with the source, the
-proof of concept, the reproduction command, and the ASan trace. Its prompt
+proof of concept, the reproduction command, and the sanitizer/detector trace
+(ASan for the cpp base; Miri/panic output for rust). Its prompt
 pushes it to fix the root cause rather than narrowly address the crash site,
 to look for sibling call sites with the same bug, and to keep the diff as 
 minimal as possible.
@@ -63,9 +69,9 @@ The grader never sees the patch agent's reasoning, so it can't be talked into
 approving a bad fix. It applies the diff and climbs the verification ladder
 described below, stopping if any tier fails.
 
-If a tier fails, the evidence of the failure (e.g., compiler error, ASan trace)
-goes into the next attempt's prompt, and the patch loop runs again, up to
-`--max-iterations` times.
+If a tier fails, the evidence of the failure (e.g., compiler error,
+sanitizer/detector trace) goes into the next attempt's prompt, and the patch
+loop runs again, up to `--max-iterations` times.
 
 ## The verification ladder
 
@@ -80,24 +86,32 @@ review the patch's style, but it is only advisory.
 | Tier          | Question                             | Oracle                                                              | Field in `patch_result.json` |
 |---------------|--------------------------------------|---------------------------------------------------------------------|------------------------------|
 | **Build**     | Does the patched tree compile?       | `git apply` + `build_command` exit code                             | `t0_builds`                  |
-| **Reproduce** | Is the original crash gone?          | Exit 0 AND no `AddressSanitizer:` in output                         | `t1_poc_stops`               |
+| **Reproduce** | Is the original crash gone?          | Exit 0 AND no detector trip in output (no `AddressSanitizer:` for the cpp base; no Miri/panic trip for rust) | `t1_poc_stops`               |
 | **Regress**   | Did it break existing behavior?      | `test_command` exit code (skipped if none)                          | `t2_tests_pass`              |
-| **Re-attack** | Root cause gone, or just this input? | A fresh 50-turn find-agent attacks the patched binary; ASan decides | `re_attack_clean`            |
+| **Re-attack** | Root cause gone, or just this input? | A fresh 50-turn find-agent attacks the patched binary; the profile's detector decides (ASan for cpp; Miri/panic/hang for rust) | `re_attack_clean`            |
 | **Style**     | Would a maintainer accept it?        | LLM judge 0-10; **advisory only, never gates**                      | `t3_style_score`             |
 
 A patch passes when build, reproduce, regress (or no suite), and re-attack are
 all clean.
 
 **Why re-attack?** A patch that compiles and stops the specific PoC is
-generally easy. Published evals of model-generated security patches
-show ~60% succeed on build-and-reproduce checks, but <15% survive
-fuzzing and differential testing. The dominant failure mode is a bounds check
+generally easy. The dominant failure mode is a bounds check
 at the crash site that leaves the bad value reachable from a slightly different 
-input. The re-attack step guards against that failure mode.
+input. A patch can pass build-and-reproduce and still leave the root cause
+reachable from a variant input. The re-attack step guards against that failure
+mode.
 
 > Treat a re-attack pass as helpful signal, but not "root cause proven fixed." 
 > It discriminates well when a bypass input is constructible within 50 turns, but
 > can miss wrong-layer fixes whose bypass inputs are harder to construct.
+
+> **Not the same as the standalone `reattack` bridge.** This ladder tier is a
+> narrow, in-loop guard: a fresh find-agent hammers *this one patched binary* for
+> up to 50 turns as a pass/fail gate on the diff. It is distinct from — and much
+> narrower than — the fork's headline find→fuzz `reattack` bridge
+> (`vuln-pipeline reattack`, gated by `scorecard`), which turns graded findings
+> into reproducing cargo-fuzz harnesses across a results directory. See
+> [pipeline.md](pipeline.md) for that bridge.
 
 ## Reviewing generated patches
 
@@ -128,7 +142,8 @@ a minimal diff, but its idea of minimal is anchored to the finding it just
 reasoned through. A fresh-context pass asked only to *"simplify to the
 smallest change that fixes the root cause"* reliably trims the diff.
 
-> ⚠️ The patch agent's prompt reads target-derived data (the ASan trace, the
+> ⚠️ The patch agent's prompt reads target-derived data (the sanitizer/detector
+> trace — ASan for cpp, Miri/panic output for rust — the
 > exploitability report, and on retry the build / test output). The pipeline fences
 > those with per-call random delimiters and instructs the agent to treat them
 > as data, not instructions. But prompt-level fencing is a mitigation, not a
@@ -208,8 +223,9 @@ following workflow:
    migration plan: which pattern is unsafe, what the safe replacement is, 
    and where the call sites are.
 2. **Turn the plan into tests.** Write one test per call site that fails now
-   and passes once that call site is migrated. This suite plays the role ASan
-   plays in the pipeline, i.e., the check that decides when you're done.
+   and passes once that call site is migrated. This suite plays the role the
+   pipeline's detector plays (ASan for cpp, Miri/panic for rust), i.e., the
+   check that decides when you're done.
 3. **Split into tickets.** Group the tests into chunks that can be merged
    independently, each small enough to review.
 4. **Patch in parallel.** Spin up one worker subagent per ticket, in its own 

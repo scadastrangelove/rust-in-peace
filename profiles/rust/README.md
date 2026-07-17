@@ -8,7 +8,7 @@ auditing a production Rust parser: the bugs that matter in Rust concentrate in
 
 The pipeline's shape is unchanged — *an agent crafts an input, a detector fires,
 verifiers check, an analyst assesses exploitability.* Only the swappable nouns
-change: **detector** (ASAN → Miri + `-Zsanitizer=address` + panic/abort + hang),
+change: **detector** (ASan → Miri + `-Zsanitizer=address` + panic/abort + hang),
 **bug taxonomy**, and **crash signatures**.
 
 ## Capability-gated checks — [`capabilities.md`](capabilities.md)
@@ -41,14 +41,19 @@ plain-text files here:
   memory safety, panic-DoS, deserialization/parser trust, release-only behavior,
   and the Rust-specific DO-NOT-REPORT list. Emphasizes stating the **trust
   boundary** (attacker- vs operator-controlled input) for every finding.
-- **`fp-rules.txt`** appends 10 Rust false-positive precedents (**R1–R10**) to the
+- **`fp-rules.txt`** appends 11 Rust false-positive precedents (**R1–R11**) to the
   triage verifier — most importantly **R1** (an unsafe read bounded by a checked
   invariant is a FP; trace the invariant) and **R2** (operator-only /
   trusted-by-construction inputs are latent hardening, not live vulns), which
-  encode the two mistakes that dominate naive Rust audits. **R8–R10** add the
+  encode the two mistakes that dominate naive Rust audits. **R8–R11** add the
   reverse calibration from real RustSec incidents (soundness ≠ security but both
   count; "we don't call that path" is not a FP; panic-safety is memory-safety in
-  unsafe code) so the verifier doesn't over-prune.
+  unsafe code; and **R11** — a real-but-unlabeled bug found on a fixed variant is a
+  `real_latent` WIN, never counted against precision, the reason rust-mizan's true
+  precision was ~100% not the naive 84%) so the verifier doesn't over-prune. It also
+  carries the labeled-corpus triage machinery: a per-finding **DISPOSITION** schema
+  (`same_as_seeded | real_latent | false_positive | contested`), the **union-of-N**
+  vote model that surfaces `contested` findings, and the five-number **scorecard**.
 
 These need no Docker and no code execution. This is the recommended starting
 point and, for many teams, sufficient on its own.
@@ -104,7 +109,7 @@ entry in `harness/profiles.py`. The generic orchestration doesn't change.
 
 ## Detectors
 
-The four the base pipeline's ASAN slot maps onto (fast → thorough), plus
+The four the base pipeline's ASan slot maps onto (fast → thorough), plus
 cargo-fuzz as a per-target reachability harness:
 
 | Detector | Catches | Cost |

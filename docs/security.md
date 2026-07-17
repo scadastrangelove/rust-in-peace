@@ -23,12 +23,11 @@ restrictions. This is what makes them effective vulnerability hunters.
 However, it also makes them capable of taking unexpected actions against 
 their own execution environments. See the
 [blog post's sandbox section](https://claude.com/blog/using-llms-to-secure-source-code) for
-examples of where teams have seen this in the wild.
+examples observed in the wild.
 
-The lesson we've learned from our work is that models will use whatever
-capabilities they actually have access to, not necessarily just what you
-tell them they have. For that reason, **constraints must be enforced in code,
-not in prompts.**
+Models will use whatever capabilities they actually have access to, not just
+what you tell them they have. For that reason, **constraints must be enforced
+in code, not in prompts.**
 
 This repo does that for you. Every agent runs inside a gVisor container
 with network egress limited to the Claude API (as described in 
@@ -83,8 +82,9 @@ See [agent-sandbox.md](agent-sandbox.md) for more details on this setup.
 To minimize the risk of prompt injection attacks, don't give the agents 
 untrusted skills, plugins, or MCP servers from the internet.
 
-The pipeline's own agents also read target-derived data: ASan traces (which
-contain function names and file paths from the target's symbol table),
+The pipeline's own agents also read target-derived data: sanitizer/detector
+traces (ASan, Miri, panic backtraces — which contain function names and file
+paths from the target's symbol table),
 exploitability reports, and build/test output. A malicious target author
 could in principle embed instructions in those strings. The find and report
 agents have limited blast radius. They run inside a gVisor container on an

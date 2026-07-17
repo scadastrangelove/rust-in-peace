@@ -597,6 +597,17 @@ vuln-pipeline run drlibs --runs 3 --parallel --stream --model <m>
 Expected: delegates to `vuln-pipeline patch`, surfaces
 `verified: "ladder_passed"` per bug, copies diffs into `./PATCHES/`.
 
+Rust profile (the rust-first path — the re-attack ladder runs the
+`run_detectors.sh` multi-detector oracle, not ASan alone):
+
+```
+vuln-pipeline run rust-canary --runs 3 --parallel --stream --model <m>
+/patch results/rust-canary/<ts>/ --model <m>
+```
+
+Expected: same delegation, `verified: "ladder_passed"` per confirmed
+OOB-read / panic-DoS / hang-DoS bug, diffs copied into `./PATCHES/`.
+
 ---
 
 ## Design notes

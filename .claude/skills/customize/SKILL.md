@@ -1,13 +1,13 @@
 ---
 name: customize
-description: Adapt this C/C++ ASAN vulnerability pipeline to a different vulnerability class, target shape, language, or detection mechanism. Use when the user wants to port, migrate, retarget, customize, or fork the pipeline for something other than C/C++ memory-safety bugs — web apps, smart contracts, deserialization, ML systems, or any other domain.
+description: Adapt this profile-based vulnerability pipeline to a different vulnerability class, target shape, language, or detection mechanism. It ships a first-class `rust` profile plus a retained C/C++ + ASan base, resolved via a target's `profile:` field. Use when the user wants to port, migrate, retarget, customize, or fork the pipeline for a new domain — web apps, smart contracts, deserialization, ML systems, or another language. Adapting usually means ADDING a profile, not rewriting the base.
 ---
 
 # Customize the vuln-pipeline
 
-This pipeline ships as an opinionated C/C++ + AddressSanitizer demo. Its real shape is more general: **an agent crafts an input, runs a target in a sandbox, a detector fires, a second agent verifies, a third agent analyses exploitability.** Every noun in that sentence can be swapped. Your job is to interview the user, figure out which nouns they want to swap, and rewrite the relevant files.
+This pipeline is **profile-based**: a target's `profile:` field (resolved by `harness/profiles.py`) selects the language-specific prompts and detector. Two profiles ship today — a first-class `rust` profile (`harness/rust/` + `profiles/rust/`) and the retained C/C++ + AddressSanitizer base (`harness/prompts/`). Its real shape is more general: **an agent crafts an input, runs a target in a sandbox, a detector fires, a second agent verifies, a third agent analyses exploitability.** Every noun in that sentence can be swapped. Your job is to interview the user, figure out which nouns they want to swap, and — usually — **add a new profile** rather than rewrite an existing one.
 
-The existing C/C++ code is the worked example. You don't need a playbook for each domain — read what's there, understand what's generic vs. ASAN-specific, and adapt.
+The `rust` profile is the worked reference for "how a second profile is added": `harness/rust/` holds its find/grade/judge/report/patch prompts and detector, `profiles/rust/` holds its scan-extras, fp-rules, and capability inventory, and `harness/profiles.py` registers it as a `Profile` entry alongside `cpp`. Read that pair before adapting — it shows exactly which files a profile owns and how the registry wires them in. You don't need a playbook for each domain; understand what's generic vs. profile-specific, and follow the `rust` pattern.
 
 ## STEP 1 — Read the pipeline (do this BEFORE asking anything)
 
@@ -23,7 +23,9 @@ Skim these files so your questions are grounded:
 - `harness/asan.py` — stack-trace parser for dedup/judge signatures; ASAN-specific regex
 - `harness/artifacts.py` — `CrashArtifact`, `GraderVerdict`, `JudgeVerdict`, `ReportVerdict` data contracts
 - `harness/config.py`, `targets/drlibs/config.yaml` — target config schema
-- `targets/README.md` — how a target directory is structured (Dockerfile + config.yaml + entry wrapper)
+- `harness/profiles.py` — **the extension mechanism**: the `Profile` dataclass, the `cpp`/`rust` registry, and `profile_for()` resolution keyed on a target's `profile:` field. Adding a domain is usually adding a `Profile` here.
+- `harness/rust/` + `profiles/rust/` — **the worked second-profile reference**: what a profile owns (find/grade/judge/report/patch prompts + detector under `harness/rust/`; scan-extras, fp-rules, capability inventory under `profiles/rust/`) and how `capabilities.json`-style routing turns specialized checks on per target. Read this before adding a new profile.
+- `targets/README.md` — how a target directory is structured (Dockerfile + config.yaml + entry wrapper); `targets/rust-canary/` is the rust-profile worked example
 
 You don't need `agent.py`, `docker_ops.py`, `recon.py`, `judge.py`, or `novelty.py` in detail — they're generic plumbing (judge/novelty domain-specificity lives in the prompts and the asan parser, not the flow).
 
@@ -57,7 +59,7 @@ Parse their round-1 answers against the **axes of variation** below. For each ax
 - **Grading criteria** — "What makes a finding high-quality vs. low-quality in this domain?"
 - **Exploitability analysis** — "What sections should a report contain?" The C/C++ report has primitive · reachability · heap layout · escalation path · constraints. A web-vuln report might want injection vector · auth bypass · data exposure · chaining potential. Ask what they need, or whether they want the report stage at all.
 - **Novelty/upstream check** — "Should the pipeline check if a finding is already fixed upstream?" The C/C++ version shallow-clones the target's GitHub and checks `git log <commit>..HEAD -- <crash_file>`. Only applies if targets have a canonical upstream and a sensible "crashing file" to key on — many domains won't.
-- **Scope** — "Replace the C/C++ support entirely, or keep it alongside the new domain via a profile system?"
+- **Scope** — the default is **add-alongside via a new profile**: the profile system already exists (`harness/profiles.py`), and the `rust` profile is the proven pattern for it, so a new domain becomes another `Profile` entry with the base profiles untouched. Only ask whether they instead want to *replace* the base outright — that's the unusual case.
 
 Keep going until you can fill in every row of the architecture map in STEP 3. If an answer is vague, ask a narrower follow-up rather than guessing.
 
@@ -65,7 +67,7 @@ Keep going until you can fill in every row of the architecture map in STEP 3. If
 
 These are the dimensions along which customers might want to deviate from the C/C++ demo. Use this list to spot gaps in the user's description and generate follow-up questions — do **not** present it as a menu.
 
-**Vulnerability class:** memory safety · web/API (SQLi, XSS, SSRF, XXE, path traversal, IDOR) · deserialization RCE · logic/race (TOCTOU, privilege escalation) · crypto (weak RNG, timing, nonce reuse) · DoS (ReDoS, hash flooding) · smart contracts (reentrancy, access control, front-running) · ML/AI (prompt injection, jailbreaks, data extraction) · protocol parsing
+**Vulnerability class:** memory safety · Rust-native (unsafe/FFI memory safety, panic-DoS, deserialization-trust, Send/Sync soundness) · web/API (SQLi, XSS, SSRF, XXE, path traversal, IDOR) · deserialization RCE · logic/race (TOCTOU, privilege escalation) · crypto (weak RNG, timing, nonce reuse) · DoS (ReDoS, hash flooding) · smart contracts (reentrancy, access control, front-running) · ML/AI (prompt injection, jailbreaks, data extraction) · protocol parsing
 
 **Target shape:** CLI binary + file · HTTP service · library via test harness · network daemon · smart contract · browser extension · mobile app
 
@@ -125,9 +127,13 @@ Edit the files per the approved plan. Work through them in dependency order: pro
 
 ## STEP 5 — Validate
 
+The `rust` profile's `targets/rust-canary/` is the reference validation target — mirror its shape (planted bugs of the new class, a `run_detectors.sh` oracle, a `THREAT_MODEL.md`) for the new profile.
+
 1. Add a canary target under `targets/<domain>-canary/` with 2–3 planted bugs of the new class
 2. Run: `bin/vp-sandboxed run <domain>-canary --model <model-id> --runs 3 --parallel --stream --max-turns 50` (use Claude Opus unless the user specifies a different model). Run `./scripts/setup_sandbox.sh` once first if the sandbox isn't already set up.
 3. Confirm all planted bugs are found and graded PASS
 4. Confirm judge triage worked: `cat results/<domain>-canary/<ts>/reports/judge_log.jsonl` — expect one NEW per distinct bug, DUP_SKIP for repeats
 5. Confirm reports landed: `ls results/<domain>-canary/<ts>/reports/bug_*/report.json` and spot-check section scores
 6. Run `vuln-pipeline dedup results/<domain>-canary/` and confirm signatures group correctly
+7. If the profile has a find→fuzz bridge, run `vuln-pipeline reattack results/<domain>-canary/<ts>/` and confirm static findings promote into reproducing harnesses (the `rust` profile turns them into cargo-fuzz/Miri harnesses)
+8. Run `vuln-pipeline scorecard results/<domain>-canary/<ts>/` and confirm the discipline gate passes — no clean result without a recorded residual reason

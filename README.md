@@ -178,15 +178,15 @@ claude
 
 ## Ramp Up
 
-Security teams that get hands-on fastest tend to get the most out of a pipeline
-like this. It's tempting to spend months designing the perfect pipeline, but it's
+The fastest way in is to run `/quickstart` on `rust-canary` and read the scorecard
+it produces. It's tempting to spend months designing the perfect pipeline, but it's
 better to start small on Day 1 and build from there as learnings come. The steps
 below follow that pattern at an ambitious but reasonable pace.
 
 |                                                                                     |              |                                                              |
 |-------------------------------------------------------------------------------------|--------------|--------------------------------------------------------------|
 | [Step 1](#step-1-day-1-build-a-threat-model-and-run-your-first-static-scan--triage) | **Day 1**    | Build a threat model and run your first static scan + triage |
-| [Step 2](#step-2-day-2-run-the-autonomous-pipeline-on-a-target)                     | **Day 2**    | Run the autonomous pipeline on a target (Rust or C/C++)      | 
+| [Step 2](#step-2-day-2-run-the-autonomous-pipeline-on-a-target)                     | **Day 2**    | Run the autonomous pipeline on a Rust crate — or the retained cpp base on a C/C++ library | 
 | [Step 3](#step-3-days-3-5-customize-the-pipeline-for-your-target)                   | **Days 3-5** | Customize the pipeline for your target                       |
 | [Step 4](#step-4-week-2-start-autonomous-scanning-triage-and-patching)              | **Week 2**   | Start autonomous scanning, triage, and patching              | 
 
@@ -423,8 +423,8 @@ ranking which are the most important to scan (e.g., based on their exposure,
 history of CVEs, business-criticality), then working through scanning the
 list in priority order.
 2. Setting up bespoke infrastructure for scanning to move scans off of laptops
-or one-off VMs. The most successful teams resist the urge to build the perfect
-scanning platform before scaling up.
+or one-off VMs. Lean on the scorecard and vote-budget guardrails this repo ships
+to keep runs honest as you scale up, rather than blocking on a perfect platform first.
 3. Incorporating scans into their SDLC. Some teams have set up recurring scans 
 (e.g., daily, weekly) or have added scanning into their CI pipelines.
 4. Testing and experimenting with the models to find what works best for them.

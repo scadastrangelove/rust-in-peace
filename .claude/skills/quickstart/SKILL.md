@@ -33,14 +33,17 @@ Say roughly:
 
 > **Welcome!** This repo takes you from finding your first vulnerability to
 > patching at scale, using a set of Claude Code skills and an autonomous
-> pipeline. Two ways in: **interactive skills** (no setup, safe, start here)
+> pipeline. It's **rust-first** — the headline is the `rust` profile
+> (Miri/panic/hang detectors + cargo-fuzz, capability-routed fuzzing,
+> find→fuzz reattack, the scorecard) — with a fully retained C/C++ + ASan
+> base. Two ways in: **interactive skills** (no setup, safe, start here)
 > and the **autonomous pipeline** (Docker, scales to hundreds of parallel
 > agents).
 >
 > The ramp-up:
 >
 > | Day 1   | Threat-model + first static scan + triage |
-> | Day 2   | Run the reference pipeline (C/C++)              |
+> | Day 2   | Run the reference pipeline (rust-canary; cpp base also available) |
 > | Day 3-4 | Customize it for your stack               |
 > | Week 2  | Autonomous scanning, triage, and patching |
 >
@@ -59,19 +62,26 @@ Then **AskUserQuestion** with three options:
 
 ### Guided first run
 
-Runs the three Step-1 skills on `targets/canary`, pausing after each to show
-what landed on disk. These only read/write files in the repo; no sandbox
-needed.
+Runs the three Step-1 skills on `targets/rust-canary` (the rust-first
+default), pausing after each to show what landed on disk. These only
+read/write files in the repo; no sandbox needed. Prefer rust-canary; offer
+`targets/canary` (the cpp base) if the operator's stack is C/C++.
 
-1. `/threat-model bootstrap targets/canary` via Task. When done, open
-   `THREAT_MODEL.md`, show the focus areas, explain in 2-3 sentences how
-   this steers the scan.
-2. `/vuln-scan targets/canary` via Task. When done, open
-   `targets/canary/VULN-FINDINGS.md`, summarize the count and top 2-3
-   findings, point at `VULN-FINDINGS.json`.
-3. `/triage targets/canary/VULN-FINDINGS.json` via Task. When done, open
-   `TRIAGE.md`, explain what changed vs. raw findings (verified, deduped,
-   re-ranked).
+1. `/threat-model bootstrap targets/rust-canary` via Task. When done, open
+   `targets/rust-canary/THREAT_MODEL.md`, show the focus areas, explain in
+   2-3 sentences how this steers the scan.
+2. `/vuln-scan targets/rust-canary/crate --extra profiles/rust/scan-extras.txt`
+   via Task (the canonical rust invocation — `scan-extras.txt` adds the
+   Rust vuln classes to the brief). When done, open
+   `targets/rust-canary/crate/VULN-FINDINGS.md`, summarize the count and top
+   2-3 findings, point at `VULN-FINDINGS.json`.
+3. `/triage targets/rust-canary/crate/VULN-FINDINGS.json --repo targets/rust-canary/crate --fp-rules profiles/rust/fp-rules.txt`
+   via Task (`fp-rules.txt` carries the R1–R11 rust precedents). When done,
+   open `TRIAGE.md`, explain what changed vs. raw findings (verified,
+   deduped, re-ranked).
+
+   For the cpp base instead, drop the `--extra`/`--fp-rules` files and point
+   at `targets/canary`.
 
 Pause for the operator between each (AskUserQuestion); don't barrel through.
 Close with a one-line recap of the three artifacts on disk, then point at
@@ -93,7 +103,11 @@ Don't answer from general knowledge when the repo has a specific answer.
 |---------------------------------|-----------------------------------------|------------|
 | running the pipeline             | `docs/pipeline.md`, README Step 2        | the `recon` / `run` command |
 | too many findings, triage       | `docs/triage.md`                        | `/triage <path>` |
-| porting, Java/Go/Rust/etc.      | `docs/customizing.md`, README Step 3    | `/customize` |
+| the rust profile, rust-canary   | `profiles/rust/README.md`               | run `rust-canary` |
+| capability routing, which checks run | `profiles/rust/capabilities.md`    | cite the capability→check map |
+| reattack, find→fuzz, promoting findings | `profiles/rust/find-to-fuzz.md` | `vuln-pipeline reattack <results>` |
+| scorecard, discipline gate, union-of-N | `profiles/rust/README.md`, README Step 2 | `vuln-pipeline scorecard <results>` |
+| porting, adding a profile, Java/Go/etc. | `docs/customizing.md`, README Step 3 | `/customize` |
 | safety, sandbox, Docker         | `docs/security.md`                      | cite; no action |
 | rate limits, 429, token budget  | `docs/pipeline.md`: Rate limits, `docs/troubleshooting.md#rate-limits` | cite the numbers |
 | duplicates, dedup               | `docs/troubleshooting.md#duplicate-findings` | `known_bugs:` hint |

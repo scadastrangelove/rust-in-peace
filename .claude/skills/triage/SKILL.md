@@ -46,9 +46,12 @@ not stable across runtimes):
   Verification needs source access; the skill stops with an error if the
   cited files aren't reachable.
 - `--fp-rules FILE`: append the contents of FILE to the verifier's
-  exclusion-rule list (Phase 3a). Use for org-specific precedents: "we use
-  Prisma ORM everywhere — raw-query SQLi only", "k8s resource limits cover
-  DoS", etc. Plain text, one rule per line or paragraph.
+  exclusion-rule list (Phase 3a). For a Rust target the primary choice is
+  `profiles/rust/fp-rules.txt` — the rust profile's R1–R11 precedents
+  (invariant-protected unsafe reads, integrity≠bounds, real-but-unlabeled).
+  Also use for org-specific precedents: "we use Prisma ORM everywhere —
+  raw-query SQLi only", "k8s resource limits cover DoS", etc. Plain text,
+  one rule per line or paragraph.
 - `--fresh`: ignore any existing checkpoint in `./.triage-state/` and start
   from Phase 0. Without this flag the skill resumes from the last completed
   phase if a checkpoint is present.
@@ -966,6 +969,18 @@ Or against pipeline output:
 vuln-pipeline run drlibs --runs 3 --parallel --stream
 /triage results/drlibs/<ts>/ --repo targets/drlibs
 ```
+
+Rust profile (the rust-first path — `--fp-rules` loads the R1–R11
+precedents):
+
+```
+vuln-pipeline run rust-canary --runs 3 --parallel --stream
+/triage results/rust-canary/<ts>/ --repo targets/rust-canary --fp-rules profiles/rust/fp-rules.txt
+```
+
+Expect the planted OOB-read / panic-DoS / hang-DoS bugs confirmed and the
+`first_byte_checked` path dropped (its `unsafe` read is invariant-bounded — a
+rule from `profiles/rust/fp-rules.txt`).
 
 Hand-check a sample of TRUE_POSITIVE/HIGH results (the `first_links` should
 point at real call sites) and a sample of FALSE_POSITIVE rejects (the
