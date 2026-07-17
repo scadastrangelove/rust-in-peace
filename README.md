@@ -1,3 +1,7 @@
+<p align="center">
+  <img src="static/rust-in-peace-logo.jpg" alt="rust-in-peace — autonomous security review · recon · find · triage · patch" width="440">
+</p>
+
 # rust-in-peace 🦀🤘
 
 **Agentic security review for Rust.** An autonomous
