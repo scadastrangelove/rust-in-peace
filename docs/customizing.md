@@ -1,9 +1,11 @@
 # Customizing the pipeline
 
-Out of the box, the reference pipeline is set up for finding memory bugs in
-C/C++ code, using ASAN as the crash detector. But, the pipeline's overall shape
-is more general, and working with other languages or bug classes just means
-updating the parts that are specific to C/C++ and ASAN.
+The pipeline ships two worked profiles — `rust` (Miri / ASan / panic / hang +
+cargo-fuzz) and the base `cpp` (ASan) — but its overall shape is general.
+Supporting another language or bug class means adding a profile: a new
+`harness/<lang>/` package and one registry entry, updating only the parts that
+are language- and detector-specific. The `rust` profile in `harness/rust/` is a
+complete worked example of exactly this.
 
 ## Start here
 
@@ -44,7 +46,7 @@ untouched lets you run both and union results.
 
 **`rust` is a complete worked example** of such a port: see
 [`profiles/rust/README.md`](../profiles/rust/README.md), the `harness/rust/`
-package, and the `targets/rust-canary` demo target. It swaps ASAN for a
+package, and the `targets/rust-canary` demo target. It swaps ASan for a
 Miri / sanitizer / panic / hang detector and retargets the whole taxonomy to
 Rust (unsafe/FFI memory safety, panic-DoS, deserialization trust). Read it
 before porting a new language — it shows exactly which pieces are worth forking
@@ -59,9 +61,9 @@ Most likely, porting this pipeline will mean building container images for
 new software stacks. This can be done manually or with your standard processes,
 as long as the end result is that the pipeline agents can inspect and run
 the target code in reproducible containers. When scaling vulnerability-hunting
-across many codebases, we've found it invaluable to delegate *this* task to an 
-agent too: setting up images is tedious, and a sandboxed agent with a 
-frontier model is good at producing fully-working builds.
+across many codebases, delegating *this* task to an agent too is invaluable:
+setting up images is tedious, and a sandboxed agent with a frontier model is
+good at producing fully-working builds.
 
 A great way to iterate and improve on a given port is to use Claude Code to 
 review the transcripts from past runs and suggest improvements to the
@@ -111,5 +113,5 @@ understand your stack, both take a plain-text instructions file:
 `--fp-rules` appends org-specific exclusions to the triage verifier (e.g., "we use Prisma
 everywhere, raw-query SQLi only", "k8s resource limits cover DoS").
 
-If you use these files to tune the skills, we recommend you keep them in version
-control alongside your code.
+If you use these files to tune the skills, keep them in version control
+alongside your code.

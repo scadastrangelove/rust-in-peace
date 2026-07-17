@@ -157,7 +157,7 @@ claude
 
 ## Further Reading
 
-- [**Blog Post**](docs/blog-post.md) · The accompanying blog post with learnings + best practices
+- [**Blog post**](https://claude.com/blog/using-llms-to-secure-source-code) · Anthropic's "Using LLMs to secure source code" — the upstream methodology this fork builds on
 - [**Pipeline**](docs/pipeline.md) · How it works: diagram, stages, CLI flags
 - [**Security**](docs/security.md) · Sandboxing, what not to mount
 - [**Agent sandbox**](docs/agent-sandbox.md) · gVisor isolation + egress allowlist for every agent

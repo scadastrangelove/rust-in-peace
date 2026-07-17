@@ -22,7 +22,7 @@ Frontier models are increasingly good at finding creative paths around
 restrictions. This is what makes them effective vulnerability hunters. 
 However, it also makes them capable of taking unexpected actions against 
 their own execution environments. See the
-[blog post's sandbox section](blog-post.md#2-sandbox-run-agents-safely-and-verify-exploitability) for
+[blog post's sandbox section](https://claude.com/blog/using-llms-to-secure-source-code) for
 examples of where teams have seen this in the wild.
 
 The lesson we've learned from our work is that models will use whatever
@@ -61,7 +61,7 @@ start outside that sandbox unless you explicitly pass `--dangerously-no-sandbox`
 ## Separating setup and attack phases
 
 The general pattern (described in the
-[blog post](blog-post.md#2-sandbox-run-agents-safely-and-verify-exploitability))
+[blog post](https://claude.com/blog/using-llms-to-secure-source-code))
 is to do everything that needs the internet first (pull dependencies, install
 tools, etc.), freeze the result, and give the attack phase no egress route
 except to the model API.
@@ -83,7 +83,7 @@ See [agent-sandbox.md](agent-sandbox.md) for more details on this setup.
 To minimize the risk of prompt injection attacks, don't give the agents 
 untrusted skills, plugins, or MCP servers from the internet.
 
-The pipeline's own agents also read target-derived data: ASAN traces (which
+The pipeline's own agents also read target-derived data: ASan traces (which
 contain function names and file paths from the target's symbol table),
 exploitability reports, and build/test output. A malicious target author
 could in principle embed instructions in those strings. The find and report

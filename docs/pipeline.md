@@ -1,8 +1,10 @@
-# The reference pipeline: deep dive
+# The pipeline: deep dive
 
-The reference pipeline is an autonomous, multi-agent pipeline for finding memory
-vulnerabilities in C/C++ codebases. This document explains what each stage of
-the pipeline does, how to watch a run, and relevant CLI flags.
+An autonomous, multi-agent pipeline for finding memory-safety, panic, and
+soundness bugs — the `rust` profile (Miri / ASan / panic / hang + cargo-fuzz) is
+the worked default; the retained `cpp` profile finds C/C++ memory bugs with ASan.
+This document explains what each stage does, how to watch a run, and the relevant
+CLI flags.
 
 > ⚠️ **The pipeline spawns autonomous agents and executes target code.** 
 > The pipeline runs each agent inside a gVisor container with egress restricted 
@@ -11,7 +13,7 @@ the pipeline does, how to watch a run, and relevant CLI flags.
 > and [docs/agent-sandbox.md](docs/agent-sandbox.md).
 
 > This document covers how the reference pipeline works. For the general
-> best practices it implements, see the [blog post](blog-post.md).
+> best practices it implements, see the [blog post](https://claude.com/blog/using-llms-to-secure-source-code).
 
 ## Install and first run
 
@@ -21,10 +23,13 @@ python3 -m venv .venv && .venv/bin/pip install -e .
 ./scripts/setup_sandbox.sh   # installs gVisor, builds the agent images, and verifies isolation; note: requires Docker
 export ANTHROPIC_API_KEY=sk-ant-...   # or CLAUDE_CODE_OAUTH_TOKEN, or Bedrock — see docs/agent-sandbox.md
 
-# Run the recon → find → verify → report loop
-bin/vp-sandboxed run drlibs --model <model-id> --runs 3 --parallel --stream --auto-focus
+# Run recon → find(union) → grade → judge → report on the rust demo target
+bin/vp-sandboxed run rust-canary --model <model-id> --parallel --stream --auto-focus --aggregate union
+# find→fuzz: turn graded findings into reproducing harnesses, then gate on the scorecard
+bin/vp-sandboxed reattack results/rust-canary/<timestamp>/ --model <model-id> --aggregate union
+vuln-pipeline scorecard   results/rust-canary/<timestamp>/
 # Generate a candidate patch for each finding
-bin/vp-sandboxed patch results/drlibs/<timestamp>/ --model <model-id>
+bin/vp-sandboxed patch    results/rust-canary/<timestamp>/ --model <model-id>
 ```
 
 Start with a small wave like this one to get a feel for how the pipeline works
@@ -41,7 +46,7 @@ happening mid-run, and stop early without losing anything.
 
 ![Overview of the demo pipeline stages.](../static/harness-diagram.png)
 
-**Build.** The target's `Dockerfile` is built into an ASAN-instrumented image
+**Build.** The target's `Dockerfile` is built into an ASan-instrumented image
 the first time you run a scan against it. The same image is reused for find, grade,
 and re-attack, so every agent sees the same code in the same environment.
 
@@ -54,7 +59,7 @@ in the target's `config.yaml`.
 
 **Find.** The core part of the loop. Each run gets one agent in its own 
 network-isolated container. The agent reads the source, crafts malformed inputs, 
-and runs the ASAN binary until an input crashes 3 out of 3 times. It outputs
+and runs the ASan binary until an input crashes 3 out of 3 times. It outputs
 the crashing input file (not a written report). Parallel find agents share a 
 `found_bugs.jsonl` log and must justify why their addition is not a duplicate 
 of something already listed before adding to it.
@@ -86,7 +91,7 @@ The `--novelty` modifier (off by default) lets the orchestrator check the upstre
 git history so the report can include whether the bug has already been fixed there.
 
 **Dedup.** A separate command that can be run post-hoc to cluster the pipeline
-results by ASAN signature. It's useful for a quick summary of "these N crashes
+results by ASan signature. It's useful for a quick summary of "these N crashes
 cluster into M signatures".
 
 **Patch.** A separate command that generates a candidate patch for each unique
@@ -140,10 +145,10 @@ In short, the essential steps of an effective vulnerability-finding pipeline:
 2. Spin up N agents to search for vulnerabilities.
 3. Grade the findings.
 
-We've found it most effective to break this into modular steps, each of which
-saves its progress durably, and over time we've added more steps like
-de-duplication, report writing, and so on. A Docker container image is a
-great way to store a reusable build artifact and provides an environment in
+The loop is broken into modular steps, each of which saves its progress durably;
+over time it grew more — de-duplication, the find→fuzz bridge, the scorecard,
+report writing, and so on. A Docker container image is a great way to store a
+reusable build artifact and provides an environment in
 which exploits can be attempted safely. Vulnerability-finding agents should
 store their results in a standard format which can be verified by graders.
 These agents can decide their own exploration path from the beginning, or you
@@ -172,7 +177,7 @@ so the agent can continue from the failed turn. This repeats up to 20 times
 before the run is marked as failed. Even then, you can restart the run 
 using `bin/vp-sandboxed run <target> --resume <results-dir>`.
 
-We recommend carrying over similar logic if you build your own pipeline.
+Carry over similar logic if you build your own pipeline.
 
 ## Usage marker
 
