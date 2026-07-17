@@ -1,0 +1,10 @@
+{
+  "capabilities": {
+    "untrusted_deserialization": {"present": "yes", "evidence": "parse_vulnerable(&[u8]) hand-rolled record parser"},
+    "network_protocol_parser":   {"present": "yes", "evidence": "MAGIC + count + length-prefixed record envelope"},
+    "inbound_c_abi":             {"present": "no",  "evidence": "no extern \"C\"/#[no_mangle]"},
+    "concurrency_async":         {"present": "no",  "evidence": "single-threaded pure lib"},
+    "unsafe_trait_trust":        {"present": "no",  "evidence": "no unsafe in the parser crate"}
+  },
+  "reachable_from_public_api": {"present": "yes", "evidence": "parse_vulnerable is a pub fn"}
+}
