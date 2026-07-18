@@ -1,0 +1,8 @@
+# Candidate path: a hostile app launches the exported ExportedForwardActivity
+# with a VIEW intent whose data URI it controls; onCreate re-dispatches that URI
+# via startActivity with no allowlist. Expect: WITNESS (contested -> promotable).
+#
+# The oracle re-derives the exported flag, the (absent) permission gate, and the
+# smali getData/startActivity line refs itself — these two lines are all it reads.
+class: android:exported-activity-launch
+entry: com.canary.app.ExportedForwardActivity

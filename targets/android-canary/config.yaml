@@ -1,0 +1,51 @@
+# android-app profile canary target. Uses the standard TargetConfig schema
+# (harness/config.py). `profile: android-app` selects the android find prompt
+# (harness/android_app/find_prompt.py), the reachability-witness detector
+# (harness/android_app/detect.py), and the android capability gates
+# (harness/capabilities.py §A*). It is the android analog of targets/rust-canary:
+# a self-check that the profile (find prompt + witness detector + capability
+# routing + DISPOSITION gate) is wired correctly.
+profile: android-app
+image_tag: vuln-pipeline-android-canary:latest
+
+# SYNTHETIC target: there is NO upstream repo and NO real APK. The decompiled
+# tree under app/ (decoded AndroidManifest.xml + smali/) is hand-authored. The
+# url/commit below are placeholders that satisfy the config schema; nothing
+# fetches them.
+github_url: https://github.com/anthropics/defending-code-reference-harness
+commit: "0000000000000000000000000000000000000000"   # synthetic — no real APK/commit (quoted: bare 40-zero token is a YAML octal int → 0)
+
+binary_path: /work/reach       # the reachability oracle: reach <candidate> -> WITNESS | reject:
+source_root: /work/app         # the decoded tree: AndroidManifest.xml + smali/
+reattack_harness: /work/run_detectors.sh   # drives reach on one candidate, or sweeps /poc/*
+capabilities_path: capabilities.json       # §9 machine form (this is also the convention default)
+
+memory_limit: 2g
+build_timeout_s: 1200          # tiny image (no NDK/emulator); androguard install dominates
+
+focus_areas:
+  - "exported IPC (§A1) — ExportedForwardActivity re-dispatches a caller-supplied intent URI via startActivity"
+  - "build-config (§A8) — <application> android:debuggable / allowBackup / usesCleartextTraffic"
+
+# The planted finding CLASSES. Per the find prompt these are to CONFIRM by
+# reachability, not to take on faith. The decoy (GuardedForwardActivity) is
+# deliberately NOT listed — a rigorous oracle must reject it on its own (AR1: the
+# signature-permission gate holds).
+known_bugs:
+  - "android:exported-activity-launch — ExportedForwardActivity forwards a caller intent (strength 1 -> contested -> dynamic-promotable)"
+  - "android:debuggable-flag — <application android:debuggable=\"true\"> (terminal -> real_latent_static_argument)"
+  - "android:allow-backup — <application android:allowBackup=\"true\"> (terminal -> real_latent_static_argument)"
+  - "android:cleartext-config — <application android:usesCleartextTraffic=\"true\"> (terminal -> real_latent_static_argument)"
+
+attack_surface: |
+  A SYNTHETIC decoded APK — no recompile, no emulator, no compiler in the loop.
+  Real surface: any other app on the device sending an Intent to the exported
+  ExportedForwardActivity, which reads getIntent().getData() and re-dispatches it
+  through startActivity with no scheme/host allowlist (intent redirection over
+  IPC). The manifest additionally carries three terminal build-config exposures
+  (debuggable / allowBackup / usesCleartextTraffic). GuardedForwardActivity uses
+  the SAME forwarding code but is gated by a signature-level permission, so it is
+  NOT attacker-reachable — the planted decoy / false positive (AR1). The
+  reachability oracle (/work/reach) re-walks a candidate path over the manifest +
+  smali and emits a strength-1 WITNESS or a `reject:` line; a reject is graceful
+  handling, not a finding.

@@ -1,0 +1,237 @@
+#!/usr/bin/env python3
+# Copyright 2026 Anthropic PBC
+# SPDX-License-Identifier: Apache-2.0
+"""reach — the android-canary reachability oracle (binary_path /work/reach).
+
+The android-app profile's oracle is NOT a sanitizer: it is a deterministic
+re-walker over a decompiled tree that turns a hypothesized entry->sink path into
+a SecurityWitness (harness/witness.py) or a `reject:` line. The find agent calls
+it exactly as the cpp/rust agent calls the ASan driver::
+
+    reach <candidate_file>
+
+and it prints, to stdout, either
+
+    WITNESS: kind=static_reachability strength=1 severity=... class=android:... domain=- tier=-
+    entry: ...  AndroidManifest.xml
+      --> smali/...:NN  ...
+    guard: ...
+    sink:  ...  smali/...:MM
+
+(exit 1 — the path holds, the android analog of a reproducing crash) or a single
+`reject: <why>` line (exit 0 — a guard blocks it / the sink is not reached; this
+is graceful handling, not a finding). Exit 2 is a setup failure.
+
+Honesty by construction (ADR-4 / AR8): the oracle re-derives everything from the
+fixture. It reads only the ENTRY component and the claimed CLASS out of the
+candidate; the exported flag, the permission gate, and the smali line refs it
+emits all come from re-reading AndroidManifest.xml + smali/, never from the
+candidate's claims. So an agent cannot self-declare a guarded component reachable,
+nor relabel a reachable forwarding bug as a "terminal" build-config finding to
+skip dynamic promotion — the class the oracle emits is the one it can prove.
+
+Determinism: pure function of the on-disk fixture, so 3/3 re-runs agree (the
+android analog of the 3/3 crash bar). The canary keeps the parse dependency-free
+(stdlib ElementTree + line grep); a REAL target swaps this body for androguard
+over the decoded APK. The witness format and exit contract stay identical.
+"""
+from __future__ import annotations
+
+import os
+import re
+import sys
+import xml.etree.ElementTree as ET
+
+_ANDROID = "{http://schemas.android.com/apk/res/android}"
+
+# protectionLevel values that make a permission a real trust boundary against an
+# arbitrary (differently-signed) attacker app. `normal`/`dangerous` do not.
+_SIGNATURE_LEVELS = frozenset({"signature", "signatureorsystem", "knownsigner"})
+
+# Terminal build-config classes: a single manifest boolean IS the whole finding
+# (witness.STATIC_TERMINAL_CLASSES). class -> (application attribute, severity,
+# human effect). severity is honest hardening-grade (find_prompt guidance).
+_BUILD_CONFIG: dict[str, tuple[str, str, str]] = {
+    "android:debuggable-flag":  ("debuggable",
+        "MEDIUM", "debug hooks shipped in release build"),
+    "android:allow-backup":     ("allowBackup",
+        "MEDIUM", "adb backup can exfiltrate app-private data"),
+    "android:cleartext-config": ("usesCleartextTraffic",
+        "LOW", "cleartext HTTP permitted app-wide"),
+}
+
+
+def _norm(pkg: str, name: str) -> str:
+    """Resolve a (possibly abbreviated) component name to its fully-qualified
+    class, the way the platform expands `android:name`."""
+    if name.startswith("."):
+        return pkg + name
+    if "." not in name:
+        return f"{pkg}.{name}"
+    return name
+
+
+def _smali_rel(fqcn: str) -> str:
+    return "smali/" + fqcn.replace(".", "/") + ".smali"
+
+
+def _app_root() -> str:
+    """The decoded-tree root. Works in-image (/work/app) and in-repo
+    (targets/android-canary/app) so the canary is runnable by hand."""
+    env = os.environ.get("APP_ROOT")
+    if env:
+        return env
+    here = os.path.dirname(os.path.abspath(__file__))
+    for cand in ("/work/app", os.path.join(here, "app")):
+        if os.path.isdir(cand):
+            return cand
+    return "/work/app"
+
+
+def _reject(why: str) -> int:
+    """A guard holds / the sink is not reached — graceful, NOT a finding."""
+    print(f"reject: {why}")
+    return 0
+
+
+def _witness(header: list[tuple[str, str]], path_lines: list[str]) -> int:
+    """A validated reachability path — emit the WITNESS block, exit 1 (the
+    android analog of a reproducing crash)."""
+    print("WITNESS: " + " ".join(f"{k}={v}" for k, v in header))
+    for line in path_lines:
+        print(line)
+    return 1
+
+
+def _read_candidate(path: str) -> tuple[str | None, str | None]:
+    """The only two things the oracle trusts from the candidate: the claimed
+    finding CLASS and the ENTRY component. Everything else is re-derived."""
+    cls = entry = None
+    with open(path, encoding="utf-8", errors="replace") as fh:
+        for line in fh:
+            m = re.match(r"\s*class\s*:\s*(\S+)", line, re.IGNORECASE)
+            if m:
+                cls = m.group(1)
+            m = re.match(r"\s*entry\s*:\s*(\S+)", line, re.IGNORECASE)
+            if m:
+                entry = m.group(1)
+    return cls, entry
+
+
+def _grep(path: str, pat: re.Pattern[str]) -> int | None:
+    """1-based line number of the first match, or None."""
+    with open(path, encoding="utf-8", errors="replace") as fh:
+        for i, line in enumerate(fh, 1):
+            if pat.search(line):
+                return i
+    return None
+
+
+def _find_activity(mroot: ET.Element, pkg: str, entry: str):
+    want = _norm(pkg, entry)
+    for app in mroot.iter("application"):
+        for act in app.iter("activity"):
+            name = act.get(_ANDROID + "name")
+            if name and _norm(pkg, name) == want:
+                return act
+    return None
+
+
+def _permission_level(mroot: ET.Element, perm: str) -> str | None:
+    for p in mroot.iter("permission"):
+        if p.get(_ANDROID + "name") == perm:
+            return (p.get(_ANDROID + "protectionLevel") or "normal").lower()
+    return None  # referenced but undeclared -> not a proven guard
+
+
+def _check_build_config(mroot: ET.Element, pkg: str, cls: str) -> int:
+    """Terminal build-config class: read one <application> boolean."""
+    attr, severity, effect = _BUILD_CONFIG[cls]
+    app = mroot.find("application")
+    val = app.get(_ANDROID + attr) if app is not None else None
+    if str(val).lower() != "true":
+        return _reject(f"android:{attr} is not enabled in the manifest")
+    return _witness(
+        [("kind", "static_reachability"), ("strength", "1"),
+         ("severity", severity), ("class", cls),
+         ("domain", "-"), ("tier", "-")],
+        [f'entry: {pkg} <application android:{attr}="true">  AndroidManifest.xml',
+         f"guard: none (terminal build-config exposure)",
+         f"sink:  {effect}  AndroidManifest.xml"],
+    )
+
+
+def _check_exported(mroot: ET.Element, pkg: str, root_dir: str, entry: str) -> int:
+    """Reachability walk for an exported component: exported + unguarded +
+    reaches a forwarding sink -> android:exported-activity-launch."""
+    act = _find_activity(mroot, pkg, entry)
+    if act is None:
+        return _reject(f"no <activity> named {entry} in the manifest")
+    if str(act.get(_ANDROID + "exported")).lower() != "true":
+        return _reject(f"{entry} is not exported (android:exported != true)")
+
+    perm = act.get(_ANDROID + "permission")
+    if perm:
+        level = _permission_level(mroot, perm)
+        if level in _SIGNATURE_LEVELS:
+            # The decoy path. exported-no-permission is a STATIC_TERMINAL class,
+            # so accepting it here would wrongly skip promotion — the guard holds,
+            # so we reject regardless of what the candidate claimed (AR1 / AR8).
+            return _reject("guarded by signature permission")
+        return _reject(f"guarded by permission {perm} (protectionLevel={level})")
+
+    rel = _smali_rel(_norm(pkg, entry))
+    smali = os.path.join(root_dir, rel)
+    if not os.path.isfile(smali):
+        return _reject(f"no smali body for {entry} at {rel}")
+    entry_ln = _grep(smali, re.compile(r"->getData\("))
+    sink_ln = _grep(smali, re.compile(r"->startActivity\("))
+    if entry_ln is None:
+        return _reject(f"{entry} never reads the caller intent (no getData)")
+    if sink_ln is None:
+        return _reject(f"{entry} does not forward an intent (no startActivity)")
+
+    fqcn = _norm(pkg, entry)
+    return _witness(
+        [("kind", "static_reachability"), ("strength", "1"),
+         ("severity", "HIGH"), ("class", "android:exported-activity-launch"),
+         ("domain", "-"), ("tier", "-")],
+        [f"entry: {fqcn} (exported=true, no permission)  AndroidManifest.xml",
+         f"  --> {rel}:{entry_ln}  onCreate reads getIntent().getData()",
+         f"guard: none",
+         f"sink:  startActivity(forwarded caller intent)  {rel}:{sink_ln}"],
+    )
+
+
+def main(argv: list[str]) -> int:
+    if len(argv) != 2:
+        print("usage: reach <candidate_file>")
+        return 2
+    cand = argv[1]
+    if not os.path.isfile(cand):
+        print(f"error: no such candidate file: {cand}")
+        return 2
+
+    cls, entry = _read_candidate(cand)
+    manifest = os.path.join(_app_root(), "AndroidManifest.xml")
+    try:
+        mroot = ET.parse(manifest).getroot()
+    except (OSError, ET.ParseError) as e:
+        print(f"error: cannot parse {manifest}: {e}")
+        return 2
+    pkg = mroot.get("package", "")
+    root_dir = _app_root()
+
+    # Build-config terminals dispatch on the claimed class (each is a distinct
+    # manifest attribute). Everything else is an exported-component reachability
+    # walk keyed on the entry — the class the oracle EMITS is what it can prove,
+    # not what the candidate claims.
+    if cls in _BUILD_CONFIG:
+        return _check_build_config(mroot, pkg, cls)
+    if not entry:
+        return _reject("candidate names no entry component (need an `entry:` line)")
+    return _check_exported(mroot, pkg, root_dir, entry)
+
+
+if __name__ == "__main__":
+    sys.exit(main(sys.argv))
