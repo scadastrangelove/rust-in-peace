@@ -1,7 +1,7 @@
 {
   "capabilities": {
     "exported_ipc":          {"present": "yes", "evidence": "AndroidManifest.xml: <activity .ExportedForwardActivity android:exported=\"true\"> with no android:permission; onCreate forwards getIntent().getData() via startActivity (smali/com/canary/app/ExportedForwardActivity.smali)"},
-    "webview_bridge":        {"present": "no",  "evidence": "no WebView / addJavascriptInterface / setJavaScriptEnabled in the fixture smali; §A3 stays gated off"},
+    "webview_bridge":        {"present": "yes", "evidence": "WebViewBridgeActivity (exported): setJavaScriptEnabled(true) + addJavascriptInterface(Bridge, \"bridge\") exposing @JavascriptInterface getToken(), then loadUrl(getIntent().getDataString()) — a caller-controlled URL reaches the bridge (smali/com/canary/app/WebViewBridgeActivity.smali)"},
     "build_config_exposure": {"present": "yes", "evidence": "AndroidManifest.xml <application> carries android:debuggable=\"true\", android:allowBackup=\"true\", android:usesCleartextTraffic=\"true\" (three terminal build-config classes)"},
     "cleartext_tls":         {"present": "yes", "evidence": "AndroidManifest.xml <application android:usesCleartextTraffic=\"true\"> permits plaintext HTTP app-wide"},
     "deeplink_applink":      {"present": "no",  "evidence": "the exported activity's <intent-filter> is the IPC entry, scored under exported_ipc; no separate App Link / autoVerify surface"},

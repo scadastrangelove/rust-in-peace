@@ -1,0 +1,12 @@
+{
+  "finding_class": "android:allow-backup",
+  "severity": "MEDIUM",
+  "capability": "build_config_exposure",
+  "expected": {"verdict": "terminal", "strength": 1},
+  "observation": {
+    "effect_observed": false,
+    "runs": 0,
+    "of_runs": 0,
+    "evidence": "manifest <application android:allowBackup=\"true\"> — a declared build-config terminal; nothing to observe dynamically beyond the attribute"
+  }
+}

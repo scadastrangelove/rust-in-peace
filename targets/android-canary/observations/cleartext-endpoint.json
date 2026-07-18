@@ -1,0 +1,12 @@
+{
+  "finding_class": "android:cleartext-endpoint",
+  "severity": "MEDIUM",
+  "capability": "cleartext_tls",
+  "expected": {"verdict": "promoted", "strength": 2, "tier": "light_adb", "domain": "network"},
+  "observation": {
+    "effect_observed": true,
+    "runs": 3,
+    "of_runs": 3,
+    "evidence": "mitmproxy on-path: ApiClient.ping() issued GET http://legacy.canary.example/ping observed in cleartext on the wire (3/3)"
+  }
+}

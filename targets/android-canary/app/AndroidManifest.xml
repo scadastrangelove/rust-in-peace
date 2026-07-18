@@ -41,6 +41,20 @@
             </intent-filter>
         </activity>
 
+        <!-- PLANTED (android:webview-js-bridge, Tier-B promotion target). Exported;
+             hosts a JS-enabled WebView with a native bridge and loads a caller-
+             controlled URL. Static = strength-1 contested; Frida promotion = strength 3. -->
+        <activity
+            android:name=".WebViewBridgeActivity"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <category android:name="android.intent.category.BROWSABLE"/>
+                <data android:scheme="canary" android:host="web"/>
+            </intent-filter>
+        </activity>
+
         <!-- DECOY (must be REJECTED — AR1). Byte-for-byte the same forwarding
              code as above, but gated by the signature permission, so a hostile
              (differently-signed) app can NOT reach it. The naive scan mislabels

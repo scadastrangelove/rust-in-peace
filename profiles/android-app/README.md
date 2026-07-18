@@ -81,6 +81,14 @@ An observed effect at either tier moves the finding to **`confirmed`**. An all-s
 run is therefore a pile of *candidates*, and the scorecard must say so rather than
 reporting them as verified — the honesty requirement ADR-4 exists for.
 
+The promotion engine (`harness/android_app/promote.py`) is a deterministic function
+of `(witness, dispatch, observation)` gated on a **3/3** observed effect, so the
+whole path is testable without a live emulator. The observation comes from driving
+the app in the **device sandbox** ([`docs/profiles/android/DEVICE-SANDBOX.md`](../../docs/profiles/android/DEVICE-SANDBOX.md),
+ADR-8) using the PoC skeletons in [`dynamic-templates/`](dynamic-templates/) (adb
+Tier-A, Frida Tier-B). The `android-canary` `run_dynamic` replays recorded
+observations through the engine as the CI proof.
+
 ## Native is a capability-gated side track (ADR-1)
 
 android-native (JNI ASan fuzzing) is **not** part of the main app-security path. It
