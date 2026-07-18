@@ -81,6 +81,23 @@ candidate; with none it sweeps `/poc/*` and exits 1 if any path still holds — 
 android analog of "the crash still reproduces" (a fix that adds the guard flips
 the witness to `reject:`, exit 0).
 
+## Intel — the target-intelligence sibling (`intel.json`)
+
+Beyond the `reach` oracle (findings), the canary ships an `intel` driver that
+harvests the app's *intelligence* — endpoints, hosts, SDKs, permissions, deep
+links, exported surface, secrets observed:
+
+```sh
+# in this dir — writes intel.json (or prints it with no arg)
+APP_ROOT=./app ./intel intel.json
+```
+
+It surfaces two endpoints (`https://api.canary.example/v1/sync` and the cleartext
+`http://legacy.canary.example/ping`), the OkHttp SDK, the `INTERNET` permission,
+the `canary://` deep link, both exported activities, and one redacted
+`google_api_key` — the endpoints being the discovery vector for server-side
+testing. The fake maps-key value is never written to `intel.json`.
+
 ## Where the canary simplifies vs a real target
 
 `reach` uses stdlib XML + line grep over the fixture. A real android target keeps
