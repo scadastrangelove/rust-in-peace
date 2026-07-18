@@ -224,6 +224,40 @@ runs the same `harvest()` over apktool/jadx output.
 
 ---
 
+## ADR-8 — `android-app-dynamic` runs in a device sandbox distinct from the gVisor model
+
+**Decision.** Promotion (static witness → observed effect, strength 2/3) runs on a
+KVM-accelerated AVD emulator inside a **device sandbox** — not the gVisor egress-
+restricted container the static find/grade agents use. Full design:
+[`DEVICE-SANDBOX.md`](DEVICE-SANDBOX.md).
+
+**Why.** The static sandbox assumes the untrusted thing is a file a target parses;
+`android-app-dynamic` runs a whole application (Dalvik + native) that needs a real
+Android runtime and KVM acceleration gVisor doesn't provide. Four boundaries keep
+it safe: the promotion agent stays in its own gVisor container reaching the
+emulator only over a controlled `adb` socket; the app is contained in the AVD; all
+app traffic is forced through an on-path proxy that is both the network-capture
+point and an egress allow-list (the app reaches only declared test backends); and
+each finding runs from a **clean AVD snapshot**, restored between attempts — which
+is also what makes the **3/3 determinism bar** meaningful.
+
+**Consequences.** (1) Two device profiles match the ADR-5 tiers: Tier A (light —
+adb/am/content/run-as/proxy, disposable snapshot-boot) and Tier B (heavy — a warm
+Frida-instrumented pool). (2) Anti-emulator / Play-Integrity apps need a real
+device farm (Corellium / physical), a deployment choice not a code change; a
+blocked observation is reported `contested`/`device_unavailable`, never a clean
+result. (3) Because `promote()` is a pure function of `(witness, dispatch,
+observation)`, CI replays a **recorded** observation (the canary `run_dynamic`) —
+the promotion path is fully testable without a live emulator.
+
+**Realized in code.** `harness/android_app/promote.py` (the observation→witness
+engine, `DET_BAR = 3`); `harness/android_app/find_to_fuzz.py` (dispatch → tier →
+device profile, the `build_reattack` device-oracle prompt);
+`profiles/android-app/dynamic-templates/` (the adb/Frida PoC templates); the
+canary `run_dynamic` + observation fixtures.
+
+---
+
 ## Where the strategic value sits (corollary)
 
 The static-terminal set (ADR-4) is exactly what existing scanners (MobSF, QARK…)

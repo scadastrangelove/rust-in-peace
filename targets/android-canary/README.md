@@ -98,6 +98,31 @@ the `canary://` deep link, both exported activities, and one redacted
 `google_api_key` — the endpoints being the discovery vector for server-side
 testing. The fake maps-key value is never written to `intel.json`.
 
+## Dynamic promotion — `android-app-dynamic` (simulated, no device)
+
+The static `reach` oracle yields strength-1 witnesses. The dynamic stage promotes
+them to *observed* effects (strength 2/3) by driving the app on an emulator in the
+device sandbox (`docs/profiles/android/DEVICE-SANDBOX.md`). The canary has no
+emulator, so `run_dynamic` **replays recorded observations** (`observations/*.json`)
+through the real promotion engine (`harness/android_app/promote.py`) — proving the
+path in CI:
+
+```sh
+./run_dynamic                       # replay every observation; each self-checks
+./run_dynamic webview-js-bridge     # one, by fixture stem
+```
+
+| finding | observation | outcome |
+|---|---|---|
+| `exported-activity-launch` | adb `am start` forwards the URI (3/3) | **promoted** → strength 2 `light_adb` |
+| `cleartext-endpoint` | mitmproxy sees cleartext to `legacy.canary.example` (3/3) | **promoted** → strength 2 `network` |
+| `webview-js-bridge` | Frida observes `bridge.getToken()` fire (3/3) | **promoted** → strength 3 `heavy_instrumented` (Tier B) |
+| `allow-backup` | nothing to observe (build-config) | **terminal** → `real_latent_static_argument` |
+| `decoy-guarded` | `am start` rejected — signature permission | **guard_held** (refuted, even dynamically) |
+
+A real target swaps the recorded observation for a live adb/Frida run; the engine
+and the 3/3 determinism bar are identical.
+
 ## Where the canary simplifies vs a real target
 
 `reach` uses stdlib XML + line grep over the fixture. A real android target keeps

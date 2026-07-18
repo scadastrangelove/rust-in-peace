@@ -1,0 +1,72 @@
+#!/usr/bin/env python3
+# Copyright 2026 Anthropic PBC
+# SPDX-License-Identifier: Apache-2.0
+"""run_dynamic — the canary's SIMULATED device oracle for android-app-dynamic.
+
+A real target's dynamic stage drives the app on an emulator in the device sandbox
+(docs/profiles/android/DEVICE-SANDBOX.md) and reports an Observation. The canary
+has no emulator, so it replays a RECORDED observation from observations/*.json and
+runs the SAME deterministic promotion engine (harness/android_app/promote). This
+proves the strength-1 → strength-2/3 promotion path (and the guard-refutation /
+terminal paths) end-to-end without a device.
+
+    run_dynamic                       # replay every observations/*.json
+    run_dynamic exported-activity-launch   # one, by fixture stem or finding class
+"""
+import json
+import os
+import sys
+
+try:
+    from harness import witness as W
+    from harness.android_app import promote as P
+except ModuleNotFoundError:
+    here = os.path.dirname(os.path.abspath(__file__))
+    sys.path.insert(0, os.environ.get("HARNESS_ROOT")
+                    or os.path.abspath(os.path.join(here, "..", "..")))
+    from harness import witness as W
+    from harness.android_app import promote as P
+
+HERE = os.path.dirname(os.path.abspath(__file__))
+OBSDIR = os.path.join(HERE, "observations")
+
+
+def run(fixture_path):
+    with open(fixture_path) as f:
+        d = json.load(f)
+    static = W.SecurityWitness(
+        kind=W.KIND_STATIC_REACHABILITY, strength=1,
+        severity=d.get("severity", "MEDIUM"), finding_class=d["finding_class"])
+    pr = P.promote_finding(
+        static, P.Observation(**d["observation"]),
+        capability=d.get("capability"),
+        native_reachable=d.get("native_reachable", False))
+    return d, pr
+
+
+def _resolve(arg):
+    if os.path.exists(arg):
+        return arg
+    stem = arg[:-5] if arg.endswith(".json") else arg
+    stem = stem.replace("android:", "").replace(":", "-")
+    return os.path.join(OBSDIR, stem + ".json")
+
+
+if __name__ == "__main__":
+    args = sys.argv[1:]
+    fixtures = ([_resolve(a) for a in args] if args else
+                [os.path.join(OBSDIR, f) for f in sorted(os.listdir(OBSDIR)) if f.endswith(".json")])
+    rc = 0
+    for path in fixtures:
+        d, pr = run(path)
+        print("=" * 6, os.path.basename(path))
+        print(P.render_promoted_witness(pr))
+        print(f"verdict={pr.verdict} strength={pr.witness.strength} "
+              f"tier={pr.witness.tier or '-'} disposition={pr.witness.disposition}")
+        exp = d.get("expected")
+        if exp:
+            ok = (pr.verdict == exp.get("verdict") and pr.witness.strength == exp.get("strength")
+                  and (exp.get("tier") is None or pr.witness.tier == exp.get("tier")))
+            print("  self-check:", "PASS" if ok else f"FAIL (expected {exp})")
+            rc = rc or (0 if ok else 1)
+    sys.exit(rc)

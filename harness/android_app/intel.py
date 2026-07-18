@@ -214,8 +214,12 @@ def harvest(app_root: str | Path) -> TargetIntel:
     perms, deeplinks, exported = _parse_manifest(app_root)
     endpoints, sdks, secrets = _scan_tree(app_root)
 
-    hosts = _dedup([e.host for e in endpoints]
-                   + [d.split("://", 1)[1] for d in deeplinks if "://" in d and d.split("://", 1)[1]])
+    # hosts = server hosts only: endpoint authorities + App Link (http/https)
+    # deeplink hosts. A custom-scheme deeplink authority (e.g. `canary://web`) is
+    # NOT a server host — it stays in `deeplinks`, out of `hosts`.
+    applink_hosts = [d.split("://", 1)[1] for d in deeplinks
+                     if d.startswith(("http://", "https://")) and d.split("://", 1)[1]]
+    hosts = _dedup([e.host for e in endpoints] + applink_hosts)
 
     return TargetIntel(
         endpoints=endpoints,

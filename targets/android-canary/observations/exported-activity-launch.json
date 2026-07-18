@@ -1,0 +1,12 @@
+{
+  "finding_class": "android:exported-activity-launch",
+  "severity": "HIGH",
+  "capability": "exported_ipc",
+  "expected": {"verdict": "promoted", "strength": 2, "tier": "light_adb", "domain": "behavior"},
+  "observation": {
+    "effect_observed": true,
+    "runs": 3,
+    "of_runs": 3,
+    "evidence": "adb am start -a android.intent.action.VIEW -d 'evil://x' -n com.canary.app/.ExportedForwardActivity  ->  logcat: ExportedForwardActivity forwarded startActivity(evil://x) with no allowlist (3/3)"
+  }
+}
