@@ -39,6 +39,15 @@ from .rust import report_prompt as _rs_report
 from .rust import patch_prompt as _rs_patch
 from .rust import find_to_fuzz as _rs_reattack
 
+# --- android-app pieces --------------------------------------------------
+from .android_app import find_prompt as _an_find
+from .android_app import detect as _an_detect
+from .android_app import grade_prompt as _an_grade
+from .android_app import judge_prompt as _an_judge
+from .android_app import report_prompt as _an_report
+from .android_app import patch_prompt as _an_patch
+from .android_app import find_to_fuzz as _an_reattack
+
 
 @dataclass(frozen=True)
 class Profile:
@@ -87,7 +96,20 @@ _RUST = Profile(
     build_reattack=_rs_reattack.build_reattack,           # dispatch(cwe/cap)→template→bind→validate
 )
 
-_REGISTRY: dict[str, Profile] = {"cpp": _CPP, "rust": _RUST}
+_ANDROID = Profile(
+    name="android-app",
+    detector=_an_detect,                                  # reachability-witness parsing
+    build_find_prompt=_an_find.build_find_prompt,         # entry→sink graph over decompiled DEX
+    build_grade_prompt=_an_grade.build_grade_prompt,      # adversarial reachability re-walk
+    build_judge_prompt=_an_judge.build_judge_prompt,      # dedup on (finding-class, sink site)
+    build_compare_prompt=_an_judge.build_compare_prompt,  # report-vs-report (base re-export)
+    build_report_prompt=_an_report.build_report_prompt,   # MASVS/MASTG exploitability report
+    build_patch_prompt=_an_patch.build_patch_prompt,      # remediation recommendation (no rebuild)
+    build_style_judge_prompt=_an_patch.build_style_judge_prompt,  # advisory (base re-export)
+    build_reattack=_an_reattack.build_reattack,           # static→dynamic Tier-A/B promotion
+)
+
+_REGISTRY: dict[str, Profile] = {"cpp": _CPP, "rust": _RUST, "android-app": _ANDROID}
 
 
 def get_profile(name: str | None) -> Profile:
@@ -112,9 +134,12 @@ _RS_FRAME_HINT = re.compile(r"^\s*\d+:\s+\S+::", re.MULTILINE)
 def detector_for_output(crash_output: str) -> ModuleType:
     """Pick a detector by sniffing the crash text — for `vuln-pipeline dedup`,
     which walks result.json files that may span profiles and carries no single
-    target. Rust markers → rust_detect; otherwise the ASAN parser (its
-    assertion/summary regex also covers non-ASAN C crashes)."""
+    target. Android witness header → android_app; Rust markers → rust_detect;
+    otherwise the ASAN parser (its assertion/summary regex also covers non-ASAN
+    C crashes)."""
     t = crash_output or ""
+    if t.lstrip().startswith("WITNESS:") or "\nWITNESS:" in t:
+        return _an_detect
     if "panicked at" in t or "error: Undefined Behavior:" in t or _RS_FRAME_HINT.search(t):
         return _rs_detect
     return _asan

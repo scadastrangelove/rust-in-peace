@@ -1,0 +1,5 @@
+# Terminal build-config finding: <application android:debuggable="true">.
+# The entry line is informational — the oracle dispatches on the class and reads
+# the manifest boolean. Expect: WITNESS (real_latent_static_argument).
+class: android:debuggable-flag
+entry: com.canary.app <application>

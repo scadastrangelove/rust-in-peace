@@ -1,0 +1,7 @@
+# DECOY candidate. A naive scan sees an exported Activity with the same
+# forwarding code and files it as android:exported-no-permission (a terminal
+# class). It is WRONG: GuardedForwardActivity is gated by a signature-level
+# permission, so an arbitrary attacker app can not reach it. Expect:
+#   reject: guarded by signature permission        (AR1)
+class: android:exported-no-permission
+entry: com.canary.app.GuardedForwardActivity

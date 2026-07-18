@@ -44,6 +44,7 @@ from typing import Any
 # is tolerated (kept, treated as active if present!=no) but has no _GATES row,
 # so it enables nothing until a mapping is added here.
 CAPABILITY_KEYS: frozenset[str] = frozenset({
+    # --- cpp / rust (memory-safety) capabilities ---
     "inbound_c_abi",
     "outbound_ffi",
     "concurrency_async",
@@ -55,11 +56,29 @@ CAPABILITY_KEYS: frozenset[str] = frozenset({
     "network_protocol_parser",
     "subprocess_exec",
     "crypto_secrets",
+    # --- android-app (application-security) capabilities ---
+    "exported_ipc",          # exported Activity/Service/Receiver reachable by other apps
+    "webview_bridge",        # WebView + JS enabled + addJavascriptInterface / file access
+    "deeplink_applink",      # custom-scheme / App Link entry points
+    "pending_intent",        # mutable / implicit PendingIntent (hijack)
+    "content_provider",      # exported / loosely-permissioned ContentProvider (SQLi/traversal)
+    "insecure_storage",      # sensitive data to SharedPreferences/SQLite/external storage
+    "cleartext_tls",         # cleartext traffic / permissive NSC / no pinning
+    "dynamic_code_load",     # DexClassLoader / reflection / deserialization of untrusted input
+    "build_config_exposure", # manifest build-config: allowBackup/debuggable/testOnly/no-proguard
+    "android_native_code",   # bundled .so; escalation gated on native reachability (see axis)
 })
 
 # Ranking axes — NOT capabilities. Present in the same file, read differently:
-# they down-rank a finding, they don't gate a check on/off.
-ROUTING_AXES: frozenset[str] = frozenset({"reachable_from_public_api"})
+# they down-rank / gate a finding, they don't turn a scan section on/off.
+#   reachable_from_public_api           — cpp/rust: down-rank unreachable-as-extracted.
+#   native_reachable_from_untrusted_input — android: gate the android-native track. A
+#     bare .so is not enough (ADR-1); the native fuzz stage runs only when an
+#     entry→Java→JNI→attacker-arg chain is confirmed (yes/partial).
+ROUTING_AXES: frozenset[str] = frozenset({
+    "reachable_from_public_api",
+    "native_reachable_from_untrusted_input",
+})
 
 PRESENT_VALUES: frozenset[str] = frozenset({"yes", "no", "test_only", "partial"})
 
@@ -116,6 +135,41 @@ _GATES: dict[str, CapabilityGate] = {
     "crypto_secrets": CapabilityGate(
         "crypto_secrets", ("§10",), "logic (constant-time / leak)", "none",
         "none", ("R2",)),
+    # --- android-app gates. Section refs match profiles/android-app/scan-extras.txt;
+    # triage_rules match profiles/android-app/fp-rules.txt (AR*). The "sanitizer"
+    # is `none` for the app-security classes (the oracle is a reachability witness
+    # / adb observation, not a memory sanitizer) — only android_native_code carries
+    # asan. fuzz_rung is the witness-promotion path, not a byte-mutation rung.
+    "exported_ipc": CapabilityGate(
+        "exported_ipc", ("§A1",), "reachability witness → adb intent probe", "none",
+        "adb_intent_probe", ("AR1", "AR8")),
+    "webview_bridge": CapabilityGate(
+        "webview_bridge", ("§A3",), "reachability witness → Frida bridge hook", "none",
+        "frida_bridge_hook", ("AR8",)),
+    "deeplink_applink": CapabilityGate(
+        "deeplink_applink", ("§A2",), "reachability witness → adb deeplink probe", "none",
+        "adb_deeplink_probe", ("AR1", "AR8")),
+    "pending_intent": CapabilityGate(
+        "pending_intent", ("§A2",), "reachability witness (static)", "none",
+        "static_argument", ("AR8",)),
+    "content_provider": CapabilityGate(
+        "content_provider", ("§A6",), "reachability witness → adb provider probe", "none",
+        "adb_provider_probe", ("AR5", "AR8")),
+    "insecure_storage": CapabilityGate(
+        "insecure_storage", ("§A4",), "storage observation (adb run-as)", "none",
+        "adb_storage_observe", ("AR4", "AR8")),
+    "cleartext_tls": CapabilityGate(
+        "cleartext_tls", ("§A5",), "network observation (mitm)", "none",
+        "mitm_network_observe", ("AR3", "AR8")),
+    "dynamic_code_load": CapabilityGate(
+        "dynamic_code_load", ("§A7",), "reachability witness (static)", "none",
+        "static_argument", ("AR7", "AR8")),
+    "build_config_exposure": CapabilityGate(
+        "build_config_exposure", ("§A8",), "manifest static (terminal)", "none",
+        "static_terminal", ("AR2",)),
+    "android_native_code": CapabilityGate(
+        "android_native_code", ("§A9",), "ASan (JNI) — gated on native reachability", "asan",
+        "jni_libfuzzer_asan", ("AR9",)),
 }
 
 
@@ -147,6 +201,19 @@ _VOTE_BUDGET: dict[str, int] = {
     "concurrency_async": _STABLE,             # races/uninit/leaks were 3/3
     "crypto_secrets": _STABLE,
     "outbound_ffi": DEFAULT_VOTE_BUDGET,
+    # --- android-app: manifest/adb classes are deterministic (stable); the
+    # reasoning-heavy reachability classes get the default elbow; native/JNI
+    # fuzzing inherits the Rust high-variance tail.
+    "exported_ipc": _STABLE,
+    "deeplink_applink": _STABLE,
+    "pending_intent": _STABLE,
+    "content_provider": _STABLE,
+    "insecure_storage": _STABLE,
+    "cleartext_tls": _STABLE,
+    "build_config_exposure": _STABLE,
+    "webview_bridge": DEFAULT_VOTE_BUDGET,
+    "dynamic_code_load": DEFAULT_VOTE_BUDGET,
+    "android_native_code": _HIGH_VARIANCE,
 }
 
 
@@ -202,6 +269,20 @@ class CapabilityInventory:
         time (the unreachable-as-extracted case). Absence == 'unknown', NOT
         'no': we only down-rank on an explicit, evidenced call."""
         return self.axes.get("reachable_from_public_api", ("unknown", ""))[0]
+
+    def native_reachable_from_untrusted_input(self) -> str:
+        """'yes' | 'partial' | 'no' | 'unknown'. Gates the android-native track
+        (ADR-1): a bundled `.so` alone is not a reason to fuzz JNI — the chain
+        entry→Java→JNI→attacker-arg must be confirmed. Absence == 'unknown'."""
+        return self.axes.get("native_reachable_from_untrusted_input", ("unknown", ""))[0]
+
+    def run_android_native(self) -> bool:
+        """True when the android-native escalation should actually run: the
+        `android_native_code` capability is active AND its reachability chain is
+        confirmed (yes/partial). `unknown`/`no` → skip fuzzing JNI (the bare-.so
+        case), a paper-trailed down-rank, not a silent omission."""
+        return (self.is_active("android_native_code")
+                and self.native_reachable_from_untrusted_input() in ("yes", "partial"))
 
     def sanitizers(self) -> list[str]:
         """Distinct reattack sanitizers the active capabilities call for — the

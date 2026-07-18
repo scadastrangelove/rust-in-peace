@@ -1,0 +1,158 @@
+ANDROID APP-SECURITY — triage rules (appended to the /triage verifier).
+Use with:  /triage <findings>.json --fp-rules profiles/android-app/fp-rules.txt
+
+These are the Android triage precedents (AR1..AR9). A finding matching a
+FALSE_POSITIVE rule is FALSE_POSITIVE even if the cited code is technically as
+described; a finding matching a reverse rule (AR6/AR7) is KEPT even if it "looks
+like just hardening". Cite the rule number in the verdict. Each rule demands a
+specific TRACE — a manifest read, a guard trace, a data-flow to the sink — not a
+pattern match.
+
+The oracle for this profile is a REACHABILITY WITNESS, not a crash: the primary
+evidence is a static entry→sink argument (strength 1). AR8 is the load-bearing rule
+that keeps a pile of strength-1 arguments from being reported as verified vulns.
+Strength (evidential rigor, 1..4) is ORTHOGONAL to severity (impact): the honesty
+gate sorts on strength, triage priority sorts on severity.
+
+RULE AR1 — Permission-gated exported component.
+An exported Activity / Service / Receiver / Provider is a FALSE_POSITIVE if it is
+protected by an android:permission whose protectionLevel is signature (or
+signatureOrSystem / knownSigner) — a peer app cannot hold it — AND no in-code path
+bypasses that gate. To apply AR1 the verifier MUST read the permission declaration
+in the manifest and confirm the protectionLevel, then confirm no code path reaches
+the sink without the check. A NORMAL-protectionLevel permission is NOT a real guard
+(any app can request it) — AR1 does NOT apply; keep the finding.
+
+RULE AR2 — Debug-variant build-config (context, not an automatic FP).
+android:debuggable="true" / android:allowBackup="true" / android:testOnly="true"
+seen in a DEBUG or non-shipping variant manifest is context, NOT an automatic
+false positive AND NOT an automatic finding. The verifier MUST establish whether the
+analyzed artifact is the RELEASE build. In the shipped release these are real
+(terminal) findings (see AR8); in a debug-only build they are ranked latent
+hardening. Do not blanket-dismiss ("it's just debug") and do not blanket-flag
+("debuggable is always a bug") without checking which artifact this is.
+
+RULE AR3 — Loopback / dev-host cleartext.
+Cleartext traffic (usesCleartextTraffic, an http:// endpoint, a permissive NSC) is a
+FALSE_POSITIVE when the destination is localhost / 127.0.0.1 / ::1 / a loopback or
+on-device dev host — there is no on-path attacker. The verifier MUST trace the actual
+destination host, not just the presence of cleartext. A cleartext call carrying auth
+to a ROUTABLE host is a TRUE_POSITIVE (android:cleartext-endpoint).
+
+RULE AR4 — Non-secret "secret".
+A "hardcoded secret" finding is a FALSE_POSITIVE when the value is actually a PUBLIC
+one meant to ship in the client: an app-id, a public key, a Firebase / Maps browser
+API key, an OAuth client_id, a certificate pin. The verifier MUST trace what the
+value gates — if disclosing it grants an attacker no capability, it is not a secret.
+A private key, bearer/refresh token, symmetric key, or signing secret is a
+TRUE_POSITIVE (android:insecure-storage-secret).
+
+RULE AR5 — Correctly-scoped ContentProvider grant.
+A ContentProvider is a FALSE_POSITIVE when its sharing is the INTENDED, bounded
+mechanism: grantUriPermissions scoped by explicit <grant-uri-permission> /
+<path-permission> paths, parameterized queries (selectionArgs), and openFile bounded
+to declared, canonicalized paths. The verifier MUST trace the grant scope and the
+query construction. A provider that grants the whole authority, builds SQL from an
+attacker-controlled selection/projection, or serves openFile outside its declared
+paths is a TRUE_POSITIVE (content-provider-sqli / content-provider-traversal).
+
+RULE AR6 — Reachable config issue is REAL, not "just hardening" (reverse rule).
+A build/config weakness (cleartext, exported-with-no-permission, allowBackup) that an
+attacker path ACTUALLY reaches is a TRUE_POSITIVE at its real severity — it is NOT
+downgraded to latent hardening merely because it is "a config setting". "It's only a
+manifest flag" is not an exclusion when the flag sits on the reachable path. The
+verifier MUST NOT reflexively demote reachable config findings.
+
+RULE AR7 — Dynamic load / reflection / deserialization of attacker input is REAL
+(reverse rule). DexClassLoader / PathClassLoader / reflection (Class.forName,
+Method.invoke) / deserialization (Serializable/Parcelable, JSON→object) over
+ATTACKER-controlled input — an intent extra, a deeplink parameter, a downloaded file
+— is a TRUE_POSITIVE (android:dynamic-code-load). Do not dismiss it as "the app loads
+its own code". The verifier MUST trace the input to the loaded class/path: if it is
+attacker-influenced with no signature/integrity gate, keep it.
+
+RULE AR8 — Strength / DISPOSITION (the honesty gate — load-bearing).
+Everything the find stage emits is STRENGTH 1 (static_reachability). Its default
+disposition is NOT "confirmed". Apply harness/witness.py's default_disposition:
+  * strength ≥ 2  (an OBSERVED dynamic effect via adb/Frida, or a native ASan crash)
+                  → confirmed.
+  * strength 1, class ∈ STATIC_TERMINAL_CLASSES
+                  → real_latent_static_argument (separately tagged: a manifest/build
+                    property with nothing further to observe dynamically).
+  * strength 1, any OTHER class
+                  → contested — a candidate that WANTS dynamic promotion to
+                    strength ≥ 2; it is NOT confirmed on the static argument alone.
+The terminal set is a property of the finding CLASS id, NOT a per-finding agent
+judgment — an agent may NOT self-declare a reachability finding terminal to skip
+promotion. STATIC_TERMINAL_CLASSES (the closed set):
+    android:missing-proguard        (no code shrink/obfuscation configured)
+    android:debuggable-flag         (android:debuggable="true" in release)
+    android:allow-backup            (android:allowBackup="true")
+    android:cleartext-config        (usesCleartextTraffic / permissive NSC)
+    android:exported-no-permission  (exported component with no permission gate)
+    android:backup-no-rules         (backup enabled, no full-backup-content rules)
+    android:test-only-flag          (android:testOnly="true")
+Every other android:<class> (exported-activity-launch, exported-service,
+broadcast-injection, content-provider-sqli, content-provider-traversal,
+webview-js-bridge, webview-file-access, cleartext-endpoint, insecure-storage-secret,
+deeplink-open-redirect, pending-intent-hijack, dynamic-code-load) at strength 1 is
+CONTESTED until a dynamic stage promotes it. Never report a contested candidate as a
+verified vulnerability.
+
+RULE AR9 — Native/JNI finding requires the reachability chain.
+A native (JNI / .so) finding is a FALSE_POSITIVE / down-rank unless the chain
+entry → Java → JNI → attacker-controlled argument is shown. A bare bundled .so, or a
+native memory bug with no attacker-reachable Java caller, is NOT a live finding
+(native_reachable_from_untrusted_input = no/unknown gates the JNI-ASan track OFF —
+ADR-1). The verifier MUST trace the chain. With it shown (axis = yes/partial) the
+finding is a real target for JNI ASan fuzzing and promotes to a native_crash
+(strength 4) on a reproduced crash.
+
+GENERAL. When a finding survives the FALSE_POSITIVE rules, keep the standard
+TRUE_POSITIVE bar: an attacker-controlled entry, a traced path to the sink, a guard
+that does not hold. For every verdict record REACHABLE_FROM_ATTACKER (yes/no) and the
+STRENGTH of the strongest witness obtained — ranking separates confirmed (observed)
+findings from contested (static-only) candidates on strength, and prioritizes on
+severity.
+
+── Triage output schema (witness-driven) ──
+
+Every surviving flag MUST carry:
+
+  DISPOSITION ∈ { confirmed | real_latent_static_argument | contested }
+    (from harness/witness.py; the strength-driven honesty gate)
+    confirmed                    — strength ≥ 2 (observed dynamic effect / native
+                                   crash) OR ≥ 2 union-of-N votes agree.
+    real_latent_static_argument  — strength 1 AND class ∈ STATIC_TERMINAL_CLASSES;
+                                   a manifest/build property, separately tagged,
+                                   never silently merged with observed findings.
+    contested                    — strength 1, non-terminal class; a candidate that
+                                   must be dynamically promoted (auto-dispatch to the
+                                   two-tier verifier below). A contested flag is a
+                                   ROUTING action, not a final safety verdict, and is
+                                   excluded from the precision numerator AND
+                                   denominator until the dynamic stage resolves it.
+
+  PROMOTION_PATH  (required iff DISPOSITION=contested) — the dynamic tier that would
+    settle it (ADR-5): Tier A light_adb (am start / adb deeplink / provider probe /
+    run-as read → strength 2) or Tier B heavy_instrumented (Frida bridge hook /
+    instrumented MITM → strength 3).
+
+  REACHABLE_FROM_ATTACKER ∈ { yes | no }   (drives ranking)
+  SEVERITY ∈ { INFO | LOW | MEDIUM | HIGH | CRITICAL }   (impact, orthogonal to
+    strength — do not let a strength-1 contested candidate suppress a HIGH severity)
+
+On a labeled corpus, the base same_as_seeded / real_latent / false_positive labeling
+still applies on top of the witness disposition (a real reachable bug the seed label
+does not cover is a real_latent WIN, never counted against precision — the R11
+discipline). LABEL_DELTA is required for any real_latent claim.
+
+Report a MULTI-NUMBER scorecard, never a single "specificity":
+  1. reachability candidates  — strength-1 contested findings surfaced
+  2. confirmed                — findings promoted to strength ≥ 2 (observed)
+  3. real_latent_static       — terminal build-config findings (a positive result)
+  4. precision                — TP / (TP + FP), FP = only false_positive; real_latent
+                                and contested are NEVER in the denominator
+  5. promotion yield          — contested candidates the dynamic stage confirmed
+"Many contested candidates, few confirmed" is an honest all-static result, not a
+verified-vuln count — say so rather than reporting arguments as proven.
