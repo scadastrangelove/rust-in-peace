@@ -192,6 +192,38 @@ capabilities file.
 
 ---
 
+## ADR-7 — The walk emits intelligence (`intel.json`), not only findings
+
+**Decision.** The android-app walk emits a first-class **intelligence** artifact —
+`intel.json` — alongside its vulnerability findings: the app's server endpoints /
+hosts, bundled SDKs, requested permissions, deep-link schemes, exported-component
+surface, and secrets *observed*. It is distinct from a finding (a finding is a
+vulnerability witness; intel is data about the target).
+
+**Why.** A C parser has no "endpoints"; an app does. The reachability walk already
+enumerates the manifest + smali, so the same pass cheaply yields high-value
+inventory. Most importantly, the **endpoints / hosts** list is the discovery
+vector for **server-side** testing: the mobile client enumerates the API hosts a
+downstream EASM / DAST / passive-DNS pipeline then attacks. The app is a discovery
+vector for the server surface. `capabilities.json` (§9) is a partial precursor
+(the exported-surface inventory); `intel.json` is its richer sibling.
+
+Conceptually this widens the pipeline's output model: it emits both *witnesses of
+vulnerabilities* and *intelligence about the target* — the crash→witness
+generalization (ADR-4) has a sibling, the finding→intel generalization.
+
+**Security.** Secrets are recorded by **kind + location only** (`redacted: true`);
+the value is never stored, so `intel.json` is safe to hand to the server-side
+pipeline.
+
+**Realized in code.** `harness/android_app/intel.py` (`TargetIntel` +
+deterministic `harvest(app_root)`, XML-namespace host denylist); the canary ships
+an `intel` driver + fixture data (an API client, an OkHttp SDK marker, a fake
+maps key) with `tests/test_android_intel.py` green. A real target's recon step
+runs the same `harvest()` over apktool/jadx output.
+
+---
+
 ## Where the strategic value sits (corollary)
 
 The static-terminal set (ADR-4) is exactly what existing scanners (MobSF, QARK…)

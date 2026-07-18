@@ -91,6 +91,22 @@ finding is down-ranked (AR9), the JNI fuzz track stays off, and that skip carrie
 paper trail. When the chain holds, a reproduced crash promotes to `native_crash`
 (strength 4).
 
+## Intelligence artifact — `intel.json` (ADR-7)
+
+The walk emits more than findings. Alongside the vulnerability witnesses it
+produces `intel.json` — a first-class **inventory** of the app's outward shape:
+server **endpoints / hosts** it talks to, bundled **SDKs**, requested
+**permissions**, **deep-link** schemes, the **exported-component surface**, and
+**secrets observed** (recorded by kind + location only — `redacted: true`, the
+value is never stored). A finding is a vulnerability; intel is data about the
+target.
+
+The endpoints/hosts list is the payload that bridges to **server-side testing**:
+the mobile client enumerates the API hosts a downstream EASM / DAST / passive-DNS
+pipeline then attacks. `harness/android_app/intel.py` (`harvest(app_root)`) is a
+deterministic scan over the decoded tree; a real target's recon step runs it over
+apktool/jadx output. See `targets/android-canary/intel` for the driver.
+
 ## Capability-gated checks — [`capabilities.md`](capabilities.md)
 
 Not every check applies to every app. WebView-bridge hunting only makes sense with a

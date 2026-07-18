@@ -1,0 +1,8 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Decoded resources for the android-canary SYNTHETIC fixture. The maps key is a
+     FAKE, well-formed Google API key: harvest() records it in intel.secrets_observed
+     by kind + location only (redacted: true) — the value is never stored. -->
+<resources>
+    <string name="app_name">Canary</string>
+    <string name="google_maps_key">AIzaSyFAKEcanarykey00000000000000000000</string>
+</resources>
