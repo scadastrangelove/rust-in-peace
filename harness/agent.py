@@ -28,7 +28,7 @@ import sys
 from dataclasses import dataclass, field
 from typing import Any
 
-from . import sandbox
+from . import redact, sandbox
 
 
 # ──────────────────────────────────────────────────────────────────────────────
@@ -290,8 +290,11 @@ async def run_agent(
                     if progress_prefix:
                         _progress_line(msg, progress_prefix)
                     if transcript_file:
+                        # F3 (self-review): scrub live credential values before
+                        # they touch disk — a prompt-injected agent or a build
+                        # `env` dump can echo the token into a message/tool result.
                         transcript_file.write(
-                            json.dumps(_truncate_tool_results(msg)) + "\n"
+                            redact.scrub(json.dumps(_truncate_tool_results(msg))) + "\n"
                         )
                         transcript_file.flush()
 
