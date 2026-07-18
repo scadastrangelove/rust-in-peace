@@ -128,17 +128,18 @@ def _dedup(seq: list[str]) -> list[str]:
 
 
 # ── manifest ─────────────────────────────────────────────────────────────────
-def _parse_manifest(app_root: Path) -> tuple[list[str], list[str], list[dict]]:
-    """(permissions, deeplinks, exported_surface) from AndroidManifest.xml.
+def _parse_manifest(app_root: Path) -> tuple[list[str], list[str], list[dict], str]:
+    """(permissions, deeplinks, exported_surface, package) from AndroidManifest.xml.
     Missing/unparsable manifest → empty lists (the harvester never hard-fails)."""
     mf = app_root / "AndroidManifest.xml"
     if not mf.exists():
-        return [], [], []
+        return [], [], [], ""
     try:
         root = ET.parse(mf).getroot()
     except ET.ParseError:
-        return [], [], []
+        return [], [], [], ""
 
+    package = root.get("package", "") or ""
     perms = [e.get(f"{_ANDROID}name", "") for e in root.iter("uses-permission")]
     perms = _dedup([p for p in perms if p])
 
@@ -159,12 +160,24 @@ def _parse_manifest(app_root: Path) -> tuple[list[str], list[str], list[dict]]:
                     "type": tag,
                     "permission": comp.get(f"{_ANDROID}permission"),  # None if ungated
                 })
-    return perms, deeplinks, exported
+    return perms, deeplinks, exported, package
 
 
 # ── smali / resources scan ───────────────────────────────────────────────────
-def _scan_tree(app_root: Path) -> tuple[list[Endpoint], list[dict], list[dict]]:
-    """(endpoints, sdks, secrets_observed) from smali + resource text files."""
+def _in_app_package(rel: str, app_pkg_path: str) -> bool:
+    """True if a smali file belongs to the app's own package (not a bundled SDK).
+    Endpoints/secrets are scanned only from app code + resources, so an ad/
+    analytics SDK's URLs and keys don't pollute the app's server-surface intel —
+    the same third-party/first-party split the SDK detector relies on. With no
+    package (missing manifest) this is permissive (scan all), preserving behavior."""
+    if not app_pkg_path:
+        return True
+    return f"/{app_pkg_path}/" in f"/{rel.replace(chr(92), '/')}"
+
+
+def _scan_tree(app_root: Path, app_pkg_path: str) -> tuple[list[Endpoint], list[dict], list[dict]]:
+    """(endpoints, sdks, secrets_observed). Endpoints/secrets: app-package smali +
+    all non-smali resources. SDKs: the whole tree (it *wants* the bundled packages)."""
     endpoints: dict[tuple, Endpoint] = {}
     sdk_hits: dict[str, str] = {}
     secrets: list[dict] = []
@@ -175,6 +188,10 @@ def _scan_tree(app_root: Path) -> tuple[list[Endpoint], list[dict], list[dict]]:
 
     for p in text_files:
         rel = _rel(p, app_root)
+        # SDK URLs/keys are third-party noise for the app's server surface: scan
+        # endpoints/secrets only from the app's own smali (+ any resource file).
+        if p.suffix == ".smali" and not _in_app_package(rel, app_pkg_path):
+            continue
         try:
             body = p.read_text(errors="replace")
         except OSError:
@@ -211,8 +228,8 @@ def harvest(app_root: str | Path) -> TargetIntel:
     (`app_root` contains AndroidManifest.xml and smali/). Pure function of the
     tree — safe to run in grade/recon and to re-run for regression."""
     app_root = Path(app_root)
-    perms, deeplinks, exported = _parse_manifest(app_root)
-    endpoints, sdks, secrets = _scan_tree(app_root)
+    perms, deeplinks, exported, package = _parse_manifest(app_root)
+    endpoints, sdks, secrets = _scan_tree(app_root, package.replace(".", "/"))
 
     # hosts = server hosts only: endpoint authorities + App Link (http/https)
     # deeplink hosts. A custom-scheme deeplink authority (e.g. `canary://web`) is
