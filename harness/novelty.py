@@ -75,9 +75,17 @@ def _ensure_clone(github_url: str, repo_dir: Path) -> tuple[bool, str]:
             return False, f"fetch: {r.stderr.strip()[:200]}"
         return True, ""
 
+    # F4 (self-review): a config.yaml `github_url` is only semi-trusted. Reject
+    # non-standard URL schemes — `ext::` is arbitrary command execution, `file::`
+    # reads local paths — and defend against a leading-dash URL being parsed as a
+    # git option. `-c protocol.ext.allow=never` + `--` before the URL are the
+    # belt-and-suspenders even if a scheme slips through.
+    if not re.match(r"^(?:https?|git|ssh)://", github_url) and not github_url.startswith("git@"):
+        return False, f"refusing to clone non-standard/unsafe URL: {github_url[:80]!r}"
     repo_dir.parent.mkdir(parents=True, exist_ok=True)
     r = subprocess.run(
-        ["git", "clone", "--quiet", "--filter=blob:none", github_url, str(repo_dir)],
+        ["git", "-c", "protocol.ext.allow=never", "-c", "protocol.file.allow=user",
+         "clone", "--quiet", "--filter=blob:none", "--", github_url, str(repo_dir)],
         capture_output=True, text=True, timeout=300,
     )
     if r.returncode != 0:

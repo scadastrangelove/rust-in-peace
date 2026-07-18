@@ -17,6 +17,23 @@ from pathlib import Path
 import yaml
 
 
+def _safe_git_ref(ref: str, target_dir: Path) -> str:
+    """Validate a config.yaml git ref (``commit``) before it is interpolated
+    into a ``git`` argv (F4, self-review). A ref beginning with ``-`` would be
+    parsed by git as an *option* rather than a revision (leading-dash argument
+    injection, e.g. via ``novelty.py``'s ``git log <commit>..HEAD``). Real
+    commit hashes and tags never start with ``-``, and refs may not contain
+    whitespace/control chars, so reject those. Kept intentionally permissive
+    otherwise (hashes AND tag-like refs such as ``0.18.0-beta.1`` are valid)."""
+    ref = ref.strip()
+    if not ref or ref.startswith("-") or any(c.isspace() for c in ref) or "\x00" in ref:
+        raise ValueError(
+            f"{target_dir.name}: invalid config `commit` {ref!r} — a git ref must "
+            f"be non-empty, contain no whitespace, and not start with '-' "
+            f"(argument-injection guard)")
+    return ref
+
+
 @dataclass(frozen=True)
 class TargetConfig:
     name: str
@@ -66,7 +83,7 @@ class TargetConfig:
             profile=cfg.get("profile", "cpp"),
             image_tag=cfg["image_tag"],
             github_url=cfg["github_url"],
-            commit=cfg["commit"],
+            commit=_safe_git_ref(str(cfg["commit"]), target_dir),
             binary_path=cfg["binary_path"],
             source_root=cfg["source_root"],
             focus_areas=cfg.get("focus_areas") or [],
