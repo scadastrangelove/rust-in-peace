@@ -9,7 +9,7 @@ catches a reintroduced bug immediately. This is the "corpus is a regression suit
 cross-cutting rule from `profiles/rust/fuzzing.md`, made concrete.
 
 Pure/deterministic (no docker) so it is unit-testable: it lays out files + the
-manifest; the actual replay runs on the Tamm box from the target Dockerfile.
+manifest; the actual replay runs on the build host from the target Dockerfile.
 """
 from __future__ import annotations
 

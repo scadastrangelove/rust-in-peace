@@ -1661,7 +1661,7 @@ def _missing_capabilities(inv: "caps.CapabilityInventory | None",
                           arts: list[ReattackArtifact]) -> list[dict]:
     """Every §9 capability the run couldn't fully exercise (P1.1). Two sources:
     active capabilities whose gate needs a non-default sanitizer (MSan/TSan —
-    a special Tamm image), and any reattack whose residual named a missing rung.
+    a special sanitizer image), and any reattack whose residual named a missing rung.
     "0 bugs found" is never the whole story; this section is why."""
     out: list[dict] = []
     if inv is not None:
@@ -1671,7 +1671,7 @@ def _missing_capabilities(inv: "caps.CapabilityInventory | None",
                     "capability": g.capability,
                     "evidence": inv.evidence(g.capability),
                     "why_unexercised": f"needs {g.sanitizer.upper()} — not the cargo-fuzz ASan default "
-                                       f"(select the matching Tamm image per fuzzing.md)",
+                                       f"(select the matching sanitizer image per fuzzing.md)",
                 })
     residual_gaps = {"needs-MSan", "asan-on-C", "grammar-gated", "address-space-only"}
     for a in arts:

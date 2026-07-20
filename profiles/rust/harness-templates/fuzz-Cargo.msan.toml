@@ -87,20 +87,20 @@
 # `-Zbuild-std` exists to prevent.
 #
 # ─────────────────────────────────────────────────────────────────────────────
-#  TAMM / DOCKER GOTCHA — MSan needs ASLR off (the "unable to disable ASLR")
+#  BUILD-HOST / DOCKER GOTCHA — MSan needs ASLR off (the "unable to disable ASLR")
 # ─────────────────────────────────────────────────────────────────────────────
 # GOTCHA: MSan (like all the LLVM sanitizers' shadow-memory scheme) maps its
 # shadow at FIXED addresses and must therefore DISABLE ASLR for the process
 # (personality(ADDR_NO_RANDOMIZE)). Docker's DEFAULT SECCOMP profile filters the
 # `personality` syscall, so the run dies at startup with the EXACT failure Stage
-# 3.9 hit on Tamm:
+# 3.9 hit on the build host:
 #
 #     ==NN==ERROR: MemorySanitizer: unable to disable ASLR (personality: Operation not permitted)
 #
 # The block is a SECCOMP block, not a missing capability — so the load-bearing fix
 # is to stop filtering the syscall with `--security-opt seccomp=unconfined`.
 # `--privileged` also works (it implies seccomp=unconfined) and is the
-# proven-working invocation on the Tamm box; the narrower form is
+# proven-working invocation on the build host; the narrower form is
 # `--security-opt seccomp=unconfined` (optionally `--cap-add=SYS_PTRACE`, but the
 # cap alone does NOT unblock `personality` — the seccomp opt is what does):
 #

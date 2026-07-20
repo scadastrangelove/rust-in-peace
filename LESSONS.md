@@ -425,7 +425,7 @@ its own task.
   the blast radius extends to every other concurrently-running agent sharing the same host.
   **The real, architectural fix (not just a prompt mitigation):** heavy/parallel multi-agent cargo work
   (6+ concurrent fix-agents each doing full builds+tests) should run on the isolated remote build box
-  (Tamm, ssh gordey@85.142.100.8) inside per-agent Docker containers, not on the local Mac's bare-metal
+  (an isolated remote build host) inside per-agent Docker containers, not on the local Mac's bare-metal
   `$HOME/.rustup` — recovering the local toolchain here cost 30+ minutes fighting the SAME network flakiness
   that caused the original break (repeated connection-reset retries on the same large component download),
   because there was no isolation to begin with: every worktree shared one real toolchain install. Docker

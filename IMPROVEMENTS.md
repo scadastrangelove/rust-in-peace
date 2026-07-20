@@ -332,5 +332,5 @@ Not yet promoted to numbered items; captured so they don't drift back into memor
   rev2→rev4.
 - **apptrust profile: end-to-end run.** `harness/apptrust/` + `targets/apptrust-canary/` are built
   and unit-tested (branch `apptrust-basket3`), but a full `vuln-pipeline run apptrust-canary` (needs
-  the Tamm box + agent auth) hasn't proven the profile drives the escape oracle and recalls the
+  the build host + agent auth) hasn't proven the profile drives the escape oracle and recalls the
   seeded bugs while sparing the decoy. Do before treating `apptrust` as production-ready.
