@@ -51,14 +51,30 @@ gaps between the table above and `main`:
    `/variant-scan` skill** (`.claude/skills/variant-scan/` — SKILL.md + the `find_engine.mjs`
    reference orchestration, on `main`). Remaining (CLI stage / auto-invoke) tracked as **W2**.
 
-### W1 — land the on-branch profile-hygiene modules to `main`  `[wiring]`
-`witness.py` + `admissibility.py` + `build_profile.py` + `soak.py` + `predisclose.py`
-(and the `apptrust`/`android-app` profiles that depend on `witness.py`) are done+tested but
-only on branches. Held deliberately, not forgotten.
-- **Where:** merge/cherry-pick the reviewed subset onto `main`; re-run the pure suite on `main`.
-- **Done-when:** `git cat-file -e main:harness/{witness,admissibility,build_profile,soak,predisclose}.py`
-  all succeed; the "done" rows above stop being aspirational. Decide per-module (some, like
-  `witness.py`, are load-bearing for two profiles; others can wait).
+### W1 — land the profile-hygiene modules to `main`  `[wiring]` — **MOSTLY DONE 2026-07-20**
+`admissibility.py` + `build_profile.py` + `soak.py` + `predisclose.py` + `maintainer_review_prompt.py`
+(and tests) are now **on `main`** (this commit), import-resolve and pass 41 tests on a clean `main`.
+Still on-branch (deliberately): `witness.py` (load-bearing for the `apptrust`/`android-app`
+profiles — lands with them), and `capabilities.py`'s `run_crash_track`/`crash_track_skip_reason`
+(P0.4) which is welded to the on-branch android context and is dead code today — extract it when
+android/witness land, not before.
+- **Done-when (remaining):** `git cat-file -e main:harness/witness.py` succeeds (with the profiles),
+  and P0.4's crash-track gate is on `main` and called.
+
+### W1b — the three honesty gates are on `main` but NOT yet CALLED  `[wiring]` — **the real linkage gap**
+Landing ≠ linked. Of the gates just landed, only **`predisclose` is invoked** — it is a live CLI
+command (`vuln-pipeline predisclose`, registered in `cli.py`). The other three are present +
+tested but **no stage calls them**, so they don't fire automatically yet:
+- `admissibility.py` (dep-citation / where-checked / construction-repro → CONTESTED/UNVERIFIED) —
+  must be called from the **grade** / **triage** stage over each `VerdictClaim`, and the grade
+  *prompt* must elicit `dep_citation` / `where_checked` so the gate has inputs.
+- `build_profile.py` (shipping-vs-detection re-test) — must be called from **grade** on each crash,
+  gating `build_profile_gated` (R7) unless it reproduces under the shipping build.
+- `soak.py` (distinct-sites enumeration) — `scripts/run_fuzz_soak.sh` (already on `main`) must feed
+  each reproduced artifact's crash_output through `soak.site_report(...)` for the `SOAK-DONE` line.
+- **Done-when:** a `grade`/`triage` run on a target actually emits a CONTESTED from a missing
+  `dep_citation`, an R7 from a debug-only overflow, and a distinct-site count from a soak — without
+  a human invoking the modules by hand. This is prompt+stage work, not just an import.
 
 ### W2 — make `/variant-scan` a first-class pipeline stage, not just a skill  `[wiring][L21/L25]`
 The skill exists and is the documented recall front-end, but a human still drives it. Two rungs:

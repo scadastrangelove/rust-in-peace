@@ -148,6 +148,34 @@ class ReportVerdict:
 
 
 @dataclass
+class MaintainerReviewVerdict:
+    """The adversarial maintainer-review agent's (P1.3, LESSONS.md L13) verdict
+    on a finding + its proposed fix — the pre-disclosure gate."""
+    verdict: str               # ACCEPT, DOWNGRADE, REJECT, WONTFIX
+    corrected_severity: str    # CRITICAL, HIGH, MEDIUM, LOW, INFO
+    reachability: str          # REACHABLE, CONSTRUCTION_ONLY, UNCLEAR
+    fix_ok: bool
+    fix_problem: str
+    rebuttals: str
+    one_line: str
+
+    def to_dict(self) -> dict[str, Any]:
+        return asdict(self)
+
+    @classmethod
+    def from_dict(cls, d: dict[str, Any]) -> MaintainerReviewVerdict:
+        return cls(
+            verdict=d["verdict"],
+            corrected_severity=d["corrected_severity"],
+            reachability=d["reachability"],
+            fix_ok=d["fix_ok"],
+            fix_problem=d.get("fix_problem", "-"),
+            rebuttals=d.get("rebuttals", ""),
+            one_line=d.get("one_line", ""),
+        )
+
+
+@dataclass
 class RunResult:
     """One end-to-end run's outcome."""
     target: str

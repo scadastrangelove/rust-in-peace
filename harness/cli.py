@@ -57,6 +57,7 @@ from .grade import run_grade
 from .judge import run_judge, run_compare
 from .novelty import upstream_log, crash_file_from_frame, NOVELTY_NOT_CHECKED
 from .patch import run_patch, PATCH_MAX_TURNS, DEFAULT_MAX_ITERATIONS
+from .predisclose import run_maintainer_review, MAINTAINER_REVIEW_MAX_TURNS
 from .recon import run_recon, RECON_MAX_TURNS
 from .report import run_report, REPORT_MAX_TURNS
 from .prompts.system_prompt import build_system_prompt
@@ -920,6 +921,26 @@ def main() -> int:
     p_patch.add_argument("--engagement-context", type=Path, default=None,
                          help="Path to an authorization/engagement-scope file (see `run --help`)")
 
+    p_predisclose = sub.add_parser(
+        "predisclose",
+        help="Adversarial maintainer-review gate on each bug's report+patch, before disclosure")
+    p_predisclose.add_argument("results_dir", type=Path,
+                               help="Batch directory (results/<target>/<timestamp>/)")
+    p_predisclose.add_argument("--bug", type=int, default=None,
+                               help="Only review bug_NN (default: all with a report.json)")
+    p_predisclose.add_argument("--model", default=os.environ.get("VULN_PIPELINE_MODEL"),
+                               help="Model string (required; or set VULN_PIPELINE_MODEL)")
+    p_predisclose.add_argument("--parallel", action="store_true",
+                               help="Run maintainer-review agents concurrently")
+    p_predisclose.add_argument("--max-turns", type=int, default=MAINTAINER_REVIEW_MAX_TURNS,
+                               help=f"Maintainer-review agent turn budget (default {MAINTAINER_REVIEW_MAX_TURNS})")
+    p_predisclose.add_argument("--targets-dir", type=Path, default=Path("targets"),
+                               help="Where to find target config dirs (default: ./targets)")
+    p_predisclose.add_argument("--dangerously-no-sandbox", dest="dangerously_no_sandbox",
+                               action="store_true", help="See `run --help`.")
+    p_predisclose.add_argument("--engagement-context", type=Path, default=None,
+                               help="Path to an authorization/engagement-scope file (see `run --help`)")
+
     p_reattack = sub.add_parser(
         "reattack",
         help="find→fuzz bridge (rust): turn findings into reproducing fuzz harnesses")
@@ -952,7 +973,7 @@ def main() -> int:
 
     args = parser.parse_args()
 
-    if args.command in ("run", "recon", "report", "patch", "reattack"):
+    if args.command in ("run", "recon", "report", "patch", "reattack", "predisclose"):
         if err := sandbox.require(args.dangerously_no_sandbox):
             print(err, file=sys.stderr)
             return 1
@@ -967,6 +988,8 @@ def main() -> int:
         return _cmd_report(args)
     if args.command == "patch":
         return _cmd_patch(args)
+    if args.command == "predisclose":
+        return _cmd_predisclose(args)
     if args.command == "reattack":
         return _cmd_reattack(args)
     if args.command == "scorecard":
@@ -1451,6 +1474,118 @@ def _cmd_patch(args) -> int:
         print(f"  bug_{bug_id:02d}: {r['status']:16s} → "
               f"{reports_root}/bug_{bug_id:02d}/patch_result.json")
         if r["status"] != "patch_verified":
+            exit_code = 2
+    return exit_code
+
+
+# ── predisclose (P1.3 maintainer-review gate, L13/L15/L23/L34) ──────────────
+
+def _cmd_predisclose(args) -> int:
+    root: Path = args.results_dir
+    if not root.is_dir():
+        print(f"error: {root} is not a directory", file=sys.stderr)
+        return 1
+    agent_env = _resolve_auth_env()
+    if agent_env is None:
+        print(NO_AUTH_MSG, file=sys.stderr)
+        return 1
+    if not args.model:
+        print("error: --model required (or set VULN_PIPELINE_MODEL)", file=sys.stderr)
+        return 1
+    _warn_bedrock_model(args.model)
+
+    reports_root = root / "reports"
+    bug_dirs = sorted(d for d in reports_root.glob("bug_*") if d.is_dir())
+    items = [(int(d.name.split("_")[1]), d) for d in bug_dirs
+             if (d / "report.json").exists()
+             and (args.bug is None or int(d.name.split("_")[1]) == args.bug)]
+    if not items:
+        print("No bug_NN/report.json under results dir "
+              "(run `report` — and `patch` for a fix to review — first).", file=sys.stderr)
+        return 2
+
+    first_report = json.loads((items[0][1] / "report.json").read_text())
+    from_run = first_report.get("from_run")
+    if not from_run:
+        print("error: report.json missing 'from_run' — can't infer target", file=sys.stderr)
+        return 1
+    target_name = json.loads(Path(from_run).read_text())["target"]
+    target = TargetConfig.load(args.targets_dir / target_name)
+    global _current_target_name
+    _current_target_name = target.name
+
+    if not docker_ops.image_exists(target.image_tag):
+        print(f"[build] Building {target.image_tag} ...")
+        docker_ops.build(target.dockerfile_dir, target.image_tag)
+
+    system_prompt = build_system_prompt(args.engagement_context)
+    print(color(f"[predisclose] {len(items)} bug(s) → {reports_root}/bug_NN/predisclose.json",
+                "patch"))
+    print(f"  model: {args.model}\n")
+
+    async def _one(idx: int, out_dir: Path) -> dict:
+        report = json.loads((out_dir / "report.json").read_text())
+        report_verdict = report.get("verdict") or {}
+        patch_diff_path = out_dir / "patch.diff"
+        fix_snippet = (patch_diff_path.read_text() if patch_diff_path.exists()
+                       else "(no fix proposed)")
+        try:
+            review, result = await run_maintainer_review(
+                finding_text=report.get("report", ""),
+                severity_claimed=report_verdict.get("severity_rating", "NOT_STATED"),
+                fix_snippet=fix_snippet,
+                reachability_arg=report_verdict.get("reachability_verdict", "UNCLEAR"),
+                source_root=target.source_root,
+                image_tag=target.image_tag,
+                model=args.model,
+                agent_env=agent_env,
+                container_name=f"predisclose_{target.name}_{idx}",
+                max_turns=args.max_turns,
+                transcript_path=str(out_dir / "predisclose_transcript.jsonl"),
+                progress_prefix=f"[predisclose:bug_{idx:02d}]",
+                system_prompt=system_prompt,
+            )
+        except Exception as e:
+            traceback.print_exc()
+            return {"bug_id": idx, "status": "error", "error": f"{type(e).__name__}: {e}"}
+
+        status = "no_review" if review is None else "reviewed"
+        if result.error:
+            status = "agent_failed"
+        _pline = (f"[predisclose:bug_{idx:02d}] {status}"
+                  + (f"  verdict={review.verdict} sev={review.corrected_severity} "
+                     f"fix_ok={review.fix_ok}" if review else ""))
+        print(color(_pline, "bold") if status == "reviewed" and review.verdict == "ACCEPT"
+              else _pline)
+
+        out = {"bug_id": idx, "status": status, "error": result.error,
+               "review": review.to_dict() if review else None,
+               "fix_reviewed": fix_snippet != "(no fix proposed)"}
+        with open(out_dir / "predisclose.json", "w") as f:
+            json.dump(out, f, indent=2)
+        return out
+
+    async def _dispatch():
+        coros = [_one(idx, out_dir) for idx, out_dir in items]
+        if args.parallel:
+            return await asyncio.gather(*coros, return_exceptions=True)
+        return [await c for c in coros]
+
+    results = asyncio.run(_dispatch())
+
+    print("\n── Summary ────────────────────────────────────────────────────────────────────")
+    exit_code = 0
+    for r in results:
+        if isinstance(r, BaseException):
+            print(f"  error — {type(r).__name__}: {r}")
+            exit_code = 2
+            continue
+        bug_id = r["bug_id"]
+        review = r.get("review") or {}
+        verdict = review.get("verdict", "-")
+        print(f"  bug_{bug_id:02d}: {r['status']:12s} verdict={verdict:10s} → "
+              f"{reports_root}/bug_{bug_id:02d}/predisclose.json")
+        if r["status"] != "reviewed" or verdict in ("REJECT", "WONTFIX"):
             exit_code = 2
     return exit_code
 
