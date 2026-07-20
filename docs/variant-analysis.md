@@ -1,8 +1,10 @@
-# Variant analysis — "bugs travel in packs" (design note, prototype stage)
+# Variant analysis — "bugs travel in packs" (design note)
 
-> Status: **prototyping on quick-xml** (2026-07-19). Not yet a shipped stage. This note captures the design
-> before formalizing it as a principle (candidate **P7**) + a `feedback.py` edge + a skill. Per P1
-> (verify-before-you-believe / L19 don't-manufacture) we prove it on a real target first, then formalize.
+> Status: **shipped as the `/variant-scan` skill** (2026-07-20, `.claude/skills/variant-scan/`) after
+> proving on quick-xml/object/lopdf (results in [`variant-analysis-results.md`](variant-analysis-results.md)).
+> This note is the "why"; the skill is the "how". The CVE-history seed is one of that skill's three
+> passes. Remaining wiring — a first-class `vuln-pipeline variant-scan` CLI stage + a `feedback.py`
+> edge (candidate principle **P7**) — is tracked as **W2** in `IMPROVEMENTS.md`.
 
 ## The gap it closes
 
