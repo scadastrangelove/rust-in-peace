@@ -34,6 +34,12 @@ a profile already provides.
 
 ## Landing/wiring status (2026-07-20) — read this before trusting the "done" column above
 
+**Open majors (as of 2026-07-21):**
+- **W2** — make `/variant-scan` a first-class `vuln-pipeline` CLI stage (today it's a skill a human drives).
+- **W1** — land `witness.py` + the `apptrust`/`android-app` profiles to `main` (held on branches by choice).
+- **W2b** — run the honesty gates end-to-end on a build host (W1b wired + unit-tested them; the live
+  Docker/agent proof that a gated `disposition` lands in `result.json` hasn't been run).
+
 A wiring audit (what actually runs automatically vs. what's only prose/branch) found two
 gaps between the table above and `main`:
 
@@ -95,6 +101,21 @@ The skill exists and is the documented recall front-end, but a human still drive
   without a hand-authored workflow script; the disposition-is-triage discipline gate (read
   verifier text + independent PoC before `real`) is enforced by the stage emitting
   `independently_verified: false` until a PoC/grade step flips it.
+
+### W2b — live end-to-end verification of the honesty gates on a build host  `[verify][W1b]`
+W1b wired admissibility + build_profile into `grade` and unit-tested the fold (`test_gates.py`), but
+the LIVE path — a real grader in a Docker container emitting the premise tags, and a gated
+`disposition` (CONTESTED / build_profile_gated / UNVERIFIED) actually landing in `result.json` and
+routing through `aggregate` — has NOT been run (no Docker/agent on the dev Mac). Needs the build
+host + agent auth.
+- **Where:** a `vuln-pipeline run` on `rust-canary` (and one overflow-panic target) on the build host.
+- **Done-when:** (a) a run whose grader omits `reproduced_under_shipping` on an overflow-panic shows
+  `disposition=build_profile_gated` in `result.json` and the candidate is NOT confirmed; (b) a
+  finding whose grader declares a dep premise without `dep_citation` shows `disposition=contested`;
+  (c) a clean memory-safety crash still grades `real` (no false downgrade). Capture the three
+  `result.json` snippets as the evidence this fires for real, not just in units.
+- **Also:** `triage` (a skill, not python) does not yet re-apply admissibility over its own
+  re-derived verdicts — decide whether the grade-stage gate is sufficient or triage needs its own.
 
 ### W3 — F1: keep the model-API credential out of the target-exec container  `[dogfood self-review · T2 · HIGH]`
 The dogfood self-review (`self-review/{THREAT_MODEL,FINDINGS}.md`) found the pipeline dogfoods the
