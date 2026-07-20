@@ -71,6 +71,28 @@ The skill exists and is the documented recall front-end, but a human still drive
   verifier text + independent PoC before `real`) is enforced by the stage emitting
   `independently_verified: false` until a PoC/grade step flips it.
 
+### W3 — F1: keep the model-API credential out of the target-exec container  `[dogfood self-review · T2 · HIGH]`
+The dogfood self-review (`self-review/{THREAT_MODEL,FINDINGS}.md`) found the pipeline dogfoods the
+exact T2 its own threat model predicts: the Anthropic/Bedrock token sits in the env
+(`Config.Env`) of the same container that runs untrusted target binaries — the find/grade/report
+prompts tell the agent to execute `{binary_path}`, so an attacker binary reads `$ANTHROPIC_API_KEY`
+and the egress proxy already allows `api.anthropic.com:443`. **F2/F3/F4 are fixed and now on `main`**
+(commit landing this file: `run_fuzz_soak.sh` runsc+cap-drop, `harness/redact.py` token scrubbing,
+`config._safe_git_ref` arg-injection guard — tests `test_redact.py`, `test_config_commit_guard.py`
+green on `main`). **F1 is the remaining architectural one** and had lived only in
+`self-review/FINDINGS.md`, not here.
+- **Why no cheap fix:** the agent runs the untrusted binary via its own in-container Bash, so the
+  token-holding container IS the exec container; `-e KEY` is already kept out of argv and mounts are
+  `:ro`, but the env var itself is the leak.
+- **Where:** route the in-container `claude -p` through the egress proxy as a **credential-injecting
+  reverse proxy** — the proxy holds the token and adds `Authorization` on the way out; the container
+  never sees the raw value. (`patch_grade.py` already sidesteps this with `auth=None` + `network=none`
+  for the patch-grade stage; generalize that shape, or the proxy approach, to find/grade/report/recon/
+  judge.)
+- **Done-when:** no container that executes target code has a usable model credential in its env
+  (`docker inspect` shows no token; a target binary that exfiltrates `env` gets nothing usable);
+  the pipeline still authenticates to the model API.
+
 ---
 
 ## P0 — cheap, high-value, do first
