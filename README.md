@@ -23,8 +23,9 @@ reproduction.
 > (Apache-2.0) — the reference implementation for autonomous vulnerability
 > discovery and remediation with Claude ([blog](https://claude.com/blog/using-llms-to-secure-source-code),
 > [cookbook](https://platform.claude.com/cookbook/claude-agent-sdk-06-the-vulnerability-detection-agent)).
-> Upstream is a C/C++ + ASan demo and is not maintained. This fork keeps that
-> intact as the default `cpp` profile and adds a first-class **`rust`** profile.
+> Upstream is a C/C++ + ASan demo and is not maintained. This fork is
+> **rust-first** — `rust` is the default profile — and keeps the upstream C/C++
+> demo intact as the `cpp` profile.
 > Maintained by Sergey Gordeychik ([contact](#contact)).
 
 ## What this fork adds
@@ -111,12 +112,17 @@ in `harness/profiles.py`; the orchestration doesn't change. Full details:
 ## Contents
 
 - **Claude Code skills**: `/quickstart`, `/threat-model`, `/vuln-scan`,
-  `/triage`, `/patch`, `/customize`: interactive scoping, scanning, triage,
-  and patching. Open this repo in Claude Code and run `/quickstart` to get
-  oriented.
+  `/variant-scan`, `/triage`, `/patch`, `/customize`: interactive scoping,
+  scanning, triage, and patching. `/variant-scan` runs the three seed-diverse
+  find passes (blind ∪ threat-model-first ∪ CVE/history-seeded) + a 3-skeptic
+  adversarial verify — the recall engine the real-OSS campaigns used. Open this
+  repo in Claude Code and run `/quickstart` to get oriented.
 - **`harness/`**: the autonomous pipeline (recon → find → grade → judge →
-  report, plus the `reattack` find→fuzz bridge, the `scorecard` gate, and
-  `patch`), driven by profiles. The `rust` profile finds Rust memory-safety /
+  report, plus the `reattack` find→fuzz bridge, the `scorecard` gate, the
+  `predisclose` adversarial maintainer-review, and `patch`), driven by profiles.
+  Grade applies honesty gates (a `real` verdict needs its premises evidenced —
+  dependency-behaviour citations, a reachability trace, a shipping-build re-test
+  for instrumentation-only crashes — else it is routed to CONTESTED/UNVERIFIED). The `rust` profile finds Rust memory-safety /
   panic / soundness bugs with Miri + AddressSanitizer + cargo-fuzz; the retained
   `cpp` profile finds C/C++ memory bugs with ASan. This harness is a
   **reference, not a product** — the shape, prompts, and sandboxing are reusable,
@@ -128,7 +134,8 @@ in `harness/profiles.py`; the orchestration doesn't change. Full details:
   the worked profile this fork is built around — Miri / sanitizer / panic / hang
   detectors, the Rust bug taxonomy (unsafe/FFI, panic-DoS, deserialization trust,
   `Send`/`Sync` soundness), capability-routed fuzzing, and recall-first
-  union-of-N. `cpp` (C/C++ + ASan) is the retained upstream default. See
+  union-of-N. `cpp` (C/C++ + ASan) is the retained upstream profile (a
+  `config.yaml` without a `profile:` field now defaults to `rust`). See
   [profiles/rust/README.md](profiles/rust/README.md), the `targets/rust-canary`
   demo, and [`targets/dvra3-parser`](targets/dvra3-parser) (a DVRA benchmark run).
   Adding another language = a new `harness/<lang>/` package + one registry entry.
