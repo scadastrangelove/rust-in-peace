@@ -205,7 +205,7 @@ class CapabilityInventory:
 
     def sanitizers(self) -> list[str]:
         """Distinct reattack sanitizers the active capabilities call for — the
-        Tamm execution matrix this target actually needs (drops 'none')."""
+        sanitizer/fuzz execution matrix this target actually needs (drops 'none')."""
         seen: list[str] = []
         for g in self.active_gates():
             if g.sanitizer != "none" and g.sanitizer not in seen:

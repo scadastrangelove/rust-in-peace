@@ -8,7 +8,7 @@ it **builds and runs untrusted target code** (crashing inputs, fuzzers) inside D
 drives **LLM agents** that **read untrusted target source** and **execute tool calls** (shell, file
 ops) while hunting bugs. It forwards a model-API credential (Anthropic API key / OAuth token) to the
 agent process, and restricts agent/target network egress through a proxy. The operator runs it on their
-own workstation or a build box (Tamm), often with Docker talking to the host daemon.
+own workstation or a build box, often with Docker talking to the host daemon.
 
 The trust boundary is therefore inverted from a normal app: **the input (a target repo + its source +
 its built binaries) is actively adversarial**, and the code that processes it is our own orchestration

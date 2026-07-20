@@ -248,7 +248,7 @@ the whole budget on raw bytes.
 > §5) climbs to **nothing**: it is a real defect out of fuzz scope on a 64-bit
 > host, reported not chased.
 
-## Tamm execution matrix
+## Sanitizer/fuzz execution matrix
 
 Each oracle is a distinct toolchain, and most need a distinct container image
 (different nightly features, different privilege, an ASan-compiled C world).
