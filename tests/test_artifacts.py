@@ -1,7 +1,7 @@
 # Copyright 2026 Anthropic PBC
 # SPDX-License-Identifier: Apache-2.0
 """Round-trip serialization tests for artifact dataclasses."""
-from harness.artifacts import CrashArtifact, GraderVerdict, RunResult
+from harness.artifacts import CrashArtifact, GraderVerdict, MaintainerReviewVerdict, RunResult
 
 
 def test_crash_artifact_roundtrip():
@@ -42,6 +42,20 @@ def test_grader_verdict_roundtrip():
     assert restored.score == orig.score
     assert restored.criteria == orig.criteria
     assert restored.evidence == orig.evidence
+
+
+def test_maintainer_review_verdict_roundtrip():
+    orig = MaintainerReviewVerdict(
+        verdict="DOWNGRADE",
+        corrected_severity="LOW",
+        reachability="CONSTRUCTION_ONLY",
+        fix_ok=True,
+        fix_problem="-",
+        rebuttals="argstack.rs:38 debug_assert is inert in release",
+        one_line="Real but only reachable via an internal constructor, not the public API.",
+    )
+    restored = MaintainerReviewVerdict.from_dict(orig.to_dict())
+    assert restored == orig
 
 
 def test_run_result_json_roundtrip():
