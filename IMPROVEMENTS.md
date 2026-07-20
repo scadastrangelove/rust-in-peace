@@ -61,20 +61,29 @@ android/witness land, not before.
 - **Done-when (remaining):** `git cat-file -e main:harness/witness.py` succeeds (with the profiles),
   and P0.4's crash-track gate is on `main` and called.
 
-### W1b — the three honesty gates are on `main` but NOT yet CALLED  `[wiring]` — **the real linkage gap**
-Landing ≠ linked. Of the gates just landed, only **`predisclose` is invoked** — it is a live CLI
-command (`vuln-pipeline predisclose`, registered in `cli.py`). The other three are present +
-tested but **no stage calls them**, so they don't fire automatically yet:
-- `admissibility.py` (dep-citation / where-checked / construction-repro → CONTESTED/UNVERIFIED) —
-  must be called from the **grade** / **triage** stage over each `VerdictClaim`, and the grade
-  *prompt* must elicit `dep_citation` / `where_checked` so the gate has inputs.
-- `build_profile.py` (shipping-vs-detection re-test) — must be called from **grade** on each crash,
-  gating `build_profile_gated` (R7) unless it reproduces under the shipping build.
-- `soak.py` (distinct-sites enumeration) — `scripts/run_fuzz_soak.sh` (already on `main`) must feed
-  each reproduced artifact's crash_output through `soak.site_report(...)` for the `SOAK-DONE` line.
-- **Done-when:** a `grade`/`triage` run on a target actually emits a CONTESTED from a missing
-  `dep_citation`, an R7 from a debug-only overflow, and a distinct-site count from a soak — without
-  a human invoking the modules by hand. This is prompt+stage work, not just an import.
+### W1b — wire the honesty gates into a live stage  `[wiring]` — **DONE 2026-07-21**
+Landing ≠ linked was the gap. Now closed:
+- **`admissibility` + `build_profile` → wired into `grade`** via new `harness/gates.py`
+  (`apply_gates`), called at the end of `run_grade`. It folds the gate result back into the
+  `GraderVerdict` (new `disposition` + `gate_reason` fields, backward-compatible defaults): a gated
+  finding gets `passed=False` → `status=crash_rejected` → the EXISTING `aggregate`/`dedup` path
+  routes it to CONTESTED/dynamic-confirm, with **no change to aggregate.py**. The rust `grade_prompt`
+  now elicits the inputs (`reproduced_under_shipping` for overflow-panics; `rests_on_dependency_
+  behavior`/`dep_citation`; `claims_reachable`/`where_checked`; `harness_kind`). Additive: a grader
+  that declares no premise trips no admissibility gate; `build_profile` only bites the
+  instrumentation-gated overflow classes (all other classes pass straight through).
+- **`soak` was ALREADY wired** — `scripts/run_fuzz_soak.sh` (on `main`) invokes
+  `soak.enumerate_sites`/`format_site_report`/`done_line` from a `python3 -` heredoc for the
+  `SOAK-DONE distinct_sites=N` line. (The earlier "not called" note was a python-import-graph
+  artifact; it's shell-invoked.)
+- **`predisclose`** — live CLI command, unchanged.
+- **Verified:** `tests/test_gates.py` (10 tests) proves the fold — missing `dep_citation`→CONTESTED,
+  construction-only→UNVERIFIED, un-re-tested overflow→build_profile_gated, clean→real, grader
+  rejection stays rejected, verdict round-trips with the new fields; 335 pure tests green on `main`.
+- **NOT verified here (needs the build host + agent auth):** a LIVE `grade` run where a real grader
+  emits the tags and a gated `disposition` lands in `result.json` — the unit layer proves the fold,
+  the end-to-end proof needs Docker. Also open: `triage` (a skill, not python) doesn't yet re-apply
+  admissibility over its own re-derived verdicts — the grade-stage gate is the enforced one.
 
 ### W2 — make `/variant-scan` a first-class pipeline stage, not just a skill  `[wiring][L21/L25]`
 The skill exists and is the documented recall front-end, but a human still drives it. Two rungs:

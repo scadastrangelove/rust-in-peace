@@ -340,6 +340,8 @@ async def _run_once(
         ))
 
     _gline = f"[grade:{run_idx}] done in {grade_elapsed:.1f}s: passed={verdict.passed}, score={verdict.score}"
+    if verdict.disposition not in ("real", "rejected"):
+        _gline += f" → GATED: {verdict.disposition} ({verdict.gate_reason[:120]})"
     print(color(_gline, "bold") if verdict.passed else _gline)
 
     status = "crash_found" if verdict.passed else "crash_rejected"

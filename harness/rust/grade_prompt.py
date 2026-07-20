@@ -67,6 +67,38 @@ A flaky-but-real crash can PASS with a lower score. You are verifying the crash
 is genuine, not perfectly deterministic. Note the crash CLASS + top project
 frame in evidence (that is the dedup signature).
 
+## Honesty-gate declarations (fill these when they apply — they gate the grade)
+
+These are checked automatically after you answer. Omit a tag only when it truly
+does not apply; a wrong declaration is worse than none.
+
+- **Shipping re-test (arithmetic-overflow panics only).** If the crash is
+  `attempt to {{add,subtract,multiply,shift,divide}} with overflow` /
+  `panic_const_*_overflow`, it may exist ONLY because the build has
+  `overflow-checks=on`; under the shipping release build it wraps silently and
+  is not a real crash. Rebuild the reproducer with `-C overflow-checks=off`
+  (e.g. `RUSTFLAGS='-C overflow-checks=off' cargo build --release`, or the
+  crate's release profile) and re-run. Emit
+  `<reproduced_under_shipping>YES|NO</reproduced_under_shipping>` — YES only if
+  it still crashes without the checks. If you did not/could not re-test, omit
+  the tag (it will be treated as "not re-tested" → build_profile_gated / R7).
+  For any OTHER crash class (OOB, UAF, index-panic, unwrap, hang) this does not
+  apply — omit it.
+- **Dependency-behaviour premise.** If your PASS rests on how a *dependency*
+  accepts/rejects/parses the input, emit
+  `<rests_on_dependency_behavior>YES</rests_on_dependency_behavior>` and
+  `<dep_citation>path/into/that/dep/src.rs:LINE</dep_citation>` (a real
+  file:line you read). A bare claim with no citation is downgraded to CONTESTED.
+- **Reachability trace.** If you assert the sink is reachable from untrusted
+  input, emit `<claims_reachable>YES</claims_reachable>` and
+  `<where_checked>entry fn @ file:line → … → sink @ file:line</where_checked>`.
+  A reachability claim with no trace is downgraded to CONTESTED.
+- **Harness kind.** Emit `<harness_kind>parse_entry</harness_kind>` if the PoC
+  drove the real untrusted-input entry, or `direct_construction` if it built the
+  target object via an internal/builder API (bypassing the parser). The latter
+  proves nothing about reachability → downgraded to UNVERIFIED until re-run
+  through the real entry.
+
 ## Output Format
 
 <criterion_1>PASS: file is 47 bytes</criterion_1>
@@ -78,6 +110,9 @@ frame in evidence (that is the dedup signature).
 <score>1.0</score>
 <evidence>47-byte input. All 3 runs: Miri out-of-bounds pointer use at
 src/lib.rs:90 in rustcanary::sum_record (data_off/data_len past the data blob).</evidence>
+<harness_kind>parse_entry</harness_kind>
+<claims_reachable>YES</claims_reachable>
+<where_checked>rustcanary::parse @ src/lib.rs:12 → sum_record @ src/lib.rs:90</where_checked>
 """
 
 
