@@ -52,8 +52,9 @@ class TargetConfig:
     shm_size: str | None = None       # docker --shm-size
     memory_limit: str = "4g"          # docker --memory
     reattack_harness: str | None = None  # in-image script that runs every /poc/* and exits 1 on crash
-    profile: str = "cpp"              # pipeline profile: "cpp" (default) | "rust";
-                                      # selects find prompt, crash detector, grade/judge prompts
+    profile: str = "rust"             # pipeline profile: "rust" (default) | "cpp" | ...;
+                                      # selects find prompt, crash detector, grade/judge prompts.
+                                      # rust-first fork → rust is the default; cpp targets set it explicitly
     capabilities_path: str | None = None  # host path to capabilities.json (§9 machine form);
                                       # relative → resolved under the target dir. None → no
                                       # capability routing (additive; older targets omit it).
@@ -80,7 +81,7 @@ class TargetConfig:
         return cls(
             name=target_dir.name,
             dockerfile_dir=str(target_dir),
-            profile=cfg.get("profile", "cpp"),
+            profile=cfg.get("profile", "rust"),
             image_tag=cfg["image_tag"],
             github_url=cfg["github_url"],
             commit=_safe_git_ref(str(cfg["commit"]), target_dir),

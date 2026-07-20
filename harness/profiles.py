@@ -91,9 +91,10 @@ _REGISTRY: dict[str, Profile] = {"cpp": _CPP, "rust": _RUST}
 
 
 def get_profile(name: str | None) -> Profile:
-    """Resolve a profile by name. `None`/empty → cpp (backward-compatible)."""
+    """Resolve a profile by name. `None`/empty → rust (this is a rust-first fork;
+    cpp/other targets set `profile:` explicitly in config.yaml)."""
     if not name:
-        return _CPP
+        return _RUST
     try:
         return _REGISTRY[name]
     except KeyError:
