@@ -50,6 +50,15 @@ exists for:
   (`--runs N --aggregate union`; N defaults to a per-class **vote budget** for
   `profile: rust`). A second independent derivation of a site is the vote that
   proves it real.
+- **Three seed-diverse find passes** (`/variant-scan`, "bugs travel in packs") —
+  the same target is hunted three ways that converge only on the *big* bug and
+  diverge on everything else: **blind** (no hint), **threat-model-first** (seeded
+  from `THREAT_MODEL.md`), and **CVE/history-seeded** (each historical advisory's
+  *pattern* re-hunted in the code paths its fix didn't cover). Every candidate
+  then faces a **3-skeptic adversarial verify** (correctness / reachability /
+  impact). The disposition it emits is *triage, not truth* — a "confirmed" vote
+  still owes an independent PoC before it counts, the gate that caught false
+  positives every campaign. See [docs/variant-analysis.md](docs/variant-analysis.md).
 - **Static analysis drives the fuzzing** — `/threat-model` emits a
   machine-readable `capabilities.json` (§9) beside `config.yaml`, and each stage
   routes on it *programmatically*: which `scan-extras` brief `find` appends,
@@ -68,9 +77,23 @@ exists for:
   fixed vocabulary (`grammar-gated` / `needs-MSan` / `asan-on-C` /
   `unreachable-as-extracted` / …); a clean verdict with no reason is a discipline
   violation.
+- **Honesty gates at grade** (`harness/gates.py`) — a `real` verdict must have
+  its load-bearing premise *evidenced*, or it is routed to CONTESTED/UNVERIFIED
+  instead of shipping: a dependency-behaviour claim needs a `file:line` citation
+  into that dep (L1), a reachability claim needs a where-checked entry→sink trace
+  (L3), a construction-built reproduction is UNVERIFIED until re-run through the
+  real parse entry (L12), and an instrumentation-only crash (e.g. rust
+  overflow-checks) must reproduce under the *shipping* build or it is
+  `build_profile_gated` / R7 (L10). The gate fires automatically at grade time
+  and flows through the existing aggregate path.
 - **Triage with a 3-way disposition** — findings resolve to
   `real` / `real_latent` / `false_positive` under Rust FP-precedents (R1–R11);
   a real-but-unlabeled bug is a win, never counted as a false positive.
+- **Adversarial pre-disclosure review** (`vuln-pipeline predisclose`) — before a
+  finding is sent upstream, a skeptical-maintainer agent attacks its four
+  load-bearing claims (what/where, severity, the proposed fix, the reachability
+  argument) using the target's own code — catching inflated severity, a fix that
+  doesn't compile, or a wrong dismissal before it goes public.
 - **Worked targets + a benchmark study** — a `rust-canary` demo target
   (seeded unsafe-OOB / panic-DoS / unbounded-loop + one triage-FP decoy), and
   [`targets/dvra3-parser`](targets/dvra3-parser): a run against the
