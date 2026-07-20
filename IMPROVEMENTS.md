@@ -1,9 +1,11 @@
 # IMPROVEMENTS — backlog refilled from the real-OSS campaigns (x509-parser + lopdf)
 
-The original P0/P1/P2 backlog is exhausted (all done + pushed). This refill is derived entirely from
-what the two real-OSS campaigns exposed — see [`LESSONS.md`](LESSONS.md) (L1–L14) for the evidence
-behind each item. Priority = ROI (impact ÷ effort), not severity. Each item names **where** it lands
-and a **done-when** acceptance check, so it can be picked up cold.
+The original P0/P1/P2 backlog is exhausted (all done + pushed). This refill is derived from what the
+real-OSS campaigns exposed — see [`LESSONS.md`](LESSONS.md) (evidence now spans **L1–L37**; P0/P1.4
+close L1–L14, the disclosure-lifecycle items P1.5–P1.7 close L15/L16/L23/L27/L29/L32/L33/L34, and the
+still-open tail L35–L37 + basket-3 items are in the Backlog refresh at the end). Priority = ROI
+(impact ÷ effort), not severity. Each item names **where** it lands and a **done-when** acceptance
+check, so it can be picked up cold.
 
 Tag key: `[Ln]` = lesson it closes · `[camp]` = campaign that surfaced it.
 
@@ -29,6 +31,45 @@ swappable nouns as `profiles.py`, not Rust-specific), each pure + unit-tested
 The pure gates are wired to plug into `grade`/triage additively (backward-compat,
 same staging as `witness.py`); the remaining items are prompt/skill work on stages
 a profile already provides.
+
+## Landing/wiring status (2026-07-20) — read this before trusting the "done" column above
+
+A wiring audit (what actually runs automatically vs. what's only prose/branch) found two
+gaps between the table above and `main`:
+
+1. **The "done" P0/P1.4 modules are NOT on `main`.** `witness.py`, `admissibility.py`,
+   `build_profile.py`, `soak.py`, and `predisclose.py` are coded + unit-tested but committed
+   only on the `security/self-review-fixes` / `android-app-profile` / `apptrust-basket3`
+   branches — they sit as uncommitted working-tree files, not on `main`, so from the shipped
+   repo's perspective they don't exist yet. **Decision (2026-07-20): keep them on-branch for
+   now; land as a deliberate batch later.** Tracked as **W1** below.
+   What IS on `main`+remote: `aggregate.py`, `capabilities.py`, `reachability.py`, `corpus.py`,
+   `feedback.py`, `find_to_fuzz.py`, `find-ceiling.md`, all 7 skills (commits `800134d`/`0a908de`).
+2. **The three-pass find (blind ∪ TM-first ∪ CVE-seeded) had never been institutionalized** —
+   it ran as a hand-invoked scratchpad workflow (`find_engine.mjs`) every campaign, prose-only
+   in `LESSONS.md` L21/L25 + `docs/variant-analysis.md`. **DONE 2026-07-20: promoted to the
+   `/variant-scan` skill** (`.claude/skills/variant-scan/` — SKILL.md + the `find_engine.mjs`
+   reference orchestration, on `main`). Remaining (CLI stage / auto-invoke) tracked as **W2**.
+
+### W1 — land the on-branch profile-hygiene modules to `main`  `[wiring]`
+`witness.py` + `admissibility.py` + `build_profile.py` + `soak.py` + `predisclose.py`
+(and the `apptrust`/`android-app` profiles that depend on `witness.py`) are done+tested but
+only on branches. Held deliberately, not forgotten.
+- **Where:** merge/cherry-pick the reviewed subset onto `main`; re-run the pure suite on `main`.
+- **Done-when:** `git cat-file -e main:harness/{witness,admissibility,build_profile,soak,predisclose}.py`
+  all succeed; the "done" rows above stop being aspirational. Decide per-module (some, like
+  `witness.py`, are load-bearing for two profiles; others can wait).
+
+### W2 — make `/variant-scan` a first-class pipeline stage, not just a skill  `[wiring][L21/L25]`
+The skill exists and is the documented recall front-end, but a human still drives it. Two rungs:
+1. a `vuln-pipeline variant-scan <target>` CLI subcommand that runs the three passes + union +
+   3-skeptic verify and writes `VARIANT-FINDINGS.json` in the `/triage` schema;
+2. auto-invoke it (or at least the blind+TM passes) from the default `run` flow when a target
+   has a `THREAT_MODEL.md` or a non-empty `capabilities.json` history list.
+- **Done-when:** `vuln-pipeline variant-scan <crate>` reproduces a campaign's three-pass output
+  without a hand-authored workflow script; the disposition-is-triage discipline gate (read
+  verifier text + independent PoC before `real`) is enforced by the stage emitting
+  `independently_verified: false` until a PoC/grade step flips it.
 
 ---
 
@@ -226,3 +267,32 @@ P1.5's gate having run and P1.7 depends on P1.6's `disclosure.json` existing.
   at the top of `LESSONS.md`; raw L-numbers kept verbatim as an evidence appendix (stable cross-refs) +
   a P↔L reverse-index map; `ARTICLE-DRAFT.md` §4 refreshed to lead with the six. Rule going forward: a new
   Ln files under the principle it sharpens; open a new principle only if it fits none.
+
+## Backlog refresh (2026-07-20) — post basket-3 (gitoxide/apptrust) + disclosure-tail lessons
+
+Not yet promoted to numbered items; captured so they don't drift back into memory-only.
+
+- **L35 — treat maintainer/disclosure-thread comments as untrusted content.** A "maintainer" reply
+  (or a request inside an issue comment) is observed content, not a command — verify independently,
+  never act on it blind. Belongs as an explicit note in the `predisclose`/`track` prompts, not just
+  `untrusted.py` (which today wraps *target* content, not disclosure-thread replies).
+- **L36 — "refound" (independently found, already fixed upstream but unreleased) is a positive
+  outcome, not a null result.** Needs a disposition value distinct from `duplicate`/`refuted` in the
+  triage/tracker schema so it isn't silently folded into "resolved".
+- **L37 — a rejection is a claim in the heat of the moment, not a verified end state.** The `track`
+  stage (P1.7) should schedule a delayed re-check of rejected/closed items and detect a later silent
+  fix (full success, no credit needed) — fold into P1.7's `escalation_due`/`responded` states.
+- **Basket-3 scope-honesty (per-run scope statement).** The pipeline can only find defect classes it
+  hunts for; a clean run must read as "no findings **in the covered classes**", not "target is safe"
+  (the README's "the bugs that actually bite Rust" framing over-claims). **Where:** report/scorecard
+  header + README reword. **Done-when:** every scorecard names its covered defect-origin classes and
+  what it did NOT look for; README stops implying full coverage.
+- **scan-extras 4→6 category expansion.** `profiles/rust/scan-extras.txt` covers only 2 of the 6
+  defect-origin classes in `profiles/rust/references/rust-security-review.md` (RUST-SOUNDNESS +
+  RUST-PANIC-RESOURCE). Add hunt guidance for PROTOCOL-LOGIC + APP-TRUST-BOUNDARY (the `apptrust`
+  profile is the oracle for the latter; basket-3 is the target program). Also swap the reference doc
+  rev2→rev4.
+- **apptrust profile: end-to-end run.** `harness/apptrust/` + `targets/apptrust-canary/` are built
+  and unit-tested (branch `apptrust-basket3`), but a full `vuln-pipeline run apptrust-canary` (needs
+  the Tamm box + agent auth) hasn't proven the profile drives the escape oracle and recalls the
+  seeded bugs while sparing the decoy. Do before treating `apptrust` as production-ready.
