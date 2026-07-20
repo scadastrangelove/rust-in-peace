@@ -48,6 +48,10 @@ class GraderVerdict:
     score: float               # 0.0–1.0
     criteria: dict[str, bool]  # {"criterion_1": True, ..., "criterion_5": True}
     evidence: str              # grader's summary
+    # Honesty-gate result (W1b), folded in by `gates.apply_gates` after the
+    # grader returns. Default "real" keeps old records/behavior unchanged.
+    disposition: str = "real"  # real | contested | unverified | build_profile_gated | rejected
+    gate_reason: str = ""      # why a gate lowered `passed` (empty when disposition == real)
 
     def to_dict(self) -> dict[str, Any]:
         return asdict(self)
@@ -59,6 +63,8 @@ class GraderVerdict:
             score=d["score"],
             criteria=d["criteria"],
             evidence=d["evidence"],
+            disposition=d.get("disposition", "real"),
+            gate_reason=d.get("gate_reason", ""),
         )
 
 

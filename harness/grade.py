@@ -13,11 +13,48 @@ from __future__ import annotations
 import os
 import time
 
-from . import docker_ops, sandbox
+from . import admissibility, docker_ops, gates, sandbox
 from .agent import run_agent, parse_xml_tag, AgentResult
 from .artifacts import CrashArtifact, GraderVerdict
 from .config import TargetConfig
 from .profiles import get_profile
+
+
+def _tag_bool(text: str, tag: str) -> bool:
+    """A `<tag>` whose value starts YES/TRUE. Absent → False (permissive)."""
+    v = parse_xml_tag(text, tag)
+    return bool(v) and v.strip().upper().startswith(("YES", "TRUE", "PASS"))
+
+
+def _tag_tristate(text: str, tag: str) -> bool | None:
+    """A shipping-reverify style tag: YES/TRUE → True, NO/FALSE → False, absent
+    or anything else → None ("not re-tested")."""
+    v = parse_xml_tag(text, tag)
+    if not v:
+        return None
+    u = v.strip().upper()
+    if u.startswith(("YES", "TRUE", "REPRODUCED")):
+        return True
+    if u.startswith(("NO", "FALSE", "GONE", "WRAPS")):
+        return False
+    return None
+
+
+def _claim_from_grader(text: str) -> admissibility.VerdictClaim:
+    """Build the admissibility premise-claim from optional grader tags. Every
+    field defaults permissive, so a grader that emits none declares no premise
+    and trips no gate (backward-compatible)."""
+    harness_kind = parse_xml_tag(text, "harness_kind")
+    harness_kind = harness_kind.strip() if harness_kind else None
+    if harness_kind not in admissibility.HARNESS_KINDS:
+        harness_kind = None
+    return admissibility.VerdictClaim(
+        rests_on_dependency_behavior=_tag_bool(text, "rests_on_dependency_behavior"),
+        dep_citation=(parse_xml_tag(text, "dep_citation") or None),
+        claims_reachable=_tag_bool(text, "claims_reachable"),
+        where_checked=(parse_xml_tag(text, "where_checked") or None),
+        harness_kind=harness_kind,
+    )
 
 
 GRADE_MAX_TURNS = 50
@@ -96,6 +133,18 @@ async def run_grade(
             score=_parse_score(score_str),
             criteria=criteria,
             evidence=evidence,
+        )
+
+        # W1b — fire the honesty gates on the grader's verdict. Additive: the
+        # premise claim defaults permissive, so a grader that emits none of the
+        # optional tags declares nothing and is not downgraded; build_profile
+        # only bites the instrumentation-gated crash classes for this profile.
+        verdict = gates.apply_gates(
+            verdict,
+            profile=target.profile,
+            crash_signal=f"{crash.crash_type}\n{crash.crash_output}",
+            claim=_claim_from_grader(text),
+            reproduced_under_shipping=_tag_tristate(text, "reproduced_under_shipping"),
         )
         return verdict, result, elapsed
 
