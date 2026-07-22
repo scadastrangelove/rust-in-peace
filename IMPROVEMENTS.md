@@ -364,3 +364,36 @@ Not yet promoted to numbered items; captured so they don't drift back into memor
   and unit-tested (branch `apptrust-basket3`), but a full `vuln-pipeline run apptrust-canary` (needs
   the build host + agent auth) hasn't proven the profile drives the escape oracle and recalls the
   seeded bugs while sparing the decoy. Do before treating `apptrust` as production-ready.
+
+## Backlog refresh (2026-07-22) — post Chromium/Skia browser-vendored campaign
+
+First rust-in-peace finding in code that ships in a major browser (Chromium BMP Rust decoder,
+`read_icc_profile` infallible alloc → renderer abort; filed public non-security, `crbug 537617321`).
+Four new items surfaced by that campaign:
+
+- **W4 — name the OOM-abort / uncontrolled-allocation oracle** `[L14][CWE-789][chromium]`. The
+  infallible-alloc-DoS class (a `vec![0u8; attacker_u32]` that aborts via `handle_alloc_error` when it
+  can't be satisfied) is both *confirmable* and *discoverable* with `cargo-fuzz -malloc_limit_mb=<cap>`
+  (catches a single oversized malloc) + a `ulimit -v` wrapper (forces the abort on a 64-bit host,
+  simulating a 32-bit/constrained renderer). Used this session to CONFIRM the BMP finding and to clear
+  PNG (3.4M runs, peak RSS 384 MB, clean). **Where:** `profiles/rust/fuzzing.md` execution matrix +
+  the `find→fuzz` CWE→oracle table. **Done-when:** an "OOM-abort / uncontrolled-allocation" row exists
+  with the `-malloc_limit_mb` + `ulimit -v` invocation, and a CWE-789 finding auto-dispatches to it.
+- **W5 — auto-inject the rust-in-peace credit into every report/disclosure body** `[[rust-in-peace-disclosure-credit]]`.
+  The Chromium report was assembled and filed WITHOUT the standing credit line — caught only
+  post-filing. A prose rule ("always credit") failed because the artifact was hand-assembled outside
+  the templated path. **Where:** `harness/prompts/report_prompt.py` + `predisclose`. **Done-when:** a
+  generated report/disclosure body contains the credit + repo link by construction; an artifact
+  missing it is a lint failure before filing.
+- **W6 — corpus-isolation affordance for comparison / A-B runs** `[L38]`. The Opus-vs-Sonnet A/B was
+  contaminated because sub-agents read the on-disk plan + prior-run PoC. **Where:** the campaign
+  runner. **Done-when:** a comparison run's SRC is a clean copy with a verified grep that no
+  plan/results/PoC/notes file sits under any agent-readable path, and the run records `isolated: true`;
+  a run that can't prove isolation is flagged recall-invalid.
+- **W7 — new target class: browser-vendored Rust crates** `[basket-3 sibling]`. Rust crates vendored
+  into a shipping browser (Chromium/Skia; later Firefox/Servo, etc.), where a crate-level bug becomes
+  web-reachable. Selection rule = **L40** (hunt the fork/patch, not the unforked crate) + **L39**
+  (trace to the browser's own caps before rating). Includes a watch-list re-check cadence: when
+  Chromium moves ICO/JPEG/WebP from roadmap ("To do") to shipping, re-verify reachability (the
+  build's enabled-features list is authoritative, per the §4.1 method) and re-tier. **Done-when:** a
+  documented target-class entry + a scheduled roadmap-keyed reachability re-check.

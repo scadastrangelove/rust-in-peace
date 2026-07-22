@@ -757,6 +757,43 @@ notes as "evidence" in their verdicts. Two distinct harms:
   undone after the fact. This is the instruction-source-boundary discipline one level down: an
   agent's own tool output is untrusted data, and that data can quietly include the answer.
 
+### L39 — A vendored/embedded target's reachability and severity are set by the HOST integration's caps, not by the file or crate you're reading — trace up to the shipping wrapper before you rate anything  `[PROVEN]` · principle · sharpens-P1/L3
+
+Three times this session a finding's "there is no guard here" was literally true and completely
+irrelevant, because the dispositive guard lived one or two trust-layers UP in the code that actually
+ships the component:
+- **gitoxide tar-slip** — "no `gix_validate` call anywhere in gix-worktree-stream/gix-archive"
+  (grep-true) — but the `tar` crate's own `append_data` rejects `..`, `rawzip` normalizes it, and
+  `Repository::worktree_stream` gates on `index_from_tree` first. Contained upstream of the finding.
+- **x509** — the verdict rested on "the sink accepts empty RSA" — but `asn1-rs` rejects it before the
+  sink, and the sink re-parses. Contained upstream.
+- **Chromium BMP "Finding B"** (17 GB `resize`) — "no magnitude cap in the Rust decoder or the C++
+  `SkSafeMath`" (both true) — but Blink's `SizeCalculationMayOverflow` computes `w*h*4` in **int32**
+  and `SetFailed()`s before the decoder runs. The naive PoC is dead.
+- **Change:** for any finding in vendored/embedded/wrapped code, before rating reachable-or-severity,
+  trace the attacker value to the OUTERMOST shipping caller and enumerate ITS caps — int casts, size
+  gates, validation, dependency guards. A "confirmed" that stopped at the file/crate boundary is a
+  candidate, not a finding. This is exactly where a junior model's verify stops short (at the nearest
+  guard) and over-rates — the x509 2×2 and the Opus-vs-Sonnet Finding-B delta both landed here.
+- **The counterpart that survives the trace is the real prize:** Chromium BMP "Finding A" (ICC alloc)
+  was NOT contained by that same Blink cap — the ICC size is an independent field read during
+  metadata, before the dimension gate — so it became the one filed finding. Tracing up doesn't only
+  kill over-claims; it tells you which candidate is actually reachable.
+
+### L40 — In a vendored dependency, the NEW/forked code is the yield zone — an unforked, well-fuzzed crate is low-yield; spend the budget on the patch  `[PROVEN]` · principle · sharpens target-selection / composes-L14/L19
+
+Chromium vendors both `image` (BMP path is a **+2285-line Microsoft fork** of the decoder) and
+`image-png` 0.18.1 (**unforked**, continuously OSS-Fuzz'd). BMP yielded a real finding
+(`read_icc_profile` infallible alloc); PNG yielded nothing — static-clean **and** a 3.4M-run
+memory-capped fuzz clean. The fork is new attack surface that neither the crate's fix-history nor its
+own fuzzers ever covered; the unforked crate's bugs are already-found (we hold 7 image-png findings)
+or already-fuzzed-out.
+- **Change:** when a target vendors a dependency, diff it against upstream FIRST and concentrate find
+  effort on the delta (the patch, the new state machine, the FFI glue). Treat an unforked +
+  OSS-Fuzz'd crate as low-priority — a fresh blind fuzz there mostly re-derives known bugs (L14/L19).
+- Pairs with L39: the fork's new alloc/panic sites still must be traced to the host integration's
+  caps before rating — new code is *where* to look, not automatically *what* ships as a bug.
+
 ## Suggested next actions (backlog refill — `IMPROVEMENTS.md` was exhausted)
 
 Cheap wins first: **L1** (cite-the-dependency), **L4** (capability-gate crash track), **L10**
