@@ -29,3 +29,4 @@ cc.tkn
 # local campaign plans / pre-disclosure notes — never commit (may name live,
 # unfixed findings or third-party integration internals before coordinated disclosure)
 CHROMIUM-RUST-CODECS-PLAN.md
+chromium-bmp-disclosure/
