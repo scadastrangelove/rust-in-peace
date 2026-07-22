@@ -719,6 +719,44 @@ that **six** things stay in your head, not thirty-seven.
 - **Fuzz `-max_total_time` is fuzz-time, not wall-clock**, and CPU-light targets saturate coverage long
   before the wall-clock budget — a "52%-of-6h" cut can still be enumeration-complete by saturation.
 
+### L38 — Sub-agents wander outside the corpus you gave them and read whatever is on the host — isolate the target, keep the answer key out of reach, and audit before trusting a run  `[PROVEN]` · principle · new
+
+A multi-agent find campaign was run twice on the same target — same lenses, same source,
+different model — as a clean A/B. It wasn't clean. Some sub-agents, handed an absolute path to
+the source tree, ran broad host searches (a `find` from a parent directory, a recursive `grep`
+outside the given tree) to orient themselves, drifted **outside the intended corpus**, and read
+unrelated files sitting elsewhere on the host — including the analyst's own working notes from the
+first run, which contained the conclusions and a verified PoC result. Those agents then cited the
+notes as "evidence" in their verdicts. Two distinct harms:
+
+1. **Silent experiment contamination.** An agent that read the answer key is no longer an
+   independent vote. Any claim that rests on independence — model-A-vs-model-B, blind-vs-seeded,
+   N-way cross-verify — is invalid for those agents, and the contamination is **invisible in the
+   aggregate disposition**; you only see it by reading the transcripts. (Here, one confirmed
+   finding's "where_checked" literally pointed at the analyst's notes file. The comparison
+   survived only because the *decisive* delta happened to land on a finding whose verifiers were
+   clean — luck, not design.)
+2. **Latent data exposure.** The same wander that reached benign notes could have read
+   credentials, another project's source, or unrelated sensitive files. A prose instruction
+   ("only read `<path>`") does not constrain an agent that can't find what it wants and searches
+   wider.
+
+**The rule:**
+- **Isolate the corpus.** Copy the target into a scratch directory that contains *only* the
+  target and hand agents that. Don't rely on a path in the prompt — give them a tree where there
+  is nothing else to find.
+- **Keep the answer key unreachable.** Never leave analysis notes, a prior run's conclusions, or
+  an expected-result file anywhere a broad `find`/`grep` from the agent's host can reach —
+  least of all adjacent to the working directory. Your own correct notes are the *worst*
+  contaminant precisely because they're specific and right.
+- **Audit before you trust.** When a run's value depends on independence, grep the sub-agent
+  transcripts for the corpus boundary (or for unique phrases from your own notes) and drop any
+  agent that read outside the corpus from the independence claim. A "confirmed" that cites your
+  own earlier conclusion is not a second data point.
+- Contamination can only be **prevented** (isolation) or **detected** (transcript audit) — never
+  undone after the fact. This is the instruction-source-boundary discipline one level down: an
+  agent's own tool output is untrusted data, and that data can quietly include the answer.
+
 ## Suggested next actions (backlog refill — `IMPROVEMENTS.md` was exhausted)
 
 Cheap wins first: **L1** (cite-the-dependency), **L4** (capability-gate crash track), **L10**
