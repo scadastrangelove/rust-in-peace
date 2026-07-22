@@ -25,3 +25,7 @@ PATCHES.json
 *.tkn
 cc.tkn
 .rip-auth
+
+# local campaign plans / pre-disclosure notes — never commit (may name live,
+# unfixed findings or third-party integration internals before coordinated disclosure)
+CHROMIUM-RUST-CODECS-PLAN.md
