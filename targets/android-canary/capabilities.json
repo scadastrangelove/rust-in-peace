@@ -1,0 +1,15 @@
+{
+  "capabilities": {
+    "exported_ipc":          {"present": "yes", "evidence": "AndroidManifest.xml: <activity .ExportedForwardActivity android:exported=\"true\"> with no android:permission; onCreate forwards getIntent().getData() via startActivity (smali/com/canary/app/ExportedForwardActivity.smali)"},
+    "webview_bridge":        {"present": "yes", "evidence": "WebViewBridgeActivity (exported): setJavaScriptEnabled(true) + addJavascriptInterface(Bridge, \"bridge\") exposing @JavascriptInterface getToken(), then loadUrl(getIntent().getDataString()) — a caller-controlled URL reaches the bridge (smali/com/canary/app/WebViewBridgeActivity.smali)"},
+    "build_config_exposure": {"present": "yes", "evidence": "AndroidManifest.xml <application> carries android:debuggable=\"true\", android:allowBackup=\"true\", android:usesCleartextTraffic=\"true\" (three terminal build-config classes)"},
+    "cleartext_tls":         {"present": "yes", "evidence": "AndroidManifest.xml <application android:usesCleartextTraffic=\"true\"> permits plaintext HTTP app-wide"},
+    "deeplink_applink":      {"present": "no",  "evidence": "the exported activity's <intent-filter> is the IPC entry, scored under exported_ipc; no separate App Link / autoVerify surface"},
+    "pending_intent":        {"present": "no",  "evidence": "no PendingIntent construction in the fixture smali"},
+    "content_provider":      {"present": "no",  "evidence": "no <provider> in AndroidManifest.xml"},
+    "insecure_storage":      {"present": "no",  "evidence": "no SharedPreferences/SQLite/external-storage writes in the fixture smali"},
+    "dynamic_code_load":     {"present": "no",  "evidence": "no DexClassLoader/reflection/deserialization in the fixture smali"},
+    "android_native_code":   {"present": "no",  "evidence": "no lib/**/*.so in the fixture; no JNI"}
+  },
+  "native_reachable_from_untrusted_input": {"present": "unknown", "evidence": "no native code present, so the entry->Java->JNI->attacker-arg chain (ADR-1) is not evaluated; the android-native track stays off"}
+}

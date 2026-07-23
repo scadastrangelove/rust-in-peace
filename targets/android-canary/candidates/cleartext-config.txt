@@ -1,0 +1,4 @@
+# Terminal build-config finding: <application android:usesCleartextTraffic="true">.
+# Expect: WITNESS (real_latent_static_argument).
+class: android:cleartext-config
+entry: com.canary.app <application>

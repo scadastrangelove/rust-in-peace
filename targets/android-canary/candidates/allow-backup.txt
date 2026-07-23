@@ -1,0 +1,4 @@
+# Terminal build-config finding: <application android:allowBackup="true">.
+# Expect: WITNESS (real_latent_static_argument).
+class: android:allow-backup
+entry: com.canary.app <application>
