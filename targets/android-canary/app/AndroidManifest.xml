@@ -1,0 +1,73 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Decoded AndroidManifest.xml (apktool-style) for the android-canary SYNTHETIC
+     fixture. Hand-authored — there is NO real APK. It plants one attacker-
+     reachable exported Activity, three terminal build-config exposures, and one
+     decoy exported Activity that a signature permission actually protects.
+     See ../README.md for the planted-vs-decoy map. -->
+<manifest xmlns:android="http://schemas.android.com/apk/res/android"
+    package="com.canary.app">
+
+    <uses-permission android:name="android.permission.INTERNET"/>
+
+    <!-- Signature-level custom permission. protectionLevel="signature" means only
+         apps signed with THIS app's key hold it, so it is a real trust boundary
+         for the component it guards (the decoy). -->
+    <permission
+        android:name="com.canary.app.permission.PRIVILEGED"
+        android:protectionLevel="signature"/>
+
+    <!-- Build-config terminals live here on <application>:
+           android:debuggable          -> android:debuggable-flag
+           android:allowBackup         -> android:allow-backup
+           android:usesCleartextTraffic-> android:cleartext-config -->
+    <application
+        android:label="Canary"
+        android:allowBackup="true"
+        android:debuggable="true"
+        android:usesCleartextTraffic="true">
+
+        <!-- PLANTED (android:exported-activity-launch). Exported with NO
+             permission; onCreate reads the caller-supplied Intent's data URI and
+             re-dispatches it via startActivity with no allowlist. Any app on the
+             device can drive where this app navigates. -->
+        <activity
+            android:name=".ExportedForwardActivity"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <category android:name="android.intent.category.BROWSABLE"/>
+                <data android:scheme="canary"/>
+            </intent-filter>
+        </activity>
+
+        <!-- PLANTED (android:webview-js-bridge, Tier-B promotion target). Exported;
+             hosts a JS-enabled WebView with a native bridge and loads a caller-
+             controlled URL. Static = strength-1 contested; Frida promotion = strength 3. -->
+        <activity
+            android:name=".WebViewBridgeActivity"
+            android:exported="true">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+                <category android:name="android.intent.category.BROWSABLE"/>
+                <data android:scheme="canary" android:host="web"/>
+            </intent-filter>
+        </activity>
+
+        <!-- DECOY (must be REJECTED — AR1). Byte-for-byte the same forwarding
+             code as above, but gated by the signature permission, so a hostile
+             (differently-signed) app can NOT reach it. The naive scan mislabels
+             it android:exported-no-permission; the oracle rejects it because the
+             guard holds. -->
+        <activity
+            android:name=".GuardedForwardActivity"
+            android:exported="true"
+            android:permission="com.canary.app.permission.PRIVILEGED">
+            <intent-filter>
+                <action android:name="android.intent.action.VIEW"/>
+                <category android:name="android.intent.category.DEFAULT"/>
+            </intent-filter>
+        </activity>
+    </application>
+</manifest>

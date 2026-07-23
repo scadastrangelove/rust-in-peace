@@ -1,0 +1,14 @@
+{
+  "finding_class": "android:exported-activity-launch",
+  "severity": "HIGH",
+  "capability": "exported_ipc",
+  "note": "The signature-permission-guarded decoy (GuardedForwardActivity). Even if the static stage had filed it, the dynamic probe is REFUTED — the guard holds. Defense in depth: guard_held is a correctness win, not a promotion.",
+  "expected": {"verdict": "guard_held", "strength": 1},
+  "observation": {
+    "effect_observed": false,
+    "guard_blocked": true,
+    "runs": 0,
+    "of_runs": 0,
+    "evidence": "adb am start -n com.canary.app/.GuardedForwardActivity rejected: java.lang.SecurityException Permission Denial — requires com.canary.app.permission.PRIVILEGED (protectionLevel=signature)"
+  }
+}

@@ -160,10 +160,17 @@ another-target artifact).
 |---|---|---|
 ```
 
-- `capability`: a controlled vocabulary (extend as the corpus grows), e.g.
-  `inbound_c_abi`, `outbound_ffi`, `concurrency_async`,
-  `untrusted_deserialization`, `multi_tenant_authz`, `unsafe_simd`,
-  `network_protocol_parser`, `subprocess_exec`, `crypto_secrets`.
+- `capability`: a controlled vocabulary (extend as the corpus grows), keyed by
+  profile. For the **rust/cpp** (memory-safety) profiles, e.g. `inbound_c_abi`,
+  `outbound_ffi`, `concurrency_async`, `untrusted_deserialization`,
+  `multi_tenant_authz`, `unsafe_simd`, `network_protocol_parser`,
+  `subprocess_exec`, `crypto_secrets`. For the **android-app** (application-
+  security over decompiled DEX) profile, e.g. `exported_ipc`, `webview_bridge`,
+  `deeplink_applink`, `pending_intent`, `content_provider`, `insecure_storage`,
+  `cleartext_tls`, `dynamic_code_load`, `build_config_exposure`,
+  `android_native_code`. Use the vocabulary that matches the target's
+  `profile:` — the exact key set is the one `harness/capabilities.py`
+  (`CAPABILITY_KEYS`) accepts.
 - `present` ∈ {`yes`, `no`, `test_only`, `partial`}.
 - `evidence`: the concrete signal that decided the value, so it is auditable —
   a grep hit, a dependency, a file (e.g. `extern "C" in src/ffi.rs`, `tokio in
@@ -171,9 +178,11 @@ another-target artifact).
 
 **Consumer contract:** a stage enables the specialized checks mapped to each
 capability whose `present` is not `no`. The capability→check mapping (per stage,
-including which fuzzing rung) lives in `profiles/rust/capabilities.md`; its code
-twin (so stages route *programmatically*, not by a human reading the table) is
-`harness/capabilities.py`.
+including which fuzzing rung, or — for android-app — which reachability-witness /
+dynamic-promotion path) lives in the target profile's capabilities doc
+(`profiles/rust/capabilities.md` or `profiles/android-app/capabilities.md`); its
+code twin (so stages route *programmatically*, not by a human reading the table)
+is `harness/capabilities.py`.
 
 **Machine emission — `capabilities.json`.** Alongside the §9 table, emit a
 sibling `capabilities.json` (next to `config.yaml`; the pipeline auto-discovers
@@ -204,6 +213,20 @@ capabilities.py` loads and every stage gates on. Shape:
   explicit, evidenced `no`). Keep `evidence` (the entry-point trace, or its
   absence). One `reachable_from_public_api` may be emitted per finding when the
   model is finding-scoped rather than target-scoped.
+- **`native_reachable_from_untrusted_input`** (top-level axis, **android-app**
+  only): `present ∈ {yes, partial, no, unknown}` — does an Android entry point
+  reach the bundled native code with attacker-controlled data via the chain
+  `entry → Java/Kotlin → JNI → native sink`? Gates the `android-native`
+  escalation track: a bare `.so` (`android_native_code: yes`) is **not** enough
+  to fuzz JNI — only `yes`/`partial` runs it (absence == `unknown` == skip). Keep
+  `evidence` = the JNI reachability trace, e.g. `Java_com_app_Parser_parse
+  receives attacker byte[]`.
+
+For an **android-app** target, `capabilities.json` is inventoried from the
+decoded `AndroidManifest.xml` (exported components, permissions, cleartext /
+Network Security Config, deep-link schemes) and the smali/decompile — it is the
+attack-surface inventory the reachability find stage prunes against, so getting
+it right is load-bearing, not optional.
 
 ---
 

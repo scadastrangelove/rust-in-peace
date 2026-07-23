@@ -1,0 +1,158 @@
+ANDROID APP-SECURITY REVIEW — additional categories (appended to the /vuln-scan brief).
+Use with:  /vuln-scan <decompiled_apk_dir> --extra profiles/android-app/scan-extras.txt
+
+CONTEXT. The target is a DECOMPILED APK, not source: AndroidManifest.xml (decoded),
+smali/ (the faithful bytecode — cite THIS for line refs), a jadx Java-ish decompile
+(readable but lossy — cross-check against smali), and resources/. There is no
+recompile and no compiler in the loop. This is NOT a memory-safety hunt: the bugs
+that matter are logic / IPC / configuration / platform issues in the app's own
+Dalvik code and manifest.
+
+Hunt by walking a REACHABILITY GRAPH, not a checklist (ADR-3). Enumerate the
+attacker-controlled ENTRY POINTS, trace control/data flow to a security-sensitive
+SINK, and decide whether a GUARD (permission, protectionLevel, signature check,
+input validation, exported=false, host allowlist) actually stops it. A finding is a
+concrete path `entry → (hops) → sink` with the guard analysis explicit. The
+MASVS/MASTG category (PLATFORM, STORAGE, NETWORK, CODE…) is a LABEL you attach for
+the report — it never drives the search or the traversal order.
+
+Everything you emit here is STRENGTH 1 (a static_reachability argument). Do NOT
+inflate: strength ≥ 2 requires an OBSERVED dynamic effect (adb/Frida), which is a
+later stage's job, not the find scan's. State severity (impact) honestly and
+ORTHOGONALLY to strength — a reachable token exfil is HIGH even at strength 1.
+
+The sections below match the capability gates (§A1..§A9 in harness/capabilities.py).
+`find` appends only the sections a target's §9 capability inventory turns on.
+
+  §A1 IPC/exported — HIGH VALUE (cap: exported_ipc → android:exported-activity-launch,
+  android:exported-service, android:broadcast-injection):
+  - ENTRY: an Activity / Service / BroadcastReceiver with android:exported="true"
+    (or implicitly exported pre-API-31 because it declares an <intent-filter>),
+    launchable / bindable / addressable by any other app on the device.
+  - SINK: the component forwards a caller-supplied intent
+    (startActivity/startService/sendBroadcast of getIntent()'s extras), performs a
+    privileged operation on the caller's behalf, or returns sensitive data to them.
+  - GUARD: an android:permission whose protectionLevel is signature (peer apps can't
+    hold it — AR1), an in-code caller-identity / signature check, exported="false".
+    A normal-protectionLevel permission is NOT a real guard (any app requests it).
+
+  §A2 Intent/PendingIntent/deeplinks — HIGH VALUE (cap: deeplink_applink,
+  pending_intent → android:deeplink-open-redirect, android:pending-intent-hijack):
+  - ENTRY: a deep link / App Link (<intent-filter> with <data android:scheme=…>),
+    or a PendingIntent handed to another app that is mutable (FLAG_MUTABLE) or built
+    on an implicit base intent.
+  - SINK: a deeplink parameter flows to WebView.loadUrl / an outbound redirect
+    (open-redirect), or into intent forwarding; a hijacked PendingIntent lets the
+    attacker fill in the blank action/component and act with the app's identity.
+  - GUARD: a host/scheme allowlist on the deeplink target, autoVerify App Links,
+    an IMMUTABLE + EXPLICIT PendingIntent. A `startsWith(host)` string check is not
+    a URL parse — flag it.
+
+  §A3 WebView/JS-bridge — HIGH VALUE (cap: webview_bridge → android:webview-js-bridge,
+  android:webview-file-access):
+  - ENTRY: a WebView with JavaScript enabled (setJavaScriptEnabled(true)) plus
+    addJavascriptInterface(obj, name), and/or file access
+    (setAllowFileAccess / setAllowUniversalAccessFromFileURLs / setAllowFileAccessFromFileURLs),
+    navigated to attacker-influenced content (a deeplink URL, a redirect, http://).
+  - SINK: a @JavascriptInterface native method reachable from loaded page JS; a
+    file:// load reading app-private files and exfiltrating them to a remote origin.
+  - GUARD: a strict URL allowlist before load, JS disabled, file access disabled,
+    @JavascriptInterface scoping (API 17+ only exposes annotated methods). No
+    allowlist + a bridge that touches app state/credentials is the finding.
+
+  §A4 storage/data-leakage — HIGH VALUE (cap: insecure_storage →
+  android:insecure-storage-secret):
+  - ENTRY/SINK: a secret / token / credential / PII written to SharedPreferences
+    (esp. MODE_WORLD_READABLE/WRITEABLE), SQLite, external / shared storage, or a
+    log (Log.*), where it crosses the trust boundary (world-readable, on the SD
+    card, or swept into a backup). Attacker-influenced file path or preference key
+    that steers a read/write is also here.
+  - GUARD: EncryptedSharedPreferences / the Android Keystore, internal storage only,
+    exclusion from backup. A value that is NOT actually secret (a public key /
+    app-id) is AR4, not a finding.
+
+  §A5 TLS/cleartext/NSC — HIGH VALUE (cap: cleartext_tls → android:cleartext-endpoint;
+  terminal manifest form: android:cleartext-config):
+  - ENTRY/SINK: an authenticated / token-bearing outbound API call over cleartext
+    http://; android:usesCleartextTraffic="true"; a permissive network-security-
+    config (cleartext-permitted, trust-anchors user); a disabled TrustManager /
+    hostname verifier; no certificate pinning where the threat model needs it.
+  - GUARD: cleartext scoped to localhost / loopback / a dev host (AR3 — no on-path
+    attacker), an NSC that only relaxes a loopback domain. A cleartext call to a
+    ROUTABLE host carrying auth is the finding.
+
+  §A6 ContentProvider — HIGH VALUE (cap: content_provider →
+  android:content-provider-sqli, android:content-provider-traversal):
+  - ENTRY: a <provider> exported="true", or with a weak/normal android:permission,
+    or with grantUriPermissions.
+  - SINK: query()/update()/delete() building SQL from a caller-controlled selection /
+    projection / sort order (SQLi); openFile()/openAssetFile() resolving an
+    attacker path outside the provider's declared paths (path traversal → app-private
+    file disclosure).
+  - GUARD: read/write android:permission at signature protectionLevel, correctly
+    scoped grantUriPermissions + <grant-uri-permission>/<path-permission> (AR5),
+    parameterized queries (selectionArgs), a canonicalized path check.
+
+  §A7 dynamic-code/reflection/deser — HIGH VALUE (cap: dynamic_code_load →
+  android:dynamic-code-load):
+  - ENTRY: DexClassLoader / PathClassLoader / InMemoryDexClassLoader over an
+    attacker-influenced path or downloaded file; reflection (Class.forName /
+    Method.invoke) on an attacker-controlled class/method name; deserialization
+    (Serializable/Parcelable, or a JSON→object mapper) of attacker-controlled bytes
+    (an intent extra, a deeplink param, a downloaded blob).
+  - SINK: arbitrary code load / execution; gadget-driven method invocation.
+  - GUARD: a signature/integrity check on loaded code, a fixed class allowlist, safe
+    deserialization. Dynamic load/reflection/deser of attacker input is REAL (AR7),
+    not "the app just loads its own code" — trace the input to the loaded class/path.
+
+  §A8 build-config — LEGITIMATE but TERMINAL (cap: build_config_exposure →
+  the STATIC_TERMINAL_CLASSES set):
+  - Manifest / build properties, fully visible statically with nothing further to
+    observe dynamically: android:debuggable="true" in a release, android:allowBackup=
+    "true" (esp. with no full-backup-content / data-extraction rules), android:testOnly=
+    "true", missing ProGuard/R8 shrink+obfuscate, a permissive usesCleartextTraffic /
+    NSC, an exported component with no permission gate at all.
+  - These are the ONLY classes that may be dispositioned real_latent_static_argument
+    at strength 1 (AR8): android:missing-proguard, android:debuggable-flag,
+    android:allow-backup, android:cleartext-config, android:exported-no-permission,
+    android:backup-no-rules, android:test-only-flag. Keep severity honest — these are
+    usually LOW/MEDIUM hardening, not live exploits. A config issue that IS reachable
+    is a full-severity finding, not "just hardening" (AR6). Confirm the manifest is
+    the RELEASE artifact, not a debug variant (AR2).
+
+  §A9 native/JNI reachability — CAPABILITY-GATED SIDE TRACK (cap: android_native_code;
+  promotes to native_crash / asan-* on crash):
+  - ENTRY: a bundled lib*.so with native methods (System.loadLibrary + native decl)
+    reached by a confirmed chain entry → Java → JNI → attacker-controlled argument.
+  - SINK: a native memory-safety bug in the .so driven with attacker-controlled args
+    (→ an ASan crash, strength 4).
+  - GATE (ADR-1): this section runs ONLY when the routing axis
+    native_reachable_from_untrusted_input ∈ {yes, partial}. A BARE .so is not enough —
+    without the reachability chain, down-rank the finding (AR9); do not fuzz JNI on a
+    library nothing attacker-reachable calls.
+
+DO NOT REPORT (Android false positives — skip even if technically present; each maps
+to a triage rule in fp-rules.txt):
+  - An exported component protected by a signature/protectionLevel permission a peer
+    app cannot hold (AR1).
+  - Cleartext restricted to localhost / loopback / a dev host (AR3).
+  - A "hardcoded secret" that is a public value — app-id, public key, browser API
+    key, OAuth client_id, certificate pin (AR4).
+  - A ContentProvider with correctly scoped grantUriPermissions / <path-permission>
+    and parameterized queries (AR5).
+  - A method that "looks unsafe" with NO traced attacker-controlled entry reaching it
+    past the guards. If you cannot trace the path, DEFER it — do not submit a
+    strength-1 guess dressed as confirmed.
+
+DO REPORT (reverse calibration — do NOT dismiss these):
+  - A build/config weakness that an attacker path actually reaches — real at its true
+    severity, not downgraded to hardening (AR6).
+  - Dynamic code load / reflection / deserialization of attacker-controlled input
+    (AR7).
+
+TRUST BOUNDARY (state this for every finding). Name the entry and classify it: is
+the sink driven by ATTACKER-controlled data (a peer app's intent, a deeplink, loaded
+web content, an untrusted file) or only by OPERATOR / trusted-by-construction data?
+Reachability from an attacker is the claim; a component that "looks unsafe" but has
+no attacker path is not a finding. Severity (impact) is orthogonal to strength
+(evidential rigor) — report both.

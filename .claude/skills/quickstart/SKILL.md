@@ -104,7 +104,8 @@ Don't answer from general knowledge when the repo has a specific answer.
 | running the pipeline             | `docs/pipeline.md`, README Step 2        | the `recon` / `run` command |
 | too many findings, triage       | `docs/triage.md`                        | `/triage <path>` |
 | the rust profile, rust-canary   | `profiles/rust/README.md`               | run `rust-canary` |
-| capability routing, which checks run | `profiles/rust/capabilities.md`    | cite the capability→check map |
+| the android-app profile, APK, decompiled DEX, MASVS/MASTG | `profiles/android-app/README.md`, `docs/profiles/android/DECISIONS.md` | run `android-canary`; `/vuln-scan <decompiled> --extra profiles/android-app/scan-extras.txt`, `/triage … --fp-rules profiles/android-app/fp-rules.txt` |
+| capability routing, which checks run | `profiles/rust/capabilities.md` / `profiles/android-app/capabilities.md` | cite the capability→check map |
 | reattack, find→fuzz, promoting findings | `profiles/rust/find-to-fuzz.md` | `vuln-pipeline reattack <results>` |
 | scorecard, discipline gate, union-of-N | `profiles/rust/README.md`, README Step 2 | `vuln-pipeline scorecard <results>` |
 | porting, adding a profile, Java/Go/etc. | `docs/customizing.md`, README Step 3 | `/customize` |

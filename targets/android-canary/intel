@@ -1,0 +1,42 @@
+#!/usr/bin/env python3
+# Copyright 2026 Anthropic PBC
+# SPDX-License-Identifier: Apache-2.0
+"""intel — harvest TargetIntel from the canary's decoded tree into intel.json.
+
+The intelligence sibling of the `reach` oracle: `reach` decides whether a path is
+a vulnerability; `intel` inventories the app's outward shape (server endpoints /
+hosts, SDKs, permissions, deep links, exported surface, secrets observed). A real
+target's recon step runs the same harness/android_app/intel.harvest() over apktool
+/ jadx output — this script is the canary's dependency-light driver.
+
+    intel [<out.json>]        # APP_ROOT (default /work/app) -> intel.json on stdout
+                              # or written to <out.json> if given
+
+Secrets are recorded by kind + location only (redacted: true); the value is never
+emitted, so intel.json is safe to hand to the server-side pipeline.
+"""
+import json
+import os
+import sys
+
+# Make `harness` importable both in-image (installed) and from a source checkout.
+try:
+    from harness.android_app import intel as _intel
+except ModuleNotFoundError:
+    here = os.path.dirname(os.path.abspath(__file__))
+    # targets/android-canary/ -> repo root is two levels up in a source checkout
+    root = os.environ.get("HARNESS_ROOT") or os.path.abspath(os.path.join(here, "..", ".."))
+    sys.path.insert(0, root)
+    from harness.android_app import intel as _intel
+
+app_root = os.environ.get("APP_ROOT") or os.path.join(os.path.dirname(os.path.abspath(__file__)), "app")
+ti = _intel.harvest(app_root)
+payload = json.dumps(ti.to_dict(), indent=2) + "\n"
+
+if len(sys.argv) > 1:
+    with open(sys.argv[1], "w") as f:
+        f.write(payload)
+    print(f"wrote {sys.argv[1]}: {len(ti.endpoints)} endpoint(s), {len(ti.hosts)} host(s), "
+          f"{len(ti.sdks)} sdk(s), {len(ti.secrets_observed)} secret(s)")
+else:
+    sys.stdout.write(payload)

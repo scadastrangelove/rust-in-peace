@@ -1,0 +1,12 @@
+{
+  "finding_class": "android:webview-js-bridge",
+  "severity": "HIGH",
+  "capability": "webview_bridge",
+  "expected": {"verdict": "promoted", "strength": 3, "tier": "heavy_instrumented", "domain": "behavior"},
+  "observation": {
+    "effect_observed": true,
+    "runs": 3,
+    "of_runs": 3,
+    "evidence": "Frida hook on WebViewBridgeActivity$Bridge.getToken(); loaded page called window.bridge.getToken()  ->  native method fired, returned 'session-token' (3/3)"
+  }
+}
