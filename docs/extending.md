@@ -80,6 +80,62 @@ Three properties make this honest rather than a rename:
    so it ships behind that guard, staged, with cpp/rust bit-identical before and
    after.
 
+## Cross-cutting admissibility & profile-hygiene gates
+
+The `SecurityWitness` generalization above answers "what evidence does a finding
+carry." A second family of generalizations, distilled from the two real-OSS
+campaigns (`LESSONS.md` L1/L3/L4/L10/L12), answers "when may a finding be graded
+`real`." These are **profile-agnostic**: they name a premise every ecosystem has
+(a build profile, a dependency, an untrusted entry, a reachability trace) and
+refuse to let a verdict rest on that premise unbacked. Each is a small pure
+module keyed on the same swappable nouns, unit-tested without agents:
+
+- **`harness/build_profile.py` (P0.1 / L10) — the detector's flags are part of
+  the threat model.** A crash of a class that only manifests under the detection
+  build (rust `overflow-checks`, cpp UBSan) is a build-config artifact until it
+  re-reproduces under the target's *shipping* build. `requires_shipping_reverify(
+  profile, crash_class)` gates the grade; a gated class that doesn't reproduce
+  shipping gets disposition `build_profile_gated` (R7), not `real`. The
+  instrumentation-gated class set is keyed by profile name (rust/cpp/…), NOT a
+  per-finding agent judgment — the same anti-gaming shape as
+  `witness.STATIC_TERMINAL_CLASSES`. A new profile declares its own detection
+  flags + gated classes; a profile with none (android) passes straight through.
+
+- **`harness/admissibility.py` (P0.2/L1, P1.4/L3, P0.5/L12) — structural forcing
+  functions.** Three gates over a `VerdictClaim`: a verdict resting on a
+  *dependency's* behaviour needs a `dep_citation` (file:line) or it is
+  `CONTESTED`; a *reachability* claim needs a `where_checked` entry→sink trace or
+  it is `CONTESTED`; a reproduction whose harness *constructed* the object
+  directly (bypassing the untrusted entry) is `UNVERIFIED` until re-run through
+  the real parse/entry. These map onto the existing union-of-N vocabulary
+  (`CONTESTED` = `aggregate.Candidate.is_contested` → dynamic confirm), so a new
+  profile inherits them for free — dependencies, entries, and traces are not
+  language-specific.
+
+- **`harness/soak.py` (P0.3 / L-ops) — enumerate sites, not the counter.** A
+  soak's `-ignore_crashes` hit counter is a repeat-hit number, not a finding
+  count (lopdf: 6911 inputs → **one** site). `enumerate_sites()` reproduces the
+  saved artifacts and dedups by `(class, top_frame)` via the *profile detector* —
+  so it is profile-general the moment the detector is. `scripts/run_fuzz_soak.sh`
+  is the reference runner that also builds under the shipping profile (P0.1) and
+  copies artifacts out on an interval (P2.2).
+
+- **`CapabilityInventory.run_crash_track()` (P0.4 / L4) — capability-gate the
+  byte-crash track.** The autonomous byte-mutation track is blind on logic-heavy
+  targets and burned quota + tripped cyber-safeguards on x509 for zero yield. It
+  runs only when some active capability has an executable oracle over mutated
+  input (sanitizer != `none`); a pure authz/crypto target skips it with a paper
+  trail (`crash_track_skip_reason()`) and runs curated-static only (L7). For
+  android this reduces to "JNI-only, and only when native is reachable" — the
+  same `run_android_native()` gate.
+
+The remaining refill items are prompt/skill-shaped rather than pure code, and
+attach to the stages a new profile already provides: the always-run seeded fuzz
+stage + find-skill auto-escalation to a fuzz harness (P1.1/P1.2, L11) live in the
+profile's `find*` prompt and the reattack bridge; the adversarial
+maintainer-review pre-disclosure stage (P1.3, L13) is a `judge`-shaped agent over
+the finding before `DISCLOSURES.md`. See `IMPROVEMENTS.md` for status.
+
 ## The extension checklist (G0–G12)
 
 Ordered gates. **G2 is make-or-break**; a weak witness set degrades everything

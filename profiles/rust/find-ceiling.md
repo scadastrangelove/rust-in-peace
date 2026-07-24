@@ -157,6 +157,26 @@ soundness classes this page routes to DEFER; scored as `real_latent` rather than
 FP, true precision was ~100%. Settling them dynamically is what surfaces that
 truth instead of hiding it as a CLEAN.
 
+## Auto-escalate to a fuzz harness (P1.1 / P1.2 — L11)
+
+The find-ceiling rule above stops a finder from *returning CLEAN* on a DEFER row.
+This rule stops the opposite failure the campaigns exposed (L11): a finder that
+hand-crafts inputs for 90+ minutes and **never writes a fuzz harness**, even
+where `cargo-fuzz`/Miri are installed. On x509 the finder crafted inputs for
+93 min and produced no harness though `fuzzing.md`'s staircase prescribes one;
+on lopdf, once a seeded fuzz *was* run, it rediscovered the real bug in ~2 min.
+
+So the dynamic-fuzz stage is **first-class and always-run** for a target whose
+`capabilities.run_crash_track()` is true (a byte-mutation surface — P0.4), seeded
+from the corpus **and** the static findings (each DEFER/static candidate becomes
+a seed via the reattack bridge), not gated behind a Track-A crash. And a finder
+that has spent **N tool-calls without a candidate input** must stop hand-crafting
+and emit a `cargo-fuzz` harness (the `fuzzing.md` staircase), built under the
+*shipping* profile (`build_profile.py` / P0.1) so it doesn't manufacture
+overflow-checks artifacts. "No crash yet" is a reason to write the harness, not
+to keep guessing bytes. This is profile-general: the fuzz stage attaches to the
+reattack bridge every profile already provides (`Profile.build_reattack`).
+
 ## See also
 
 - [`find-to-fuzz.md`](find-to-fuzz.md) — the CWE/capability → template → oracle

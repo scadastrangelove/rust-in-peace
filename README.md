@@ -8,9 +8,9 @@
 recon → find → grade → **find→fuzz** → report → patch loop for the bugs that
 actually bite Rust: memory-safety in `unsafe`/FFI, panic-DoS from untrusted
 input, deserialization trust (an integrity check is not a bounds check), and
-`Send`/`Sync` + panic-safety soundness. **Static analysis drives the dynamic
-stage** — the threat model routes which sanitizer, fuzz rung, and vote budget
-each finding gets. Detectors: **Miri** (undefined behavior), **AddressSanitizer**,
+`Send`/`Sync` + panic-safety soundness. A machine-readable threat model routes
+the Rust crash-track admission and vote budget; the separate reattack stage
+uses it for dynamic-oracle dispatch. Detectors: **Miri** (undefined behavior), **AddressSanitizer**,
 **panic/abort**, **hang-timeout**, and `cargo-fuzz` for execution-verified
 reproduction.
 
@@ -37,8 +37,10 @@ exists for:
 - **Profile registry** (`harness/profiles.py`) — the pipeline resolves its
   language/detector pieces (find/grade/judge/report/patch prompts, crash
   detector, find→fuzz binder) from a `profile:` field in `config.yaml`. Adding a
-  language is a new `harness/<lang>/` package + one registry entry; the
-  orchestration is unchanged.
+  crash-shaped language is a new `harness/<lang>/` package + one registry entry;
+  a new evidence model may also require shared disposition/orchestration work.
+  The registered `android-app` profile is an experimental research branch, not
+  part of the supported Rust release baseline.
 - **The `rust` profile** (`harness/rust/`) — a Rust find prompt, a
   Miri / AddressSanitizer / panic / hang crash detector, Rust-tuned
   grade/judge/report/patch prompts, and the Rust bug taxonomy: unsafe/FFI memory
@@ -59,12 +61,13 @@ exists for:
   impact). The disposition it emits is *triage, not truth* — a "confirmed" vote
   still owes an independent PoC before it counts, the gate that caught false
   positives every campaign. See [docs/variant-analysis.md](docs/variant-analysis.md).
-- **Static analysis drives the fuzzing** — `/threat-model` emits a
-  machine-readable `capabilities.json` (§9) beside `config.yaml`, and each stage
-  routes on it *programmatically*: which `scan-extras` brief `find` appends,
-  which sanitizer + fuzz rung `find→fuzz` picks, and the per-class vote budget.
-  An absent capability is a logged, evidenced skip (no FFI-ABI fuzz on a
-  pure-Rust lib, no TSan on a single-threaded target).
+- **Capability-routed Rust execution** — `/threat-model` emits a
+  machine-readable `capabilities.json` (§9) beside `config.yaml`. `run` uses it
+  for the per-class vote budget and skips the autonomous byte-crash track on a
+  logic-only Rust target before auth/Docker, writing an evidenced
+  `routing.json`; `reattack` uses it for dynamic-oracle dispatch and
+  missing-capability reporting. The remaining capability rows are an explicit
+  routing specification, not a claim that every stage is automatic.
 - **find→fuzz bridge** (`vuln-pipeline reattack`) — turns a static finding into a
   *reproducing* dynamic harness: `dispatch(CWE, capability) → template →
   agent-bound harness → cargo-fuzz / Miri build + validate`, so a graded
@@ -124,8 +127,9 @@ vuln-pipeline reattack  results/rust-canary/<ts>/ --aggregate union      # find�
 vuln-pipeline scorecard results/rust-canary/<ts>/                        # discipline gate: no clean-without-a-residual-reason
 ```
 
-Adding another language = a new `harness/<lang>/` package + one `Profile` entry
-in `harness/profiles.py`; the orchestration doesn't change. Full details:
+Adding another crash-shaped language = a new `harness/<lang>/` package + one
+`Profile` entry in `harness/profiles.py`; a new evidence model may require core
+work. Full details:
 [profiles/rust/README.md](profiles/rust/README.md).
 
 > This is an open-source reference implementation for finding vulnerabilities
@@ -161,7 +165,8 @@ in `harness/profiles.py`; the orchestration doesn't change. Full details:
   `config.yaml` without a `profile:` field now defaults to `rust`). See
   [profiles/rust/README.md](profiles/rust/README.md), the `targets/rust-canary`
   demo, and [`targets/dvra3-parser`](targets/dvra3-parser) (a DVRA benchmark run).
-  Adding another language = a new `harness/<lang>/` package + one registry entry.
+  Adding another crash-shaped language = a new `harness/<lang>/` package + one
+  registry entry; evidence models unlike crashes require additional core work.
 
 > ⚠️ **Security:** `/quickstart`, `/threat-model`, `/vuln-scan`, and `/triage`
 > only read and write files. Running `/patch` on static findings (`TRIAGE.json`
