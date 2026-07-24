@@ -28,6 +28,14 @@ reproduction.
 > demo intact as the `cpp` profile.
 > Maintained by Sergey Gordeychik ([contact](#contact)).
 
+## Proof of work, not AI slop
+
+Skepticism about AI-driven vulnerability research is fair — so here are receipts, not a pitch. As of
+2026-07-24, this pipeline has filed **51 vulnerability reports across 17 independent Rust projects**:
+12 already fixed and merged upstream (including `lopdf`, `x509-parser`, `quick-xml`, `ntex`), 9 more
+accepted or under review as private security advisories (`gitoxide`, `quinn-proto`, `rustls`,
+`ciborium`, `actix-web`). Every report, date, and link: **[DISCLOSURES-PUBLIC.md](DISCLOSURES-PUBLIC.md)**.
+
 ## What this fork adds
 
 Upstream is a C/C++ + ASan demo. This fork keeps that intact as the `cpp` profile
