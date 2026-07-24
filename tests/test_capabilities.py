@@ -107,3 +107,38 @@ def test_inventory_vote_budget_is_max_over_active():
         "unsafe_trait_trust": {"present": "no", "evidence": "grep empty"},
         "untrusted_deserialization": "yes"}})
     assert inv3.vote_budget() == 3
+
+
+def test_run_crash_track_byte_surface_yes():
+    # A parser/deser target has a byte-fuzz rung (sanitizer != none) → run it.
+    inv = cap.from_dict({"capabilities": {"untrusted_deserialization": "yes"}})
+    assert inv.run_crash_track()
+    assert inv.crash_track_skip_reason() is None
+
+
+def test_run_crash_track_logic_only_skipped_with_paper_trail():
+    # Pure authz + crypto = logic classes, sanitizer 'none' → skip the crash track (L4/L7).
+    inv = cap.from_dict({"capabilities": {
+        "multi_tenant_authz": "yes", "crypto_secrets": "yes"}})
+    assert not inv.run_crash_track()
+    reason = inv.crash_track_skip_reason()
+    assert reason and "blind" in reason
+
+
+def test_run_crash_track_no_active_capability():
+    inv = cap.from_dict({"capabilities": {}})
+    assert not inv.run_crash_track()
+    assert "nothing" in inv.crash_track_skip_reason()
+
+
+def test_run_crash_track_android_is_jni_only():
+    # Android app-security classes are witness-based (sanitizer none) → no byte track...
+    inv = cap.from_dict({"capabilities": {
+        "exported_ipc": "yes", "insecure_storage": "yes"}})
+    assert not inv.run_crash_track()
+    # ...unless native code is active AND reachable (the one asan gate).
+    native = cap.from_dict({
+        "capabilities": {"android_native_code": "yes"},
+        "native_reachable_from_untrusted_input": {"present": "yes", "evidence": "JNI chain"},
+    })
+    assert native.run_crash_track()

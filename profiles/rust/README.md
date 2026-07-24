@@ -19,11 +19,12 @@ when untrusted structured input is parsed. So the specialized checks are **gated
 by an inventory of the target's shape**, not run universally: the `threat-model`
 skill records a capability inventory in `THREAT_MODEL.md` §9 (`present` ∈
 `yes|no|test_only|partial` + evidence), and [`capabilities.md`](capabilities.md)
-maps each capability to the checks it turns on across **every** stage — find,
-detector, fuzzing rung, triage. An absent capability is a deliberate, evidenced
-skip. This is what keeps one target's needs (e.g. an in-process C ABI) from
-leaking in as a step everyone pays for. *Today the inventory is consumed by a
-reviewer/agent reading it; auto-wiring the stages to parse §9 is future work.*
+maps each capability to its intended checks. The Rust CLI currently consumes
+the inventory for the union-of-N vote budget and, at the `run` boundary, to
+skip the byte-crash track on logic-only targets with an evidenced
+`routing.json`. The separate `reattack` stage consumes it for dynamic dispatch
+and missing-capability reporting. Other rows remain a routing specification,
+not a claim that every stage is already automatic.
 
 ## Two layers (use either or both)
 
@@ -65,14 +66,14 @@ bundles the language/detector-specific pieces the generic orchestration resolves
 at run time. Selecting it is one line in a target's `config.yaml`:
 
 ```yaml
-profile: rust        # default is "cpp" — existing C targets are unchanged
+profile: rust        # default in this fork; retained C targets pin profile: cpp
 ```
 
 Every stage does `profile = get_profile(target.profile)` then
 `profile.build_find_prompt(...)` / `profile.detector.top_frame(...)` / etc.
-`cpp` (the original C/C++ + ASAN pipeline) is the default, so all existing
-targets keep working with no change. `targets/rust-canary/config.yaml` sets
-`profile: rust`.
+`rust` is the default in this fork. Retained upstream targets set `profile:
+cpp` explicitly; `targets/rust-canary/config.yaml` also states `profile: rust`
+for clarity.
 
 | Piece | `cpp` | `rust` |
 |-------|-------|--------|
@@ -104,8 +105,9 @@ For post-hoc `vuln-pipeline dedup` (which walks result.json files that may span
 profiles and carries no single target), `harness/profiles.detector_for_output()`
 sniffs the crash text and picks the right parser automatically.
 
-Adding another language later = a new `harness/<lang>/` package + one `Profile`
-entry in `harness/profiles.py`. The generic orchestration doesn't change.
+Adding another crash-shaped language later = a new `harness/<lang>/` package +
+one `Profile` entry in `harness/profiles.py`. A different evidence model (for
+example Android witnesses) also requires shared disposition/orchestration work.
 
 ## Detectors
 

@@ -1,7 +1,15 @@
 # Android app-security profile
 
+> **Experimental research branch.** The supported release baseline is the Rust
+> profile. Android's witness model, fixture oracles, and target-specific dynamic
+> scripts are retained for research, but generic `grade → aggregate → reattack →
+> patch` semantics are not yet production-wired. In particular, a passed
+> strength-1 static witness must not be read as a confirmed exploit. Use the
+> Android-specific canary scripts and benchmark documents as experiments, not as
+> a production guarantee.
+
 An **application-security** variant of this pipeline, added **alongside** the C/C++
-+ ASAN default and the Rust fork (nothing in the base pipeline is modified). Its
++ ASAN base and the Rust default (nothing in the base pipeline is modified). Its
 target is a **decompiled APK**, not source: `AndroidManifest.xml` (decoded), `smali/`
 (the faithful bytecode — the thing you cite for line refs), a jadx Java-ish decompile
 (readable but lossy), and `resources/`. There is no recompilable source and no
@@ -160,11 +168,14 @@ plain-text files here — **no Docker, no code execution, no device required**:
 
 This is the recommended starting point and, for many reviews, sufficient on its own.
 
-### 2. Autonomous pipeline — the `android-app` profile
+### 2. Autonomous pipeline adapters — experimental
 
-The profile bundles the Android-specific pieces the generic orchestration
-(find → grade → judge → report) resolves at run time. Because a witness rides *inside*
-a `CrashArtifact`, the generic rail is unchanged — only the swappable nouns differ:
+The profile bundles Android-specific adapters that the generic orchestration can
+resolve at run time. A witness currently rides inside a `CrashArtifact`, which
+allowed the prompt/detector experiments to reuse the rail, but the shared
+aggregate and reattack implementations do not yet honor witness strength
+end-to-end. Treat this table as the implemented adapter surface, not a
+production-ready lifecycle:
 
 | piece | base (`cpp`) | `android-app` |
 |---|---|---|
@@ -172,12 +183,13 @@ a `CrashArtifact`, the generic rail is unchanged — only the swappable nouns di
 | detector | `harness/asan.py` | [`harness/android_app/detect.py`](../../harness/android_app/detect.py) — parses the WITNESS header; `project_frames` = sink-first path anchors; `crash_reason` = finding class |
 | evidence model | crash (implicit strength 4) | [`harness/witness.py`](../../harness/witness.py) — `SecurityWitness`, strength 1..4, `default_disposition` |
 | capability gates | `harness/capabilities.py` | same file — the android `_GATES` rows (§A1..§A9) |
-| grade / judge / report | base rubric | base rail, witness-aware (a valid finding is a reachability witness, not a clean return) |
+| grade / judge / report | base rubric | experimental witness-aware prompt adapters; shared disposition still needs strength wiring |
 
-The dedup signature is `(finding_class, sink site)`: distinct sinks are distinct
-findings; the same sink reached from several entries is one finding. A native crash
-routed here (an android-native escalation) carries no WITNESS header, so
-`crash_reason` falls back to the shared ASan summary regex and still dedups.
+The intended dedup signature is `(finding_class, sink site)`: distinct sinks
+are distinct findings; the same sink reached from several entries is one
+finding. Target-specific canary scripts exercise this model. Do not use a
+generic passed grade or aggregate vote as evidence that a strength-1 witness
+was dynamically promoted.
 
 ## Provenance / design decisions
 

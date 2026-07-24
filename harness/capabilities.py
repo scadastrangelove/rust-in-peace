@@ -284,6 +284,35 @@ class CapabilityInventory:
         return (self.is_active("android_native_code")
                 and self.native_reachable_from_untrusted_input() in ("yes", "partial"))
 
+    def run_crash_track(self) -> bool:
+        """True when the autonomous *byte-mutation crash* track should run (P0.4).
+
+        L4: the byte-crash track is blind on logic-heavy targets and, on x509,
+        tripped cyber-safeguards for zero yield — a curated static read found the
+        bugs the crash track couldn't. The track is worth spending only when some
+        active capability actually has an executable oracle over mutated input
+        (sanitizer != 'none' — asan/msan/miri/tsan all imply a byte-fuzz rung).
+        A target whose only active capabilities are logic classes
+        (`multi_tenant_authz`, `crypto_secrets`) has every gate at sanitizer
+        'none' → skip the crash track, run curated-static only (L7).
+
+        Generalizes across profiles: an android target is False here unless
+        `android_native_code` is active AND reachable (its only sanitizer gate),
+        which is exactly `run_android_native()` — the byte-crash track for
+        Android is JNI-only."""
+        return any(g.sanitizer != "none" for g in self.active_gates())
+
+    def crash_track_skip_reason(self) -> str | None:
+        """Paper trail for a skipped crash track (None when it runs). A skip is an
+        evidenced routing decision (L4/L7), never a silent omission."""
+        if self.run_crash_track():
+            return None
+        active = self.active_capabilities()
+        if not active:
+            return "no active capability — nothing for the byte-crash track to fuzz"
+        return (f"active capabilities {active} are all logic classes (sanitizer "
+                f"'none') — byte-crash track is blind here (L4); curated-static only")
+
     def sanitizers(self) -> list[str]:
         """Distinct reattack sanitizers the active capabilities call for — the
         sanitizer/fuzz execution matrix this target actually needs (drops 'none')."""

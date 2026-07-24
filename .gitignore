@@ -30,3 +30,10 @@ cc.tkn
 # unfixed findings or third-party integration internals before coordinated disclosure)
 CHROMIUM-RUST-CODECS-PLAN.md
 chromium-bmp-disclosure/
+gitoxide-win-disclosure/
+quinn-retire-cids-disclosure/
+actix-busyloop-disclosure/
+actix-chunked-disclosure/
+ntex-consumed-disclosure/
+ntex-te-desync-disclosure/
+ntex-chunked-disclosure/

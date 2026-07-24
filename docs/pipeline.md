@@ -102,6 +102,20 @@ cluster into M signatures".
 **Patch.** A separate command that generates a candidate patch for each unique
 bug. For details, see [patching.md](patching.md).
 
+**Predisclose.** A separate command that runs a skeptical-maintainer agent
+against each `reports/bug_NN/`'s report + (if one exists) `patch.diff`, before
+anything is filed upstream. The agent's only job is to try to reject,
+downgrade, or wontfix the finding using the target's own code — see
+`harness/prompts/maintainer_review_prompt.py` for the four axes it attacks
+(misunderstanding / inflated severity / weak reachability / broken fix).
+Verdict lands in `reports/bug_NN/predisclose.json`. This is the first
+structural home for the pre-disclosure checklist that used to live only in
+LESSONS.md prose — re-verifying against the target's current default branch,
+checking the target's own issue tracker for prior art, and computing a
+severity baseline against real-world data are documented disciplines (L15/
+L23/L33/L34) that don't have code here yet; they belong in this stage when
+they do, not a parallel one.
+
 ## Watching a run
 
 Transcripts and results are written to disk the moment they're produced,
@@ -136,6 +150,7 @@ bin/vp-sandboxed run    <target> --resume <results-dir>  # continue a killed bat
 bin/vp-sandboxed report results/<target>/<ts>/           # batch-mode reports, for runs done without --stream
 bin/vp-sandboxed report results/<target>/<ts>/ --fresh   # redo reports, ignoring existing report.json checkpoints
 bin/vp-sandboxed patch  results/<target>/<ts>/           # propose and verify a fix per unique bug
+bin/vp-sandboxed predisclose results/<target>/<ts>/      # skeptical-maintainer gate before filing
 bin/vp-sandboxed dedup  results/<target>/<ts>/           # group crashes by signature
 ```
 

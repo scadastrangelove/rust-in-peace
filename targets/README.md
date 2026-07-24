@@ -24,6 +24,14 @@ binary_path: /work/entry                # path INSIDE the container
 source_root: /work                      # path INSIDE the container
 ```
 
+`commit` is a machine git ref: no whitespace or prose, because novelty checks
+pass it to `git log`. Put human snapshot/fork context in the optional, inert
+field instead:
+
+```yaml
+provenance_label: "vendored from upstream main; local benchmark driver added"
+```
+
 For `profile: rust`, two more fields wire the multi-detector oracle:
 
 ```yaml
