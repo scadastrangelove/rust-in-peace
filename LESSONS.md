@@ -96,7 +96,11 @@ report-only issues on a volunteer team (L29). L23's "cross-reference, don't drop
 in practice: a matching closed issue's title tells you it was fixed, not what the fix actually covers —
 pull the closing commit/PR and read its diff before deciding a finding is a duplicate, since the merged
 fix can (and, twice in one campaign, did) have a narrower scope than the symptom it closed (L33).
-- **Do:** adversarial-review → compiling repro vs master → artifact matched to the fix → cross-reference (don't blind-drop) the known, reading the closing commit/PR's actual diff, not just its title or state → check `private-vulnerability-reporting` via API **and read SECURITY.md's declared scope in full** → public issue+PR only if that confirms no private channel and the bug class is in scope → don't fan out unfixed report-only issues.
+Finally, a technically valid finding does not authorize its finder to send it: when project policy
+requires human-authored communication and no human or opt-in coordinator is available, preserve the
+case in private escrow and reassess it instead of manufacturing eligibility through another channel
+or waiting for the risk to worsen (L41).
+- **Do:** adversarial-review → compiling repro vs master → artifact matched to the fix → cross-reference (don't blind-drop) the known, reading the closing commit/PR's actual diff, not just its title or state → check `private-vulnerability-reporting` via API **and read SECURITY.md's declared scope in full** → require both channel eligibility and sender authority before any outbound action → public issue+PR only if that confirms no private channel and the bug class is in scope → don't fan out unfixed report-only issues.
 
 ### P6 — Dogfood the tool, and treat its own trust boundary as first-class.  `[PROVEN]`  — folds L7, L20, L28
 Periodically run the pipeline **on itself**: a security tool that executes untrusted target code and runs an
@@ -662,6 +666,23 @@ pass and re-verify against source on a delay**, the same way a silent finding ge
   win and gets logged as `refound`, full stop — no comment demanding recognition, no re-litigating the
   original exchange. The deliverable is the target's actual security posture, not attribution; a silent
   fix achieves the entire mission as completely as a credited one does.
+
+### L41 — A valid finding does not grant its finder authority to send it; escrow and reassess when no authorized sender exists  `[PROVEN]` · principle · sharpens-P5
+In a real campaign, an agent produced a reproducible finding and a credible fix, but the target's
+contribution policy required maintainer-facing prose to be human-authored. The ordinary issue/PR route
+therefore did not authorize autonomous submission, and the private security channel was not a legitimate
+fallback for a finding outside that channel's current scope. With no human operator or opt-in coordinator
+available, every apparent workaround failed the same test: rephrasing the report would evade rather than
+honour the policy; using a different inbox would manufacture channel eligibility; independent publication
+would expose users without gaining authority; and deliberately waiting for the defect to ship would
+manipulate the conditions under which the report might later qualify.
+- **Change:** represent technical validity, channel eligibility, and sender authority as separate gates.
+  Put a valid-but-unauthorized finding in `PRIVATE_ESCROW`, seek a coordinator only through a pre-authorized
+  opt-in route, and otherwise use `HOLD_AND_REASSESS`. Re-check source, releases, policy, available
+  coordinators, and risk on a schedule and on material events; do not file merely because time passed.
+  `BREAK_GLASS` triggers an external or precommitted decision procedure — it never lets the same
+  goal-seeking agent expand its own authority.
+- *Full anonymized case:* [`docs/case-studies/autonomous-disclosure-authority.md`](docs/case-studies/autonomous-disclosure-authority.md).
 
 ---
 
