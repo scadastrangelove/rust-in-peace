@@ -1,0 +1,16 @@
+sanity: one static block and one dynamic block each decode to 0 bytes
+
+=== STATIC  (BTYPE=1) block flood ===
+  N_blocks |     payload_B | out_len |    elapsed |  bytes/block
+      1000 |          1250 |       0 |    2.211ms |         1.25
+     10000 |         12500 |       0 |   22.505ms |         1.25
+    100000 |        125000 |       0 |  224.711ms |         1.25
+   1000000 |       1250000 |       0 |     2.480s |         1.25
+
+=== DYNAMIC (BTYPE=2) block flood ===
+  N_blocks |     payload_B | out_len |    elapsed |  bytes/block
+      1000 |         11500 |       0 |    2.014ms |        11.50
+     10000 |        115000 |       0 |   21.774ms |        11.50
+    100000 |       1150000 |       0 |  193.581ms |        11.50
+   1000000 |      11500000 |       0 |     2.188s |        11.50
+
