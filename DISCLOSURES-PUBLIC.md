@@ -27,11 +27,11 @@ Reporter of record: Sergey Gordeychik ([@scadastrangelove](https://github.com/sc
 
 | | |
 |---|---:|
-| Reports filed | 51 |
-| Resolved (fixed / merged) | 12 |
-| Open — awaiting vendor action | 25 |
-| Closed — disputed, or not a vulnerability | 5 |
-| Private advisories pending vendor publication | 9 |
+| Reports filed | 55 |
+| Resolved (fixed / merged) | 16 |
+| Open — awaiting vendor action | 21 |
+| Closed — disputed, not a vulnerability, or declined | 7 |
+| Private advisories pending vendor publication | 11 |
 
 ## Public disclosures
 
@@ -40,10 +40,12 @@ Findings sent as (or since converted to) a public issue, pull request, or vendor
 
 | Target | Reported | Report | Severity | Status | Summary |
 |---|---|---|---|---|---|
-| actix-web | 2026-07-23 | [#4161](https://github.com/actix/actix-web/issues/4161) | Low | Open | Chunked-transfer-encoding parser accepts non-conformant chunk-size terminators (hardening; not a demonstrated smuggling exploit) |
+| actix-web | 2026-07-23 | #4161 (removed by repository, 410 Gone) | Low | Closed — issue deleted; report was hardening-only, not a demonstrated smuggling exploit | Chunked-transfer-encoding parser accepts non-conformant chunk-size terminators |
 | Chromium / Skia (vendored `image` fork) | 2026-07-22 | [issue 537617321](https://issues.chromium.org/issues/537617321) | Low | Open — awaiting triage | Unbounded allocation while parsing an embedded BMP color-profile size field |
+| Deno | 2026-07-26 | [PR #36327](https://github.com/denoland/deno/pull/36327) | High | Resolved (2026-07-26) | WebSocket-over-HTTP/2 fallback path left HTTP/2 server push enabled, reachable to a process-crashing assertion in the `h2` crate |
 | fdeflate | 2026-07-19 | [#83](https://github.com/image-rs/fdeflate/issues/83) | Low | Closed — severity disputed by vendor; our own reassessment concurred | Huffman-table-rebuild cost scaling on crafted input |
 | gimli | 2026-07-19 | [#898](https://github.com/gimli-rs/gimli/issues/898) | Low-Medium | Open | Quadratic-time attribute parsing via zero-byte DWARF forms |
+| h2 | 2026-07-26 | [PR #925](https://github.com/hyperium/h2/pull/925) | Low | Open | HTTP/2 trailer emission doesn't filter connection-specific header fields the same code rejects on receive (RFC 9113 §8.2.2) |
 | httparse | 2026-07-19 | [#222](https://github.com/seanmonstar/httparse/issues/222) / [PR #223](https://github.com/seanmonstar/httparse/pull/223) | Low-Medium | Open | A whitespace-only header line silently truncates the entire header block, under an opt-in leniency flag |
 | image | 2026-07-19 | [#3076](https://github.com/image-rs/image/issues/3076) | High | Open | AVIF decode proceeds before configured memory limits are enforced |
 | image | 2026-07-19 | [#3077](https://github.com/image-rs/image/issues/3077) | High | Resolved | WebP animation decode bypassed configured memory limits |
@@ -60,11 +62,11 @@ Findings sent as (or since converted to) a public issue, pull request, or vendor
 | miniz_oxide | 2026-07-19 | [#200](https://github.com/Frommi/miniz_oxide/issues/200) | Low | Open | Logic error in a bounds comparison (performance-only) |
 | miniz_oxide | 2026-07-19 | [#201](https://github.com/Frommi/miniz_oxide/issues/201) | Medium | Open | Non-default feature bypasses decoder state-machine invariants |
 | miniz_oxide | 2026-07-19 | [#202](https://github.com/Frommi/miniz_oxide/issues/202) | Low | Open | Documentation and integer-truncation hardening notes |
-| ntex | 2026-07-23 | [#944](https://github.com/ntex-rs/ntex/issues/944) | Low | Open | Same chunked-encoding leniency class as actix-web #4161, independently implemented |
-| ntex | 2026-07-23 | [#945](https://github.com/ntex-rs/ntex/issues/945) | Low | Open | `GET` + `Transfer-Encoding` on HTTP/1.0 framed as bodiless |
-| ntex | 2026-07-23 | [#946](https://github.com/ntex-rs/ntex/issues/946) / [PR #947](https://github.com/ntex-rs/ntex/pull/947) | Low-Medium | Resolved (2026-07-24) | Per-connection byte counter never reset per message, causing spurious request-too-large errors |
-| object | 2026-07-18 | [#950](https://github.com/gimli-rs/object/issues/950) / [PR #951](https://github.com/gimli-rs/object/pull/951) | Low-Medium | Open | Zstd-compressed section decompression bypasses its own size cap |
-| object | 2026-07-18 | [#952](https://github.com/gimli-rs/object/issues/952) / [PR #953](https://github.com/gimli-rs/object/pull/953) | Low-Medium | Open | Mach-O exports-trie shared-subtree parsing scales exponentially |
+| ntex | 2026-07-23 | [#944](https://github.com/ntex-rs/ntex/issues/944) | Low | Resolved (2026-07-24, via maintainer's own fix) | Same chunked-encoding leniency class as actix-web #4161, independently implemented |
+| ntex | 2026-07-23 | [#945](https://github.com/ntex-rs/ntex/issues/945) | Low | Resolved (2026-07-24, via maintainer's own fix) | `GET` + `Transfer-Encoding` on HTTP/1.0 framed as bodiless |
+| ntex | 2026-07-23 | [#946](https://github.com/ntex-rs/ntex/issues/946) / [PR #947](https://github.com/ntex-rs/ntex/pull/947) | Low-Medium | Resolved (2026-07-24) | Per-connection byte counter never reset per message, causing spurious request-too-large errors (regression caught before any published release was ever affected) |
+| object | 2026-07-18 | [#950](https://github.com/gimli-rs/object/issues/950) / [PR #951](https://github.com/gimli-rs/object/pull/951) | Low-Medium | Resolved (2026-07-26, via maintainer's own fix) | Zstd-compressed section decompression bypasses its own size cap |
+| object | 2026-07-18 | [#952](https://github.com/gimli-rs/object/issues/952) / [PR #953](https://github.com/gimli-rs/object/pull/953) | Low-Medium | Closed — vendor declined the proposed fix; underlying issue not otherwise addressed | Mach-O exports-trie shared-subtree parsing scales exponentially |
 | png | 2026-07-19 | [#696](https://github.com/image-rs/image-png/issues/696) / [PR #697](https://github.com/image-rs/image-png/pull/697) | Medium-High | Open | Decompression-bomb hardening for zTXt/iTXt chunks |
 | png | 2026-07-19 | [#694](https://github.com/image-rs/image-png/issues/694) | Medium | Resolved | PLTE-chunk-length panic (fixed independently before this report) |
 | png | 2026-07-19 | [#692](https://github.com/image-rs/image-png/issues/692) | Medium | Closed — disputed; independently reconfirmed present in current source | `output_buffer_size()` doesn't consult configured memory limits |
@@ -90,12 +92,14 @@ here by advisory ID and status only — no technical detail is disclosed before 
 
 | Target | Reported | Advisory ID | Status |
 |---|---|---|---|
-| actix-web | 2026-07-23 | [GHSA-rmg3-w467-r3hg](https://github.com/actix/actix-web/security/advisories/GHSA-rmg3-w467-r3hg) | Under vendor review |
+| actix-web | 2026-07-23 | [GHSA-rmg3-w467-r3hg](https://github.com/actix/actix-web/security/advisories/GHSA-rmg3-w467-r3hg) | Closed by vendor — advisory not published |
 | ciborium | 2026-07-19 | [GHSA-gg22-wcqw-grr3](https://github.com/enarx/ciborium/security/advisories/GHSA-gg22-wcqw-grr3) | Under vendor review |
 | ciborium | 2026-07-19 | [GHSA-5857-62v3-27wr](https://github.com/enarx/ciborium/security/advisories/GHSA-5857-62v3-27wr) | Under vendor review |
 | ciborium | 2026-07-19 | [GHSA-qxw2-g7wc-7h4j](https://github.com/enarx/ciborium/security/advisories/GHSA-qxw2-g7wc-7h4j) | Under vendor review |
 | ciborium | 2026-07-19 | [GHSA-gpv3-7pvc-5937](https://github.com/enarx/ciborium/security/advisories/GHSA-gpv3-7pvc-5937) | Under vendor review |
 | gitoxide | 2026-07-22 | [GHSA-pmm9-4h7q-24c8](https://github.com/GitoxideLabs/gitoxide/security/advisories/GHSA-pmm9-4h7q-24c8) | Accepted by vendor — fix in progress |
+| h2 | 2026-07-26 | [GHSA-q83h-524g-xf6h](https://github.com/hyperium/hyper/security/advisories/GHSA-q83h-524g-xf6h) | Under vendor review |
+| h2 | 2026-07-26 | [GHSA-8r6j-x8wp-qpm3](https://github.com/hyperium/hyper/security/advisories/GHSA-8r6j-x8wp-qpm3) | Under vendor review |
 | quinn-proto | 2026-07-23 | [GHSA-hmxj-32vh-65vr](https://github.com/quinn-rs/quinn/security/advisories/GHSA-hmxj-32vh-65vr) | Accepted by vendor — fix in progress |
 | rustls | 2026-07-23 | [GHSA-j99h-2h74-pcqx](https://github.com/rustls/rustls/security/advisories/GHSA-j99h-2h74-pcqx) | Under vendor review |
 | rustls | 2026-07-23 | [GHSA-4xwv-fw6q-5gvr](https://github.com/rustls/rustls/security/advisories/GHSA-4xwv-fw6q-5gvr) | Under vendor review |
@@ -110,4 +114,4 @@ here by advisory ID and status only — no technical detail is disclosed before 
 - A closure marked "disputed" reflects our own re-verification against the target's current source, not
   a claim that the vendor acted in bad faith — vendors regularly and reasonably assess scope and
   priority differently than an external reporter.
-- This list is updated as reports change status. Last updated: 2026-07-24.
+- This list is updated as reports change status. Last updated: 2026-07-27.
