@@ -27,9 +27,9 @@ Reporter of record: Sergey Gordeychik ([@scadastrangelove](https://github.com/sc
 
 | | |
 |---|---:|
-| Reports filed | 55 |
+| Reports filed | 57 |
 | Resolved (fixed / merged) | 16 |
-| Open — awaiting vendor action | 21 |
+| Open — awaiting vendor action | 23 |
 | Closed — disputed, not a vulnerability, or declined | 7 |
 | Private advisories pending vendor publication | 11 |
 
@@ -78,6 +78,8 @@ Findings sent as (or since converted to) a public issue, pull request, or vendor
 | quick-xml | 2026-07-19 | [#978](https://github.com/tafia/quick-xml/issues/978) / [PR #982](https://github.com/tafia/quick-xml/pull/982) | Low-Medium | Open | Serde deserializer has no recursion-depth cap |
 | quick-xml | 2026-07-19 | [#980](https://github.com/tafia/quick-xml/issues/980) | Low-Medium | Open | Namespace-prefix resolution scales quadratically with nesting depth |
 | rmp-serde | 2026-07-20 | [#381](https://github.com/3Hren/msgpack-rust/issues/381) / [PR #382](https://github.com/3Hren/msgpack-rust/pull/382) | Medium | Open | Recursion-depth guard doesn't cover all deserialization entry points |
+| rustls | 2026-07-23 | [PR #3173](https://github.com/rustls/rustls/pull/3173) | Low | Open — vendor's fix proposed, not yet merged | A `CryptoProvider` mixing QUIC-capable and -incapable TLS1.3 cipher suites can panic if the peer selects the incapable one |
+| rustls | 2026-07-23 | [PR #3173](https://github.com/rustls/rustls/pull/3173) | Low | Open — vendor's fix proposed, not yet merged | A QUIC client would incorrectly accept a TLS1.2 ServerHello from a trusted-but-misbehaving server |
 | ttf-parser | 2026-07-20 | [#218](https://github.com/harfbuzz/ttf-parser/issues/218) / [PR #222](https://github.com/harfbuzz/ttf-parser/pull/222) | Medium | Open | CFF2 operand-stack underflow |
 | ttf-parser | 2026-07-20 | [#219](https://github.com/harfbuzz/ttf-parser/issues/219) / [PR #223](https://github.com/harfbuzz/ttf-parser/pull/223) | Low | Open | Variation-axis-mapping integer overflow |
 | ttf-parser | 2026-07-20 | [#220](https://github.com/harfbuzz/ttf-parser/issues/220) / [PR #224](https://github.com/harfbuzz/ttf-parser/pull/224) | High | Open | Composite-glyph shared-subtree parsing scales exponentially |
@@ -101,8 +103,8 @@ here by advisory ID and status only — no technical detail is disclosed before 
 | h2 | 2026-07-26 | [GHSA-q83h-524g-xf6h](https://github.com/hyperium/hyper/security/advisories/GHSA-q83h-524g-xf6h) | Under vendor review |
 | h2 | 2026-07-26 | [GHSA-8r6j-x8wp-qpm3](https://github.com/hyperium/hyper/security/advisories/GHSA-8r6j-x8wp-qpm3) | Under vendor review |
 | quinn-proto | 2026-07-23 | [GHSA-hmxj-32vh-65vr](https://github.com/quinn-rs/quinn/security/advisories/GHSA-hmxj-32vh-65vr) | Accepted by vendor — fix in progress |
-| rustls | 2026-07-23 | [GHSA-j99h-2h74-pcqx](https://github.com/rustls/rustls/security/advisories/GHSA-j99h-2h74-pcqx) | Under vendor review |
-| rustls | 2026-07-23 | [GHSA-4xwv-fw6q-5gvr](https://github.com/rustls/rustls/security/advisories/GHSA-4xwv-fw6q-5gvr) | Under vendor review |
+| rustls | 2026-07-23 | [GHSA-j99h-2h74-pcqx](https://github.com/rustls/rustls/security/advisories/GHSA-j99h-2h74-pcqx) | Closed by vendor — advisory not published; addressed via public [PR #3173](https://github.com/rustls/rustls/pull/3173) |
+| rustls | 2026-07-23 | [GHSA-4xwv-fw6q-5gvr](https://github.com/rustls/rustls/security/advisories/GHSA-4xwv-fw6q-5gvr) | Closed by vendor — advisory not published; addressed via public [PR #3173](https://github.com/rustls/rustls/pull/3173) |
 
 ## Notes
 
