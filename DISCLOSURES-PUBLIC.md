@@ -25,13 +25,15 @@ Reporter of record: Sergey Gordeychik ([@scadastrangelove](https://github.com/sc
 
 ## Summary
 
+_As of 2026-07-31._
+
 | | |
 |---|---:|
 | Reports filed | 57 |
-| Resolved (fixed / merged) | 16 |
-| Open — awaiting vendor action | 23 |
+| Resolved (fixed / merged) | 20 |
+| Open — awaiting vendor action | 19 |
 | Closed — disputed, not a vulnerability, or declined | 7 |
-| Private advisories pending vendor publication | 11 |
+| Private advisories pending vendor publication | 8 |
 
 ## Public disclosures
 
@@ -75,11 +77,11 @@ Findings sent as (or since converted to) a public issue, pull request, or vendor
 | png | 2026-07-19 | [#698](https://github.com/image-rs/image-png/issues/698) | Low | Closed — not a vulnerability (documented, required behavior) | Adam7 interlacing buffer-reuse report |
 | png | 2026-07-19 | [#701](https://github.com/image-rs/image-png/issues/701) | Low | Closed — not a vulnerability (works as documented) | ICC-profile error handling |
 | quick-xml | 2026-07-19 | [#977](https://github.com/tafia/quick-xml/issues/977) / [PR #979](https://github.com/tafia/quick-xml/pull/979) | Low-Medium | Resolved (2026-07-20) | Namespace-resolver depth counter overflow (panic and scope misresolution) |
-| quick-xml | 2026-07-19 | [#978](https://github.com/tafia/quick-xml/issues/978) / [PR #982](https://github.com/tafia/quick-xml/pull/982) | Low-Medium | Open | Serde deserializer has no recursion-depth cap |
-| quick-xml | 2026-07-19 | [#980](https://github.com/tafia/quick-xml/issues/980) | Low-Medium | Open | Namespace-prefix resolution scales quadratically with nesting depth |
+| quick-xml | 2026-07-19 | [#978](https://github.com/tafia/quick-xml/issues/978) | Low-Medium | Resolved (2026-07-30, via maintainer's own fix; our [PR #982](https://github.com/tafia/quick-xml/pull/982) superseded) | Serde deserializer has no recursion-depth cap |
+| quick-xml | 2026-07-19 | [#980](https://github.com/tafia/quick-xml/issues/980) | Low-Medium | Resolved (2026-07-30, via maintainer's own fix) | Namespace-prefix resolution scales quadratically with nesting depth |
 | rmp-serde | 2026-07-20 | [#381](https://github.com/3Hren/msgpack-rust/issues/381) / [PR #382](https://github.com/3Hren/msgpack-rust/pull/382) | Medium | Open | Recursion-depth guard doesn't cover all deserialization entry points |
-| rustls | 2026-07-23 | [PR #3173](https://github.com/rustls/rustls/pull/3173) | Low | Open — vendor's fix proposed, not yet merged | A `CryptoProvider` mixing QUIC-capable and -incapable TLS1.3 cipher suites can panic if the peer selects the incapable one |
-| rustls | 2026-07-23 | [PR #3173](https://github.com/rustls/rustls/pull/3173) | Low | Open — vendor's fix proposed, not yet merged | A QUIC client would incorrectly accept a TLS1.2 ServerHello from a trusted-but-misbehaving server |
+| rustls | 2026-07-23 | [PR #3173](https://github.com/rustls/rustls/pull/3173) | Low | Resolved (2026-07-29, PR #3173 merged) | A `CryptoProvider` mixing QUIC-capable and -incapable TLS1.3 cipher suites can panic if the peer selects the incapable one |
+| rustls | 2026-07-23 | [PR #3173](https://github.com/rustls/rustls/pull/3173) | Low | Resolved (2026-07-29, PR #3173 merged) | A QUIC client would incorrectly accept a TLS1.2 ServerHello from a trusted-but-misbehaving server |
 | ttf-parser | 2026-07-20 | [#218](https://github.com/harfbuzz/ttf-parser/issues/218) / [PR #222](https://github.com/harfbuzz/ttf-parser/pull/222) | Medium | Open | CFF2 operand-stack underflow |
 | ttf-parser | 2026-07-20 | [#219](https://github.com/harfbuzz/ttf-parser/issues/219) / [PR #223](https://github.com/harfbuzz/ttf-parser/pull/223) | Low | Open | Variation-axis-mapping integer overflow |
 | ttf-parser | 2026-07-20 | [#220](https://github.com/harfbuzz/ttf-parser/issues/220) / [PR #224](https://github.com/harfbuzz/ttf-parser/pull/224) | High | Open | Composite-glyph shared-subtree parsing scales exponentially |

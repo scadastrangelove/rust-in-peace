@@ -31,10 +31,11 @@ reproduction.
 ## Proof of work, not AI slop
 
 Skepticism about AI-driven vulnerability research is fair — so here are receipts, not a pitch. As of
-2026-07-24, this pipeline has filed **51 vulnerability reports across 17 independent Rust projects**:
-12 already fixed and merged upstream (including `lopdf`, `x509-parser`, `quick-xml`, `ntex`), 9 more
-accepted or under review as private security advisories (`gitoxide`, `quinn-proto`, `rustls`,
-`ciborium`, `actix-web`). Every report, date, and link: **[DISCLOSURES-PUBLIC.md](DISCLOSURES-PUBLIC.md)**.
+2026-07-31, this pipeline has filed **57 vulnerability reports across 20 independent Rust projects**:
+20 already fixed upstream (via a merged fix or the maintainer's own commit — including `lopdf`,
+`x509-parser`, `quick-xml`, `ntex`, `rustls`, `h2`), 8 more accepted or under review as private
+security advisories (`gitoxide`, `quinn-proto`, `ciborium`, `hyper`). Every report, date, and link:
+**[DISCLOSURES-PUBLIC.md](DISCLOSURES-PUBLIC.md)**.
 
 ## What this fork adds
 
@@ -147,11 +148,16 @@ work. Full details:
 ## Contents
 
 - **Claude Code skills**: `/quickstart`, `/threat-model`, `/vuln-scan`,
-  `/variant-scan`, `/triage`, `/patch`, `/customize`: interactive scoping,
-  scanning, triage, and patching. `/variant-scan` runs the three seed-diverse
-  find passes (blind ∪ threat-model-first ∪ CVE/history-seeded) + a 3-skeptic
-  adversarial verify — the recall engine the real-OSS campaigns used. Open this
-  repo in Claude Code and run `/quickstart` to get oriented.
+  `/variant-scan`, `/sast-driven`, `/triage`, `/patch`, `/customize`: interactive
+  scoping, scanning, triage, and patching. `/variant-scan` runs the three
+  seed-diverse find passes (blind ∪ threat-model-first ∪ CVE/history-seeded) + a
+  3-skeptic adversarial verify — the recall engine the real-OSS campaigns used.
+  `/sast-driven` is the deliberately **isolated fourth mode**: it runs every
+  static-analysis engine's default rules in a container, clusters the output into
+  *cells*, judges each for reachability, and only then lets a finder read code —
+  kept separate so "what did the tools find that reasoning didn't?" stays
+  measurable ([`docs/sast-layer.md`](docs/sast-layer.md), ADR-2). Open this repo
+  in Claude Code and run `/quickstart` to get oriented.
 - **`harness/`**: the autonomous pipeline (recon → find → grade → judge →
   report, plus the `reattack` find→fuzz bridge, the `scorecard` gate, the
   `predisclose` adversarial maintainer-review, and `patch`), driven by profiles.
