@@ -1,0 +1,68 @@
+# U1 ENUMERATORS — worklists, not alerts (docs/sast-layer.md §2).
+#
+# Judged on COMPLETENESS, never precision. A rule that returns 300 sites is working. Each one exists
+# to make a specific finder lens exhaustive instead of sampled:
+#
+#   RIP-E001 validation predicates + their call sites → the W20/mirror-walk matrix. This is the exact
+#            shape the h2 `is_valid_trailer_field` finding was reached by — by hand, non-exhaustively.
+#   RIP-E002 allocation sized by a variable        → W27 allocation-provenance
+#   RIP-E003 numeric casts                         → W21 unit-mismatch + W27 value-range
+#   RIP-E004 direct indexing / slicing             → panic surface, and W20's "guard vs sink" matrix
+#   RIP-E005 counter mutation                      → W22 temporal re-entry, W27 value-range
+#
+# They deliberately do NOT try to judge whether a site is guarded. Judging is the agent's job; these
+# guarantee the agent is looking at the whole population.
+id: rip-e001-validation-predicate
+language: rust
+severity: hint
+message: "U1/RIP-E001 validation predicate — enumerate its call sites for the mirror walk"
+rule:
+  kind: function_item
+  has:
+    field: name
+    regex: "^(is_valid|is_legal|is_allowed|check|validate|verify|ensure|assert)"
+
+---
+id: rip-e002-alloc-from-variable
+language: rust
+severity: hint
+message: "U1/RIP-E002 allocation sized by a variable — trace the length's provenance"
+rule:
+  any:
+    - pattern: Vec::with_capacity($N)
+    - pattern: String::with_capacity($N)
+    - pattern: $X.reserve($N)
+    - pattern: $X.reserve_exact($N)
+    - pattern: vec![$E; $N]
+    - pattern: $X.resize($N, $$$)
+
+---
+id: rip-e003-numeric-cast
+language: rust
+severity: hint
+message: "U1/RIP-E003 numeric cast — unit boundary and value-range candidate"
+rule:
+  kind: type_cast_expression
+
+---
+id: rip-e004-index-or-slice
+language: rust
+severity: hint
+message: "U1/RIP-E004 direct index/slice — panic surface; is the bound checked on every path?"
+rule:
+  any:
+    - kind: index_expression
+    - pattern: $X.get_unchecked($$$)
+    - pattern: $X.get_unchecked_mut($$$)
+
+---
+id: rip-e005-counter-mutation
+language: rust
+severity: hint
+message: "U1/RIP-E005 counter mutation — fixed-width overflow / temporal re-entry candidate"
+rule:
+  any:
+    - pattern: $X += $N
+    - pattern: $X -= $N
+    - pattern: $X = $X.wrapping_add($N)
+    - pattern: $X = $X.wrapping_sub($N)

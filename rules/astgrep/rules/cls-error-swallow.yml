@@ -1,0 +1,484 @@
+# ── CLASS: error-swallow (a fallible Result/Option is discarded on its failure branch) ────────────
+#
+# docs/finding-class-map.md row 16 marked this **R** (rule-able) and ❌ missing before this file:
+# "png | APNG interlaced stride · chunk-ordering · `parse_iccp` error-swallow | N/R | ...
+#  `Err(_) => {}` is matchable". This file closes that gap.
+#
+# GROUND TRUTH: image-png/src/decoder/stream.rs:1739, inside `parse_iccp`:
+#     self.have_iccp = true;
+#     let _ = self.parse_iccp_raw();       // <- fires: cls-error-swallow-let-underscore-call
+#     Ok(())
+# `parse_iccp_raw` returns `Result<(), DecodingError>`; its Err is thrown away and the caller
+# reports success regardless. Reported upstream; maintainer response was "rejected fair" (they
+# consider it acceptable) — still a true instance of the mechanism, which is what this rule scores.
+# Related mechanism, not separately ruled here (semantic, not a shape — see docs/finding-class-map.md
+# row 10, class N/E): miniz_oxide's serde-feature invariant bypass, where a failure path leaves state
+# unvalidated rather than discarding a `Result` value outright.
+#
+# ── MANDATE (ADR-2) ─────────────────────────────────────────────────────────────────────────────
+# Candidate generator, never a verdict. A false positive costs one agent read; a false negative is
+# permanent and silent. Tuned for recall. The one exclusion actually implemented below (unwrap()/
+# expect() suffix) removes a shape that structurally CANNOT be this class (see RULE 1) — it is not a
+# precision trim, and nothing else was narrowed to buy quiet.
+#
+# ── METHODOLOGY ─────────────────────────────────────────────────────────────────────────────────
+# Every shape below was calibrated against a hand-built positive/negative fixture BEFORE running on
+# the real 25-crate corpus (~1.1M LOC vendored in the corpus tree, ast-grep 0.45.0 in
+# vuln-pipeline-sast:v1.7). Two silent-failure modes were caught this way that a corpus-only pass
+# would have misread as "no matches" and moved on:
+#
+#   (a) `rule: {pattern: "Err($$$E) => {}"}` — a match-arm fragment on its own — PARSES with no
+#       stderr and MATCHES NOTHING. ast-grep's context inference tries an arm fragment as
+#       program/statement/expression; a bare match arm isn't any of those, so it silently never
+#       matches. Fix: `kind: match_arm` + `has: {field: pattern, regex: ...}` / `{field: value, ...}`.
+#   (b) `pattern: "_"` as a metavariable target (`has: {field: pattern, pattern: "_"}`) — same
+#       failure, same silence. Fix: `regex: "^_$"` on the field instead of `pattern:`.
+#
+# A THIRD, higher-stakes finding, discovered only by testing `Ok(_)`/`Err(_)`/`Some(_)` explicitly
+# (the task's own examples all happened to use named bindings, which hid this for two drafts):
+#
+#   (c) a metavariable (`$V` in `Ok($V)`) does NOT bind to a wildcard pattern `_`. `if let Ok($V) =
+#       $E {...}` matches `if let Ok(v) = ... {...}` but NOT `if let Ok(_) = ... {...}` — confirmed
+#       by a minimal A/B (see session log): a metavar-only rule and a literal-`_` rule are
+#       near-disjoint on real code. `Ok(_)`/`Err(_)`/`Some(_)` — discarding the payload and caring
+#       only about success/failure — is at least as common as the named-binding form for THIS class
+#       (arguably the more deliberate spelling of "I only care whether it worked"), so missing it
+#       would have been a silent ~50% recall hole on every if-let rule below. Fix, applied to every
+#       if-let rule: `any: [pattern with literal `_`, pattern with `$V`]`, not `$V` alone.
+#
+# Every rule below was proven against the fixture (both the shape's positives AND its neighbouring
+# negatives — an else-if chain, a logged Err arm, a guarded pop) before being pointed at the corpus,
+# and the combined multi-rule file was re-verified to equal the sum of its parts (no `constraints:`
+# cross-branch bleed, no id collisions) before the corpus run. Recall on the ground truth was checked
+# by re-running the exact shipped rule text against a fresh clone after every edit, not assumed.
+#
+# ── SHAPE INVENTORY AND THE INCLUDE/EXCLUDE CALL, WITH EVIDENCE ────────────────────────────────────
+#
+# The task's five example shapes map to ten rules below (Result and Option variants split; `.ok()`
+# and the three `unwrap_or*` forms are distinct methods with different confidence). ONE exclusion is
+# implemented; everything else stays IN the recall net with its measured composition documented so a
+# downstream triage stage (not this file) can prioritize:
+#
+#   EXCLUDED (RULE 1 constraint) — `let _ = $EXPR.unwrap();` / `.expect($M)`.
+#     WHY: `.unwrap()`/`.expect()` PANIC on Err. That is a loud, immediate, un-silenceable failure —
+#     the opposite of this class by definition (this class is about failures nobody ever sees). It
+#     is a different, already-distinct bug family (reachable panic / DoS-by-panic on untrusted
+#     input), not a weaker instance of error-swallow.
+#     WHAT IT COULD HIDE: nothing belonging to THIS class — a real "let _ = X.unwrap();" instance
+#     can never quietly lose an error, by construction. (If the *value* being unwrapped is itself
+#     stale or wrong, that is a different rule's problem.) Verified zero-cost to the ground truth
+#     (parse_iccp_raw() doesn't end in unwrap/expect) and shape-precise, not text-precise: it matches
+#     only when `.unwrap()`/`.expect()` is the OUTERMOST call of $EXPR, so `let _ =
+#     writeln!(*out.lock().unwrap(), ...)` (unwrap nested inside a macro ARGUMENT, real corpus shape,
+#     tracing-flame/src/lib.rs) still correctly fires — the outer writeln!'s io::Result is still the
+#     one being thrown away. Measured effect: 971 → 937 hits (−34, −3.5%) on the corpus.
+#
+#   KEPT, CHARACTERIZED, NOT EXCLUDED — the two shapes the task names by name:
+#     `let _ = write!(...)`/`writeln!(...)`: 42 hits (4.3% of RULE 1), 36 outside test/bench/example/
+#     fuzz paths. Read all 36: ~34 write into a provably-infallible in-memory sink (`&mut
+#     fmt::Formatter`, a `String`/`Vec<u8>` buffer, a cookie-header builder) where the Result can
+#     realistically never be Err — actix-web/ntex Debug impls, header-value Display-to-buffer
+#     conversions, hyper's status-line/date writers. Exactly 2 (both tracing-flame/src/lib.rs) write
+#     to an actual file handle, where a disk-full/permission failure IS real and IS lost (diagnostic
+#     data only, not attacker-reachable — low severity, but a real instance). NOT excluded: the 2
+#     real ones are exactly what a name/macro-based exclusion would have deleted, and the corpus does
+#     not split cleanly enough by path alone to tell the 34 from the 2 without a read anyway.
+#     `let _ = tx.send(...)`/`.try_send(...)`: 152 hits (15.7% of RULE 1, the single largest named
+#     sub-shape), 83 outside test paths. Every sampled real instance (hyper client/dispatch.rs,
+#     upgrade.rs; ntex client/pool.rs, arbiter.rs) is an internal mpsc/oneshot channel whose ONLY
+#     `SendError` cause is "the receiver already dropped" — i.e. the task that would have consumed
+#     the value is already gone, so there is structurally nothing actionable left to do. Real,
+#     near-universal idiom. NOT excluded: the same shape is indistinguishable, syntactically, from a
+#     send on a channel where "receiver already gone" is itself the bug (an unexpectedly-dead
+#     control/shutdown task) — a name-based exclusion would erase that case from the worklist forever
+#     with no way to get it back.
+#     Net: write!/send together are ~20% of RULE 1's volume and, on direct reading, close to entirely
+#     benign in THIS corpus — but not uniformly so, and the two real counter-examples were found only
+#     by reading, not by guessing from the macro/method name. That is the argument against excluding
+#     them at all: the name predicts the shape, not the safety.
+#
+#   KEPT, CHARACTERIZED — `.ok()` "immediately reconstructed" is common and is NOT a dead-end swallow:
+#     of 16 read, 5 are `.ok()` chained straight into `?`, `.and_then(..)?`, or a `match` that rebuilds
+#     a proper `Err` (rustls-ring/src/ticketer.rs's RNG-fill `.ok()?`; object's
+#     `.ok().read_error(msg)`; ttf-parser's `.ok().and_then(NonZeroU16::new)?`) — the failure still
+#     propagates, only the specific error TYPE is narrowed to `Option`. Left in (a real, if weaker,
+#     instance of the class — the original error's diagnostic detail is still gone), but flagged here
+#     so a triage pass can dismiss `.ok()?` chains fast instead of re-deriving this each time.
+#
+#   OUT OF SCOPE BY DESIGN, NOT BY THIS RULE — `#[cfg(test)]`, `tests/`, `benches/`, `examples/`,
+#   `fuzz/`. This file does not path-filter: docs/sast-layer.md §5 tier 1 ("drop #[cfg(test)],
+#   tests/, benches/, examples/, build.rs") is an explicit, separate, already-designed pipeline stage,
+#   and baking path exclusion into the rule would duplicate and diverge from it. Measured so the
+#   volume numbers below are honest: 3679/4759 hits (77.3%) sit outside those paths; the remaining
+#   22.7% is exactly what that downstream stage is for. A concrete idiom found living almost
+#   entirely in that zone: `match fallible().await { Err(SpecificExpected) => {}, _ => panic!() }` —
+#   a TEST ORACLE ("expect exactly this error; anything else fails the test"), structurally identical
+#   to a real swallow but semantically a pass/fail assertion. It is real signal for
+#   `cls-error-swallow-match-err-trivial` and is exactly what tier 1 exists to remove.
+#
+# ── ADVERSARIAL: REAL SWALLOWS THIS FILE MISSES ────────────────────────────────────────────────────
+#
+#   (1) BARE STATEMENT DISCARD — `parse_thing(bytes);` with no `let _ =`, no `.ok()`, no `?`. `Result`
+#       is `#[must_use]` so this normally warns, but the warning is a lint, not a wall: it is silenced
+#       by a crate/module-level `#![allow(unused_must_use)]`, and `Option` isn't `#[must_use]` by
+#       default at all. Fixture-proven miss (shape_miss_bare_statement); confirmed structurally
+#       possible in this corpus — `grep -rl allow(unused_must_use)` finds it live in three ntex files
+#       (ntex-bytes/src/{stext_arc,bytes}.rs, ntex/src/web/middleware/defaultheaders.rs) — but all
+#       three instances are on `#[cfg(test)] mod tests`, so no *production* bare-statement swallow was
+#       found in this specific corpus despite a direct search. A syntactic engine cannot key on "this
+#       call's return type is `#[must_use]`" without type information; this is a real, acknowledged,
+#       unfixed-here blind spot, not a hypothetical one.
+#   (2) MATCH-ARM ERR CALLS A HELPER (not a trivial value, not propagated) — `Err(_) =>
+#       compute_fallback()`. `cls-error-swallow-match-err-trivial` only accepts a block/unit/literal
+#       arm value on purpose (a call could itself legitimately propagate or log inside), so a helper
+#       call that ITSELF silently eats the detail is invisible here. Fixture-proven
+#       (miss_helper/Err(_) => compute_fallback()); actively searched for a real corpus instance
+#       (`Err(...) => ident(` excluding return/panic!/unreachable!/Err(/Ok(/Some(/None) and found
+#       NONE in 25 crates — either genuinely rare in mature code or (more likely) needs a
+#       multi-line-aware search this session's grep passes didn't attempt. Documented as a structural
+#       gap either way: nothing here traces into a helper's body.
+#   (3) `?` INSIDE A CLOSURE — initially flagged as a candidate miss, then DISPROVEN: a `?` inside a
+#       `.map(|s| { ...?...; Ok(()) })` closure whose `Result` is later consumed via
+#       `.filter_map(|r| r.ok())` (fixture: closure_swallow) IS caught, because `cls-error-swallow-
+#       dot-ok` matches the `.ok()` regardless of how deeply it's nested. The real gap is narrower
+#       than "inside a closure": it is specifically a closure whose Result-producing `?` is discarded
+#       by something OTHER than one of this file's ten shapes — e.g. a `for_each` closure whose body
+#       is a single fallible statement with the lint allowed away, which collapses to miss (1).
+#   (4) INTERPROCEDURAL — a helper that itself swallows correctly gets flagged (RULE 8 fires on
+#       `parse_u32(bytes).unwrap_or(0)` at its OWN definition site); a second function that merely
+#       CALLS that already-swallowing helper is correctly NOT flagged again (there is nothing wrong
+#       at the call site) — not a miss, but recorded because it looks like one at first read.
+#
+# ── ADVERSARIAL: BENIGN SHAPES THIS FILE FLAGS (false hits, read and confirmed benign) ─────────────
+#
+#   `let _ = $EXPR;` where $EXPR is a call that does NOT return Result/Option at all — a syntactic
+#   engine cannot see the return type. Two confirmed real instances: `let _ =
+#   s.split_to(p.len()+3);` (http/src/uri/mod.rs:829 — `Bytes::split_to` returns `Bytes` directly and
+#   panics out-of-range; the `let _ =` discards a VALUE, not a Result) and `let _ = span.enter();`
+#   (tracing-subscriber bench — `Span::enter()` returns an RAII guard, not a Result; this is
+#   deliberate enter-then-immediately-exit churn). Unfixable without type information; the
+#   `.unwrap()/.expect()`-suffix exclusion (RULE 1) removes the detectable subset of this family
+#   (an infallible-looking value that's ALSO panic-guarded), not this one.
+#   `if let Some($V) = $EXPR { ... }` with no else, on real code, is dominated by the "optional
+#   field/config present → act on it, absent → nothing to do" idiom, which is not error-swallowing at
+#   all (`None` here means "not configured", not "an operation failed"). See RULE 4's measured
+#   section: 0 clear true positives in a 24-sample cross-crate read.
+#
+# ── MEASURED VOLUME (25-crate vendored corpus, ast-grep 0.45.0, 1,115 kLOC, zero rule-parse errors) ─
+#
+#   2007  cls-error-swallow-if-let-some-no-else   (hint  — see RULE 4, ~0% TP in sample)
+#    937  cls-error-swallow-let-underscore-call   (warning — GROUND TRUTH RULE)
+#    620  cls-error-swallow-unwrap-or             (warning)
+#    547  cls-error-swallow-dot-ok                (warning)
+#    213  cls-error-swallow-if-let-ok-no-else     (warning)
+#    196  cls-error-swallow-unwrap-or-else        (hint  — see RULE 9, ~8% TP in sample)
+#    120  cls-error-swallow-unwrap-or-default     (warning)
+#     85  cls-error-swallow-match-err-trivial     (warning)
+#     34  cls-error-swallow-match-wildcard-catchall (hint)
+#      0  cls-error-swallow-if-let-err-empty-no-else (warning — fixture-proven, fires nowhere in this
+#         corpus; `let _ = x;` is evidently the idiom real authors reach for over an empty if-let.
+#         Kept: zero-cost insurance against a lower-quality or generated corpus.)
+#   ────
+#   4759  TOTAL.  hits/kLOC 4.27 overall; per-crate range 0.74 (httparse, 17 lines total) to 8.57
+#   (lopdf). 3679/4759 (77.3%) sit outside test/bench/example/fuzz paths (see "OUT OF SCOPE" above).
+#
+#   Per-rule composition, hand-read stratified sample (136 hits, spread across all 25 crates,
+#   file:line + surrounding code actually opened, not inferred from the matched snippet alone):
+#     RULE 1 let-underscore-call   (24 read): 1 ground truth; ~5 real plausible candidates (object
+#       write/src/elf/writer.rs:604 bookkeeping continues past a discarded encode error; ripgrep,
+#       ttf-parser, ciborium, serde_derive helper-fallibility swallows); ~2 deliberate-and-commented
+#       (lopdf "// Ignore any compression error"; rustls stream.rs's documented best-effort transport
+#       write); 2 confirmed non-Result value-discards (see false-hits above); ~13 test/bench/fuzz.
+#     RULE 8 unwrap-or             (16 read): ~10 clean Option/config-default idiom; ~4 real
+#       candidates on attacker-adjacent parsed data (object Mach-O bind fields, fdeflate Huffman
+#       fallback, quinn ack-delay window); ~2 test-duplicate.
+#     RULE 7 dot-ok                (16 read): 5 "immediately reconstructed" (see above, not a
+#       dead-end); 4 clean benign; 4 test/build.rs; 2 real candidates, including hyper's Trailer
+#       header allow-list silently dropping unparseable field names via
+#       `.filter_map(|hv| hv.to_str().ok())` (proto/h1/role.rs:1423) — found independently again
+#       under RULE 2 at the sibling `to_str()` call one line below, a useful cross-rule confirmation.
+#     RULE 2 if-let-ok-no-else     (12 read): ~5 real candidates (actix-web/ntex cookie-parse-failure
+#       silently downgrades to "no cookies"; image BMP ICC-profile-embed silently skipped; hyper
+#       Trailer parsing again); ~1 common mutex-poison-ignored idiom; ~2 fast-path/fallthrough (not a
+#       swallow); ~4 test/bench/example.
+#     RULE 6 match-err-trivial     (12 read): ~6 are the test-oracle idiom (see OUT OF SCOPE); ~5 real
+#       library code, EVERY one deliberately reasoned on inspection (image's Limits arm is explicitly
+#       commented; h2's guarded `NeedMore` arm is protocol-state, not carelessness; lopdf's password
+#       fallback is commented) — 0 outright careless bugs found in-sample, which reads as high
+#       STRUCTURAL precision (the shape is exactly what it claims) with variable per-site severity.
+#     RULE 9 unwrap-or-else        (12 read): the outlier — 7/12 closures are NOT silent (panic with
+#       the error, `warn!()` it, embed it in a `Display` string, or convert it to
+#       `compile_error!`), 1/12 explicitly discards via `|_|`, rest are the 0-arg Option form
+#       (functionally identical to unwrap_or, not "ambiguous" — a 0-arg closure cannot inspect an
+#       error it was never given). Confirms `severity: hint`.
+#     RULE 10 unwrap-or-default    (10 read): ~5 clean Option idiom; 1 PROVABLY DEAD false positive
+#       (miniz_oxide core.rs:554 — `try_into()` on an already-length-checked `[..2]` slice can never
+#       actually hit Err); ~2 out of scope; ~2 low-priority real (quick-xml error-message quality,
+#       object example tool).
+#     RULE 4 if-let-some-no-else   (24 read): 0 clear true positives; all 24 are the optional-field/
+#       config idiom, an iterator-`.next()`-is-None-at-end idiom, or a cache-then-fallback idiom.
+#       Single highest-volume (2007, 42% of everything this file finds), single lowest-signal shape
+#       in the family — hence `severity: hint`, kept per the class definition's explicit inclusion of
+#       Option and because a genuine instance is cheap to rule out and would otherwise be invisible.
+#     RULE 5 match-wildcard-catchall (10 read): the hardest to triage from a short context window —
+#       multi-arm matches often put the anchoring `Ok(...)` arm and the wildcard arm many lines apart,
+#       so ~6/10 needed a full-file read this session didn't budget for and are UNVERIFIED rather than
+#       classified; of the 4 resolved, 2 plausible-real (quinn packet-decrypt dispatch, lopdf Annots
+#       type-narrowing), 2 benign/out-of-scope (bench, example). Reported honestly rather than
+#       guessed; `severity: hint` reflects the lower confidence.
+#
+id: cls-error-swallow-let-underscore-call
+language: rust
+severity: warning
+message: "fallible call's result bound to `_` — failure silently discarded"
+note: |
+  Ground-truth rule: fires on image-png/src/decoder/stream.rs:1739
+  (`let _ = self.parse_iccp_raw();`). $EXPR must itself be an invocation (call / macro / await) —
+  this is a class-definition boundary, not a tuning choice: `let _ = guard;` drops an
+  already-computed VALUE (often an RAII lock guard being released early), which is a different
+  mechanism entirely, not a fallible operation whose failure is discarded. `.unwrap()`/`.expect()`
+  as the OUTERMOST call is excluded (see file header) — that panics loudly and cannot be this class.
+rule:
+  pattern: let _ = $EXPR;
+constraints:
+  EXPR:
+    all:
+      - any:
+          - kind: call_expression
+          - kind: macro_invocation
+          - kind: await_expression
+      - not:
+          any:
+            - pattern: $Y.unwrap()
+            - pattern: $Y.expect($M)
+
+---
+# ── if-let Ok/Err/Some, no else ─────────────────────────────────────────────────────────────────
+# All three share one structural trick, so documented once: `not: has: {field: alternative, kind:
+# else_clause}` beats matching against a literal "... } else { ... }" pattern-of-a-pattern. The
+# latter (tried first) INCORRECTLY fired on `if let Ok(v) = x {..} else if other() {..}` — the
+# `else` clause there is populated by another `if_expression`, not a bare `block`, so a pattern that
+# only spells "else { $$$BODY }" never structurally matches it and the negation is a no-op. The
+# field-based check is agnostic to what the alternative IS, only whether the field exists at all.
+id: cls-error-swallow-if-let-ok-no-else
+language: rust
+severity: warning
+message: "if-let Ok(..) with no else — Err arm silently absent"
+note: |
+  213 hits. ~5/12 sampled are real candidates on attacker-adjacent parsing (actix-web/ntex cookie
+  header parse failure silently becomes "no cookies"; image BMP ICC-profile embed silently skipped
+  on encode failure; hyper Trailer-header value decode). `Ok(_)` (payload discarded, only
+  success/failure matters) is matched via a literal-underscore branch alongside the `$V` metavariable
+  branch — a metavariable does NOT bind to a wildcard pattern in this position (see file header (c));
+  missing that would have silently halved recall on this rule and its Err/Some siblings below.
+rule:
+  all:
+    - any:
+        - pattern: if let Ok(_) = $EXPR { $$$BODY }
+        - pattern: if let Ok($V) = $EXPR { $$$BODY }
+    - not:
+        has:
+          field: alternative
+          kind: else_clause
+
+---
+id: cls-error-swallow-if-let-err-empty-no-else
+language: rust
+severity: warning
+message: "if-let Err(..) with an empty body and no else — no-op wrapper around a fallible call"
+note: |
+  0 hits on this corpus (fixture-proven positive/negative both correct — see file header). Kept: a
+  no-op `if let Err(_) = fallible() {}` is the same net effect as `let _ = fallible();` written a
+  different way, and real authors evidently reach for the latter, but a rule that only fires on
+  idioms real authors happen to use this session is exactly the overfitting this class exists to
+  avoid. Zero-cost to keep.
+rule:
+  all:
+    - any:
+        - pattern: if let Err(_) = $EXPR { }
+        - pattern: if let Err($V) = $EXPR { }
+    - not:
+        has:
+          field: alternative
+          kind: else_clause
+
+---
+id: cls-error-swallow-if-let-some-no-else
+language: rust
+severity: hint
+message: "if-let Some(..) with no else — None (Option variant of the same shape)"
+note: |
+  2007 hits — the single largest sub-shape in this file (42% of everything it finds) and, measured,
+  the single weakest signal: a 24-sample cross-crate read (actix-web, ciborium, miniz_oxide, h2,
+  rustls, hyper, gimli, msgpack-rust, lopdf, ntex, http, quinn, ripgrep, fdeflate, serde, bytes,
+  x509-parser, object, regex, ttf-parser, image-png, httparse, image — 20+ distinct crates) found
+  ZERO clear true positives. Every read instance is "optional field/config present -> act, absent ->
+  nothing to do" (most common), an Iterator::next()-returns-None-at-end loop idiom, or a
+  cache-then-recompute fallthrough — None means "legitimately absent", not "an operation failed".
+  KEPT rather than deleted, for three reasons: (1) the task's own class definition is explicitly
+  Result/Option, not Result-only; (2) a genuine instance — an optional PARSE/VALIDATE result whose
+  failure is silently treated as absence — is structurally indistinguishable from the benign form
+  without a read, so the zero-recall risk of dropping the rule outright is real even though this
+  session's sample didn't happen to surface one; (3) ADR-2: a false positive costs one read, and
+  `severity: hint` (lowest tier, same track as the U1 enumerators) prices that correctly instead of
+  pretending precision. Same wildcard-vs-metavariable fix as RULE 2 applies here (`Some(_)` and
+  `Some($V)` both matched).
+rule:
+  all:
+    - any:
+        - pattern: if let Some(_) = $EXPR { $$$BODY }
+        - pattern: if let Some($V) = $EXPR { $$$BODY }
+    - not:
+        has:
+          field: alternative
+          kind: else_clause
+
+---
+id: cls-error-swallow-match-err-trivial
+language: rust
+severity: warning
+message: "match arm Err(..) => trivial value — failure diagnosis discarded"
+note: |
+  85 hits. Matches an Err(..) arm whose body is an empty block, unit, or a bare literal
+  (int/string/bool/char) — the literal case catches the match-shaped sibling of `.unwrap_or(N)`
+  (`Err(_) => 0,`), which a first draft (block/unit only) missed. Deliberately requires the ARM
+  PATTERN's own text to start with "Err(" rather than checking for a sibling Ok(..) arm — narrower
+  per-arm, but that is what lets it catch a multi-variant custom error enum where only ONE Err
+  sub-variant is silently defaulted while its siblings are handled correctly elsewhere in the same
+  match, which a whole-match check would blur. 12-sample read: ~6 are a TEST-ORACLE idiom
+  (`match fallible().await { Err(SpecificExpected) => {}, _ => panic!() }` — expect exactly this
+  error, silently "pass" if seen) that lives almost entirely in tests/ and is exactly what the
+  downstream test-path filter (see file header) is for, not something to special-case here; ~5 real
+  library hits, notably ALL individually well-reasoned on inspection (image's Limits-exceeded arm is
+  explicitly commented, h2's is guarded to a specific HPACK continuation state, lopdf's PDF-password
+  fallback is commented) — 0 outright careless bugs in-sample, which reads as high STRUCTURAL
+  precision (the shape is exactly what it claims to be) with per-site severity that only a read
+  resolves, which is the intended division of labour for a candidate generator.
+rule:
+  kind: match_arm
+  all:
+    - has: { field: pattern, regex: "^Err\\(" }
+    - has:
+        field: value
+        any:
+          - pattern: "{}"
+          - pattern: "()"
+          - kind: integer_literal
+          - kind: string_literal
+          - kind: boolean_literal
+          - kind: char_literal
+
+---
+id: cls-error-swallow-match-wildcard-catchall
+language: rust
+severity: hint
+message: "match has an Ok(..) arm and a trivial wildcard arm — Err implicitly swallowed"
+note: |
+  34 hits. Requires an Ok(..) arm SOMEWHERE in the match (proves it is Result-shaped, not an
+  unrelated enum) AND a `_ => {}` / `_ => ()` / `_ => <literal>` arm (the implicit swallow — no
+  Err(..) pattern needed at all, which is the point: this is the "didn't even bother naming the
+  error case" shape). `_` is matched via `regex: "^_$"` on the arm-pattern field, not `pattern: "_"`
+  — a bare "_" fragment fails ast-grep's context inference and matches nothing, silently (file
+  header (b); confirmed by a live A/B before fixing). Weakest-verified rule in this file: multi-arm
+  matches routinely put the Ok(..) anchor and the wildcard arm many lines apart, so a short
+  context-window read (this session's method for the other nine rules) resolved only 4/10 sampled
+  hits with confidence; the other 6 are UNVERIFIED, not classified either way, and would need a
+  full-file read per hit. `severity: hint` prices that honestly.
+rule:
+  kind: match_expression
+  all:
+    - has: { stopBy: end, kind: match_arm, has: { field: pattern, regex: "^Ok\\(" } }
+    - has:
+        stopBy: end
+        kind: match_arm
+        all:
+          - has: { field: pattern, regex: "^_$" }
+          - has:
+              field: value
+              any:
+                - pattern: "{}"
+                - pattern: "()"
+                - kind: integer_literal
+                - kind: string_literal
+                - kind: boolean_literal
+                - kind: char_literal
+
+---
+id: cls-error-swallow-dot-ok
+language: rust
+severity: warning
+message: "`.ok()` — the Err payload is unconditionally discarded"
+note: |
+  547 hits. Matches `$X.ok()` anywhere (statement, chained, nested in a closure) — the E->()
+  erasure happens at the call itself regardless of what the resulting Option is later used for.
+  16-sample read: 5/16 are `.ok()` immediately re-thrown into fallibility (`.ok()?`,
+  `.ok().and_then(..)?`, or fed into a `match` that reconstructs a proper `Err`, e.g.
+  rustls-ring/src/ticketer.rs's RNG-fill `.ok()?` and object's `.ok().read_error(msg)`) — a real but
+  WEAKER instance (the specific error TYPE/message is lost, but the failure itself still propagates)
+  — kept, not excluded (see file header), but documented so a triage pass can dismiss a `?`-chained
+  `.ok()` fast. 2 real candidates found, most notably hyper's Trailer-header allow-list silently
+  dropping any header value that fails `.to_str()` or any name that fails `HeaderName::from_bytes`
+  (proto/h1/role.rs:1423) via back-to-back `.filter_map(|..| ..ok())` — cross-confirmed independently
+  by RULE 2 firing one line above on the same function.
+rule:
+  pattern: $X.ok()
+
+---
+id: cls-error-swallow-unwrap-or-default
+language: rust
+severity: warning
+message: "`.unwrap_or_default()` — failure becomes a silent default value"
+note: |
+  120 hits. 10-sample read: ~5 clean Option/config-default idiom, ~2 real-but-low-priority
+  (quick-xml's degraded-name-in-an-already-error-path; an ELF-dump example tool's empty-string-table
+  fallback), 1 PROVABLY DEAD false positive — miniz_oxide/src/inflate/core.rs:554's
+  `iter.as_slice()[..2].try_into().unwrap_or_default()` can never actually observe an Err because the
+  preceding `[..2]` slice index already panics on anything shorter than 2 bytes, so by the time
+  `try_into()` runs the length is guaranteed and the conversion cannot fail — left in deliberately
+  (a syntactic engine cannot see the preceding-slice-length invariant; a downstream judge resolves it
+  in one read, which is cheaper than trying to encode "the receiver's length was just proven" here).
+rule:
+  pattern: $X.unwrap_or_default()
+
+---
+id: cls-error-swallow-unwrap-or
+language: rust
+severity: warning
+message: "`.unwrap_or(..)` — failure becomes a silent fixed (or computed) value"
+note: |
+  620 hits, second-largest Result-specific shape after RULE 1. $V is unconstrained on purpose — it
+  catches both the trivial `.unwrap_or(0)` case AND a COMPUTED fallback
+  (`entries.get(symbol).cloned().unwrap_or((symbol as u32) << 16)`, fdeflate/src/huffman.rs:48),
+  which is the structural sibling of a match arm whose Err value is a call (adversarial miss #2 in
+  the file header — this rule does NOT have that blind spot, only RULE 6 does, because `unwrap_or`'s
+  argument position has no "trivial vs. call" distinction to accidentally encode). 16-sample read:
+  ~10 clean Option/checked-arithmetic idiom (`.checked_shl(..).unwrap_or(0)`,
+  `.as_deref().unwrap_or(&[])`), ~4 real candidates parsing attacker-adjacent binary data (object's
+  Mach-O bind-record fields, fdeflate's Huffman fallback, quinn-proto's ack-delay window shift), ~2
+  test-duplicate (an image-png test helper re-implements the production palette-lookup logic
+  byte-for-byte to compute its own expected value, which lands in the sample looking identical to
+  the real site one function away).
+rule:
+  pattern: $X.unwrap_or($V)
+
+---
+id: cls-error-swallow-unwrap-or-else
+language: rust
+severity: hint
+message: "`.unwrap_or_else(..)` — closure MAY inspect/log/re-raise the error; read the closure body"
+note: |
+  196 hits — the outlier of the file. A 12-sample read found 7/12 closures are demonstrably NOT
+  silent: they panic WITH the error formatted into the message (bytes, h2, rustls-connect-tests),
+  `warn!()` it before defaulting (quinn-proto's pacing module), format it directly into a `Display`
+  impl's output string (x509-parser's ASN1Time — "Invalid date: {e}" ends up in what the caller
+  prints), or convert it to `compile_error!` tokens (serde_derive — the textbook-correct way a derive
+  macro surfaces a user-facing error). Only 1/12 explicitly discards via `|_|` and computes a generic
+  fallback (ciborium's integer-classification fallback). The rest are the 0-ARGUMENT Option form
+  (`Option::unwrap_or_else(|| ..)`), which is functionally identical to plain `unwrap_or` (not
+  "ambiguous" — a 0-arg closure was never given anything to inspect) but is left in this rule rather
+  than RULE 8 because ast-grep cannot cheaply distinguish 0-arg from 1-arg closure syntax without
+  another round of the same kind of A/B calibration used elsewhere in this file, and the two forms
+  share a method name and, mostly, a safety profile anyway. `severity: hint` is earned here, not
+  assumed: this rule has the lowest measured true-swallow rate of the three unwrap_or* rules.
+rule:
+  pattern: $X.unwrap_or_else($F)

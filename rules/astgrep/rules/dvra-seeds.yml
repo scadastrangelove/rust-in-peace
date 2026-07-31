@@ -1,0 +1,145 @@
+# ── SHELL/SPAWN RULES REMOVED 2026-07-28 ────────────────────────────────────────────────────────
+# `rip-shell-command-string-built`, `rip-shell-spawned-by-name` and `rip-spawn-computed-program` now
+# live in `cls-spawn.yml`, adversarially verified against all four DVRA ground-truth sites plus a
+# fifth found in dvra-2, with 0 hits from the two `error`-severity rules across 25 crates / 1.1M
+# lines. Keeping the originals here produced a DUPLICATE-ID error which **aborts the entire scan and
+# returns zero findings for every crate** — a whole-corpus silent zero, visible only on stderr.
+# U2 CANDIDATE RULES — developed against DVRA ground truth (corpus/dvra-findings.jsonl).
+#
+# Unlike the U1 enumerators in enumerators.yml, these are meant to be PRECISE: each one is born with
+# a positive (the planted defect) and a negative (DVRA's `fixed_handle`, the hardened twin sitting in
+# the SAME FILE). A rule that matches both is a grep, not a rule — and `scripts/rule_test.py`
+# rejects it.
+#
+# The negative is what makes this hard and what makes it worth doing. In `file_download.rs` BOTH the
+# vulnerable and the fixed handler call `base.join(name)`; the only difference is the guard. So the
+# rule cannot match on the sink — it has to encode the guard's ABSENCE.
+#
+# Expectations against the three decoys are deliberate and differ per decoy (see rule-tests.yml):
+# one SHOULD fire (its defence is reachability, not the pattern), two should NOT.
+
+# ── DVR-01-SQLI · CWE-89 · src/features/user_search.rs:11 ────────────────────────────────────────
+# vuln : format!("SELECT ... WHERE username = '{}'", username)
+# fixed: no query string at all — filters in Rust (`format!("matches: {}", ..)` must NOT match)
+# Keying on SQL verbs + an interpolation is what separates them; the fixed handler's format! has an
+# interpolation but no SQL.
+id: rip-sql-string-interpolation
+language: rust
+severity: warning
+message: "SQL statement built by string interpolation — parameterize instead (CWE-89)"
+rule:
+  pattern: format!($FMT, $$$ARGS)
+constraints:
+  FMT:
+    regex: "(?i)(select|insert +into|update +|delete +from)[\\s\\S]*\\{\\}"
+
+---
+# ── DVR-02-PATH-TRAVERSAL · CWE-22 · src/features/file_download.rs:17 ────────────────────────────
+# vuln : base.join(name)                       — name is request-derived, unchecked
+# fixed: base.join(candidate) PRECEDED BY is_absolute() / Component::ParentDir / starts_with(base)
+# THE DISCRIMINATING RULE OF THE SET: both handlers call `.join()`. Matching the sink alone fails the
+# negative test by construction, so the rule requires the ABSENCE of a traversal guard anywhere in
+# the enclosing function.
+id: rip-path-join-without-traversal-guard
+language: rust
+severity: warning
+message: "path join on an unvalidated component — no ParentDir/is_absolute/starts_with guard in this function (CWE-22)"
+rule:
+  all:
+    - pattern: $BASE.join($NAME)
+    - inside:
+        kind: function_item
+        stopBy: end
+        not:
+          has:
+            stopBy: end
+            any:
+              - pattern: Component::ParentDir
+              - pattern: $P.is_absolute()
+              - pattern: $P.starts_with($Q)
+              - pattern: $P.canonicalize()
+#
+# KNOWN LIMIT, DELIBERATELY NOT TUNED AWAY. On dvra-3 this rule also matches `extract_fixed`
+# (crates/bundle/src/lib.rs:100), which is safe — it delegates its guard to
+# `validate_relative_path(..)?` instead of inlining the checks above. dvra-1 inlines its guard;
+# dvra-3 factors it out. So a rule that passes the negative gate on one code style leaks on another.
+#
+# The obvious patch — treat any call named `validate_*`/`check_*`/`sanitize_*` as a guard — was
+# written and then REVERTED. It suppresses on a NAME, not a behaviour: a `validate_path` that
+# validates the wrong thing would silence a real traversal forever. In this pipeline a rule is a
+# CANDIDATE GENERATOR, never a verdict (ADR-2) — a false positive costs one agent read, a false
+# negative costs the bug. Those are not symmetric, and tuning a candidate generator toward silence
+# optimises the wrong one.
+#
+# The honest resolutions are interprocedural analysis or a type-aware engine (Dylint). Until then
+# this leak is documented here and resolved downstream by the reachability judge, which reads the
+# code and sees the helper.
+constraints:
+  # The joined component must be a VARIABLE, not a literal. Caught by DVRA's build.rs decoy: the
+  # first draft matched `Path::new(&out_dir).join("build_info.txt")` — a literal component under
+  # Cargo's OUT_DIR, attacker-controlled in neither half. A literal cannot contain `../` unless the
+  # author typed it, so this single constraint removes an entire FP family (`join("…")` appears in
+  # nearly every build script and most crates) at zero cost to recall.
+  NAME:
+    not:
+      any:
+        - kind: string_literal
+        - kind: raw_string_literal
+        # `slice::join` shares its name with `Path::join` and a syntactic engine cannot tell them
+        # apart — no types. Measured on `object`: `runpaths.join(&[b':'][..])` is a slice join with
+        # nothing to do with filesystem paths. Excluding the `&[..][..]` shape kills that specific
+        # confusion; the general case genuinely needs a type-aware engine (Dylint), which is what
+        # DVRA's oracle means when it marks a class static-invisible.
+        - pattern: "&$X[$$$IDX]"
+
+---
+# ── DVR-10-SECRET-LOG · CWE-532 · src/features/auth.rs:25 ────────────────────────────────────────
+# vuln : audit_log(&format!("... token={} ...", .., presented, ..))
+# fixed: "... token=<redacted> ..."  — same call, same function, literal instead of interpolation
+# So the rule keys on `<secret-label> = {` : an interpolation IMMEDIATELY after a credential label.
+# `token=<redacted>` has the label but no `{`, and is correctly not matched.
+id: rip-secret-interpolated-into-log
+language: rust
+severity: error
+message: "credential material interpolated into a log/format string (CWE-532)"
+rule:
+  pattern: format!($FMT, $$$ARGS)
+constraints:
+  FMT:
+    regex: "(?i)(token|password|passwd|secret|api[_-]?key|authorization|bearer|credential)[\"']?\\s*[=:]\\s*\\{"
+
+---
+# ── DVR-06-ALLOC-DOS · CWE-770 · src/features/upload.rs:23 ───────────────────────────────────────
+# vuln : Vec::with_capacity(declared) where declared = req.header("x-declared-size"), NO cap
+# fixed: `if declared > MAX_SIZE { return 413 }` before touching memory
+# Structural approximation of a taint rule: allocation sized by a value, in a function that reads
+# request input and contains no upper-bound comparison. A true source→sink version belongs in
+# OpenGrep taint mode; this is the ast-grep stand-in, and its FP rate on real crates is the thing to
+# watch — `with_capacity` fired 141× across our 7-crate corpus.
+id: rip-alloc-sized-by-request-uncapped
+language: rust
+severity: warning
+message: "allocation sized from request-derived input with no upper bound in this function (CWE-770)"
+rule:
+  all:
+    - any:
+        - pattern: Vec::with_capacity($N)
+        - pattern: String::with_capacity($N)
+        - pattern: vec![$E; $N]
+    - inside:
+        kind: function_item
+        stopBy: end
+        all:
+          - has:
+              stopBy: end
+              any:
+                - pattern: $R.header($H)
+                - pattern: $R.query_get($Q)
+                - pattern: $R.param($P)
+          - not:
+              has:
+                stopBy: end
+                any:
+                  - pattern: if $A > $CAP { $$$BODY }
+                  - pattern: $A.min($CAP)
+                  - pattern: $A.clamp($LO, $HI)

@@ -1,0 +1,12 @@
+# ast-grep config for the `sast-driven` mode.
+#
+# ast-grep ships no default rule pack — it is a rule ENGINE. Everything here is ours, and everything
+# here is an ENUMERATOR (docs/sast-layer.md U1): the output is a WORKLIST, not an alert. These rules
+# are judged on completeness, never on precision — a rule returning 300 `as` casts is working
+# correctly. That is why they carry `severity: info` and why the normalizer must never let them
+# become findings on their own.
+#
+# They exist to fix the failure mode L51 diagnoses: the finder's site-walk is *sampled* (a hand-grep
+# of the shapes an agent thought of) where it should be *exhaustive*.
+ruleDirs:
+  - rules

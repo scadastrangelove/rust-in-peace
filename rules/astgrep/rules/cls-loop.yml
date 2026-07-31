@@ -1,0 +1,428 @@
+# =============================================================================
+# CLASS: loops that fail to make progress on degenerate input
+# =============================================================================
+# Derived from a callee that can return an empty, non-advancing chunk driven by
+# a `while let Some(x) = f()` caller, where the buffer the callee advances is
+# caller-controlled, so a degenerate buffer size makes the loop spin forever
+# (private advisory; mechanism withheld pending vendor publication).
+#
+# THIS IS A CANDIDATE GENERATOR, NOT A VERDICT. A reachability judge and a
+# finder run downstream. A false positive costs one agent read; a false
+# negative is permanent and silent. Every tuning choice below favours recall.
+# Nothing is suppressed on a name or because a shape "looks conventional".
+#
+# WHY FIVE RULES AND NOT ONE:
+#   ast-grep's `constraints:` is rule-level and vetoes `any:` branches that do
+#   not bind the metavariable. Each shape below binds a different metavariable
+#   set, so each gets its own document. `constraints:` is avoided entirely;
+#   all negation is expressed with `not:`/`has:` so `any:` stays usable.
+#
+# REGRESSION GATE (adversarial corpus, 9 non-progress + 10 safe): 9/9 fire,
+# 0/10 false hits.
+# =============================================================================
+
+# -----------------------------------------------------------------------------
+# SHAPE A -- consume-driven loop with no zero-exit guard
+# Fires on: `loop` / `while` / `while let` whose body calls a "progress"
+# operation whose return value quantifies how much was consumed, where zero is
+# a legal return, and where nothing exits the loop on that zero case.
+# -----------------------------------------------------------------------------
+id: rip-loop-no-progress-consume
+language: rust
+severity: warning
+message: Loop driven by a consume call that may return zero, with no zero-exit guard
+note: |
+  Check whether the consume call can return zero/empty forever. If the buffer
+  or cursor it advances is caller-controlled, a degenerate size makes this
+  spin. Confirm by reading the callee, not the loop.
+rule:
+  all:
+    # loop_expression = `loop {}`. while_expression = BOTH `while c {}` and
+    # `while let P = e {}` (tree-sitter-rust models while-let as a
+    # while_expression whose condition is a `let_condition`). The rule this
+    # replaces used `kind: loop_expression` alone, which is why it MISSED the
+    # seed sites -- they are while-let. for_expression is deliberately
+    # absent; see SHAPE E and LIMIT 4.
+    - any:
+        - kind: loop_expression
+        - kind: while_expression
+    # The progress vocabulary. Matched as a method call on any receiver via the
+    # field_expression's `field` name, so `r.read(..)`, `self.decoder.pull()`,
+    # `iter.next()?` and `x.y.z.fill_buf()` all hit without enumerating shapes.
+    #   read/read_buf/read_exact -- io::Read; Ok(0) at EOF, and read_exact on a
+    #     zero-length slice succeeds trivially (this is the seed advisory's sink
+    #     shape)
+    #   read_bits            -- bit readers; a zero-width read consumes nothing
+    #   fill_buf             -- BufRead; returns an empty slice at EOF
+    #   pull                 -- segment/chunk decoders that yield borrowed slices
+    #   next / next_chunk    -- iterator drive; `Some` forever = no termination
+    #   peek                 -- lookahead that by definition does NOT consume
+    #   recv / poll_read / poll_next -- async/stream drive, may yield 0 bytes
+    #   advance / consume    -- explicit cursor moves that accept 0
+    #   decode               -- codec step that may decode 0 items
+    # The optional `_suffix` group is load-bearing, NOT cosmetic. An anchored
+    # exact-name list scored ZERO hits on image-png, whose decoder loops are
+    # `while !matches!(self.decode_next(None)?, ..)` and
+    # `while let Some(_) = reader.next_row()` -- both squarely in this class.
+    # The suffix form recovers decode_next, next_row, next_frame, read_line,
+    # read_row, advance_by, poll_read, fill_buf. Accepted cost: it also matches
+    # benign names like `next_power_of_two` and `read_to_end` (which consumes
+    # everything and cannot stall). Those are cheap reads; a silent zero on a
+    # PNG decoder is not.
+    # NOT included, and why: `parse` and `len` (volume with no zero-return
+    # semantics), `pop`/`remove` (strictly shrink a collection -- see safe
+    # probe S7), `write`/`flush` (progress is the caller's, not the loop's).
+    - has:
+        stopBy: end
+        kind: call_expression
+        has:
+          field: function
+          kind: field_expression
+          has:
+            field: field
+            regex: '^(read|next|pull|fill|decode|advance|consume|poll|recv|peek)(_[a-z0-9_]+)?$'
+    # GUARD 1 -- an `if` that BOTH tests the zero/empty case AND leaves the
+    # loop. Requiring the exit is deliberate: a bare `if n == 0 { log() }` does
+    # not make the loop safe, and treating it as a guard would silently drop
+    # real findings. Only genuine zero/emptiness tests count here -- ordering
+    # comparisons like `if total >= buf.len() { break }` are NOT accepted,
+    # because that bound can be unreachable forever (adversarial probe M1).
+    - not:
+        has:
+          stopBy: end
+          kind: if_expression
+          all:
+            - has:
+                stopBy: end
+                any:
+                  - pattern: "$N == 0"
+                  - pattern: "$N.is_empty()"
+                  - pattern: "$N.len() == 0"
+            - has:
+                stopBy: end
+                any:
+                  - kind: break_expression
+                  - kind: return_expression
+    # GUARD 2 -- the same zero-exit expressed as a match arm on literal 0,
+    # e.g. `match r.read(buf)? { 0 => return Ok(n), n => .. }` or `Ok(0) => break`.
+    # The integer_literal regex pins the arm to zero specifically, so an arm on
+    # `1` or a named const does not suppress.
+    - not:
+        has:
+          stopBy: end
+          kind: match_arm
+          all:
+            - has:
+                field: pattern
+                has:
+                  stopBy: end
+                  kind: integer_literal
+                  regex: '^0$'
+            - has:
+                stopBy: end
+                any:
+                  - kind: break_expression
+                  - kind: return_expression
+    # GUARD 3 -- a hard iteration cap. Both halves are required AND they must
+    # bind the SAME variable $CAP: a comparison on a counter that exits the
+    # loop, plus a constant `+= 1` tick on that same counter. Binding the
+    # variable is what separates a real cap (`iters += 1` ...
+    # `if iters > 1024 { break }`) from an input-derived flag test
+    # (`if last == 1 { break }`), which must NOT suppress -- that is the
+    # miniz_oxide chained-degenerate-block shape.
+    # $LIM is intentionally left free so a named/config limit still counts.
+    #
+    # CLAUSE ORDER IS LOad-BEARING. ast-grep binds a metavariable to the FIRST
+    # matching descendant and does not backtrack across sibling `all:` clauses.
+    # With `$CAP += 1` first, a loop containing a decoy counter
+    # (`count += 1;` before `iters += 1;` with `if iters > 100 { break }`)
+    # bound $CAP=count, failed to find `count > $LIM`, and the whole guard
+    # collapsed -- the capped loop was reported. Binding $CAP from the
+    # if/break comparison first is far more selective, so the decoy no longer
+    # wins. Residual: a loop with two distinct `if x > N { break }` exits can
+    # still bind the wrong one. That direction over-fires, which is the safe
+    # direction for this class.
+    - not:
+        all:
+          - has:
+              stopBy: end
+              kind: if_expression
+              all:
+                - has:
+                    stopBy: end
+                    any:
+                      - pattern: "$CAP > $LIM"
+                      - pattern: "$CAP >= $LIM"
+                      - pattern: "$CAP == $LIM"
+                - has:
+                    stopBy: end
+                    any:
+                      - kind: break_expression
+                      - kind: return_expression
+          - has:
+              stopBy: end
+              pattern: "$CAP += 1"
+
+---
+# -----------------------------------------------------------------------------
+# SHAPE B1 -- cursor loop advanced by a variable step that may be zero
+# `while off < input.len() { let n = parse_item(..); off += n; }`
+# The classic parser non-progress bug: `n` is attacker-influenced and 0 is legal.
+# -----------------------------------------------------------------------------
+id: rip-loop-cursor-variable-step
+language: rust
+severity: warning
+message: Cursor loop whose advance is a variable step that may be zero
+note: |
+  Establish the minimum value of the step. If the producing function can
+  return 0 for some input (empty token, zero-length record, unknown opcode),
+  the cursor stalls and the bound in the condition is never reached.
+rule:
+  kind: while_expression
+  all:
+    # $I is bound from the loop CONDITION, which is what makes this precise:
+    # only the variable actually gating the loop counts as the cursor. An
+    # accumulator in the body (`n += data[i]`) binds a different name and is
+    # ignored -- without this binding the rule fires on every summing loop.
+    # Direct form (`while i < n`) OR the comparison nested inside a compound
+    # condition (`while i < n && !done`). The nested branch is REQUIRED: with
+    # only the direct form, `while i < input.len() && !done { i += step(); }`
+    # was silently missed, because the `condition` field is then the `&&`
+    # node and not the comparison itself. `field:` selects a child by field
+    # name, so it cannot be combined with `stopBy: end` to reach inside --
+    # hence the explicit two-branch `any:`.
+    - any:
+        - has:
+            field: condition
+            any:
+              - pattern: "$I < $N"
+              - pattern: "$I <= $N"
+              - pattern: "$I != $N"
+        - has:
+            field: condition
+            has:
+              stopBy: end
+              any:
+                - pattern: "$I < $N"
+                - pattern: "$I <= $N"
+                - pattern: "$I != $N"
+    - has:
+        stopBy: end
+        pattern: "$I += $STEP"
+    # Constant-step advance is safe by construction. `$I += 1` with $I already
+    # bound to the cursor means "this same cursor is somewhere advanced by a
+    # literal 1", which is sufficient to clear it.
+    # LIMIT: only the literal `1` is treated as safe. `i += 2` still fires.
+    - not:
+        has:
+          stopBy: end
+          pattern: "$I += 1"
+
+---
+# -----------------------------------------------------------------------------
+# SHAPE B2 -- cursor loop containing `continue`, which may bypass the advance
+# `while i < len { if data[i] == b' ' { continue; } i += 1; }`
+# -----------------------------------------------------------------------------
+id: rip-loop-cursor-continue-skip
+language: rust
+severity: warning
+message: Cursor loop containing continue that may bypass the advance
+note: |
+  Check every `continue` path: if any of them reaches the loop head without
+  moving the cursor, degenerate input that keeps taking that path hangs.
+rule:
+  kind: while_expression
+  all:
+    # Direct form (`while i < n`) OR the comparison nested inside a compound
+    # condition (`while i < n && !done`). The nested branch is REQUIRED: with
+    # only the direct form, `while i < input.len() && !done { i += step(); }`
+    # was silently missed, because the `condition` field is then the `&&`
+    # node and not the comparison itself. `field:` selects a child by field
+    # name, so it cannot be combined with `stopBy: end` to reach inside --
+    # hence the explicit two-branch `any:`.
+    - any:
+        - has:
+            field: condition
+            any:
+              - pattern: "$I < $N"
+              - pattern: "$I <= $N"
+              - pattern: "$I != $N"
+        - has:
+            field: condition
+            has:
+              stopBy: end
+              any:
+                - pattern: "$I < $N"
+                - pattern: "$I <= $N"
+                - pattern: "$I != $N"
+    # Deliberately does NOT check whether the advance precedes the continue --
+    # that is a dominance question, not a syntactic one (LIMIT 2). This
+    # over-fires on loops that advance before continuing; that is the accepted
+    # cost of never missing the skip-the-advance case.
+    - has:
+        stopBy: end
+        kind: continue_expression
+
+---
+# -----------------------------------------------------------------------------
+# SHAPE B3 -- cursor loop whose advance sits inside a conditional branch
+# `while pos < len { if data[pos] == 0xFF { pos += 1; } count += 1; }`
+# -----------------------------------------------------------------------------
+id: rip-loop-cursor-conditional-advance
+language: rust
+severity: warning
+message: Cursor loop whose advance occurs only inside a conditional branch
+note: |
+  Determine whether some branch through the body leaves the cursor unmoved,
+  and whether input can select that branch every iteration. Known-benign
+  counter-example: two-variable convergence, where a sibling branch moves the
+  OTHER bound instead (object src/write/string.rs three-way partition).
+rule:
+  kind: while_expression
+  all:
+    # Direct form (`while i < n`) OR the comparison nested inside a compound
+    # condition (`while i < n && !done`). The nested branch is REQUIRED: with
+    # only the direct form, `while i < input.len() && !done { i += step(); }`
+    # was silently missed, because the `condition` field is then the `&&`
+    # node and not the comparison itself. `field:` selects a child by field
+    # name, so it cannot be combined with `stopBy: end` to reach inside --
+    # hence the explicit two-branch `any:`.
+    - any:
+        - has:
+            field: condition
+            any:
+              - pattern: "$I < $N"
+              - pattern: "$I <= $N"
+              - pattern: "$I != $N"
+        - has:
+            field: condition
+            has:
+              stopBy: end
+              any:
+                - pattern: "$I < $N"
+                - pattern: "$I <= $N"
+                - pattern: "$I != $N"
+    # An advance on the gating cursor that is nested under an `if`.
+    # LIMIT: this does not prove the conditional advance is the ONLY one --
+    # proving "no unconditional advance exists" needs the statement-level
+    # dominance information ast-grep does not expose (LIMIT 2). Fires on
+    # loops that also advance unconditionally; recall is preferred.
+    - has:
+        stopBy: end
+        kind: if_expression
+        has:
+          stopBy: end
+          pattern: "$I += $STEP"
+
+---
+# -----------------------------------------------------------------------------
+# SHAPE E -- `for` over a definitionally infinite iterator with no exit
+# The ONLY `for` shape included. See LIMIT 4 for why general `for` is excluded.
+# -----------------------------------------------------------------------------
+id: rip-loop-for-unbounded-iterator
+language: rust
+severity: warning
+message: for loop over an unbounded iterator source with no break or return
+note: |
+  These constructors are infinite by definition, so the loop is a `loop {}`
+  unless something inside exits. Confirm no adapter bounds it upstream.
+rule:
+  kind: for_expression
+  all:
+    # A range is bounded by construction. This exclusion is REQUIRED: without
+    # it, `for _ in 0..find.repeat()` matched (the range's upper bound is a
+    # call named `repeat`), producing 6 false hits in regex-cli. The iterator
+    # source must be the range's sibling, never something inside it.
+    - has:
+        field: value
+        not:
+          kind: range_expression
+    # `value` is the iterator expression of the for loop. The FREE FUNCTIONS
+    # iter::repeat / repeat_with / successors / from_fn are infinite by
+    # contract -- a semantic guarantee from std, not a naming heuristic.
+    - has:
+        field: value
+        stopBy: end
+        kind: call_expression
+        has:
+          field: function
+          any:
+            - regex: '(^|::)(repeat|repeat_with|successors|from_fn)$'
+            # As a METHOD, only `cycle` is infinite. `repeat`/`repeat_with` are
+            # deliberately absent here: `str::repeat` and `slice::repeat`
+            # return a finite owned value, so matching them by method name was
+            # a pure naming heuristic and was wrong.
+            - kind: field_expression
+              has:
+                field: field
+                regex: '^cycle$'
+    # Bounding adapters make it finite again.
+    - not:
+        has:
+          field: value
+          stopBy: end
+          kind: field_expression
+          has:
+            field: field
+            regex: '^(take|take_while|zip)$'
+    # Any exit at all clears it; an infinite iterator driven by an inner break
+    # is the normal, safe way to write this.
+    - not:
+        has:
+          stopBy: end
+          any:
+            - kind: break_expression
+            - kind: return_expression
+
+# =============================================================================
+# KNOWN LIMITS -- these need dataflow/semantics, not syntax
+# =============================================================================
+# LIMIT 1 (dominant FP family). "Every path that `continue`s first consumed at
+#   least one byte" is unprovable syntactically. This is the whole tag-skip
+#   family: `loop { return match self.decoder.pull()? {
+#   Header::Tag(..) => continue, _ => return .. } }` (the bulk of the seed
+#   crate's hits, and of what the previous rule reported). Each iteration
+#   consumes >=1 header byte, so it terminates on finite input. Deliberately
+#   NOT suppressed: the only discriminator is "the consume call cannot return
+#   zero-progress", which is a property of the callee, and hard-coding it would
+#   suppress the real bug in any crate where the equivalent call CAN return
+#   zero.
+#
+# LIMIT 2 (dominance). Shapes B2/B3 cannot tell "the advance is skipped" from
+#   "the advance already happened". Needs a CFG: does every back-edge path
+#   strictly increase the cursor? Both rules intentionally over-fire.
+#
+# LIMIT 3 (interprocedural minimum). B1 cannot know whether the step producer
+#   can return 0 -- that is the whole question, and it lives in another
+#   function (in the seed advisory the producing call is 2 frames from the
+#   hanging loop). The rule flags the SHAPE; the judge reads the callee.
+#
+# LIMIT 4 (`for` is excluded, by decision). Progress in `for x in it` is owned
+#   by the iterator, and syntax cannot distinguish a finite iterator from an
+#   infinite one -- `for x in 0..n` and `for x in reader.bytes()` are the same
+#   node shape. Including general `for` would match essentially every for-loop
+#   in the corpus and destroy the signal for zero benefit, since the iterator's
+#   own `next()` body is already covered by SHAPE A when it is in-crate. Only
+#   the std-guaranteed-infinite sources (SHAPE E) are included. A `for` over a
+#   foreign infinite iterator is a real, accepted blind spot.
+#
+# LIMIT 5 (two-variable convergence). B3 cannot see that a sibling branch moves
+#   the opposite bound (`upper -= 1` while `i` stays). Needs a ranking function.
+#
+# LIMIT 6 (caller-controlled buffer size). The rule flags every matching site,
+#   but only those whose buffer is caller-supplied are exploitable -- a site
+#   using a fixed local buffer cannot stall. Distinguishing them requires
+#   knowing whether the buffer size reaches an attacker. That is exactly the
+#   downstream judge's job.
+#
+# LIMIT 7 (cost, not termination). The gimli quadratic-DIE and miniz_oxide
+#   init_tree shapes are "per-iteration cost can be zero/degenerate", which
+#   terminates but amplifies. SHAPE A catches the miniz_oxide form only because
+#   a consume call is present; a pure cost-amplification loop with no consume
+#   call in the vocabulary is missed. Needs a cost model.
+#
+# LIMIT 8 (scope noise, not the rule's job). Volume includes example binaries,
+#   tests, fuzz and bench targets (object: 41 of 84 hits are
+#   crates/examples/src/*). Filter by path in the harness, not by weakening
+#   the rule.
+# =============================================================================

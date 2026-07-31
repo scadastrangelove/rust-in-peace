@@ -1,0 +1,673 @@
+# =====================================================================
+# cls-recursion -- UNBOUNDED RECURSION (Rust)
+#
+# Candidate generator, NOT a verdict. A reachability judge and a finder
+# run downstream. Tuned for recall: a false positive costs one agent
+# read, a false negative is permanent and silent.
+#
+# Four rule ids, one recursion shape each (ast-grep evaluates
+# `constraints:` at RULE level, so mixing shapes in one rule lets a
+# metavariable unbound by the matching branch veto the match):
+#
+#   rip-recursion-selfcall-no-depth-cap            warning   86 hits/25 crates
+#       free fn calling itself by bare name, or a method calling
+#       itself through `self.` / `Self::` / `self::`.
+#   rip-recursion-serde-reentrant-no-depth-cap     warning  210
+#       a serde callback that hands control back to a caller-chosen
+#       type. This is where BOTH open upstream findings live; the
+#       recursion is never a lexical self-call.
+#   rip-recursion-selfcall-via-binding-no-depth-cap  info    790
+#       `child.walk()` -- same-named method on a local binding. Real
+#       for tree recursion, noisy for delegation. Untypeable; see LIMITS.
+#   rip-recursion-selfref-laundered                info     270
+#       own name used as a value (fn-pointer, closure, macro argument).
+#
+# ---------------------------------------------------------------------
+# GROUND TRUTH (measured, corpus in the corpus tree)
+#
+#   quick-xml #982 (OPEN -> must fire): all 3 re-entrancy call sites
+#     src/de/map.rs:794 struct_variant, :954 next_element_seed,
+#     :1137 deserialize_struct                              -- FIRES
+#   msgpack-rust #382 (OPEN -> must fire):
+#     rmp-serde/src/decode.rs:638 deserialize_option,
+#     :685 deserialize_newtype_struct, :987 newtype_variant_seed
+#                                                           -- FIRES
+#     and the already-guarded sibling deserialize_seq (:731, uses
+#     depth_count!) stays SILENT -- the discrimination the finding needs.
+#     NB this is why the serde rule matches per-FUNCTION and not per-impl:
+#     rmp-serde's bug was precisely that some methods in an otherwise
+#     depth-counted impl were missing the counter.
+#   lopdf #531/#533 (MERGED -> must be silent): outlines.rs
+#     get_outlines_impl/walk_outlines_del, destinations.rs
+#     get_named_destinations_impl, reader.rs get_pages_tree_count,
+#     document.rs collect_resources                         -- SILENT
+#
+# ---------------------------------------------------------------------
+# WHY THE PREVIOUS VERSION MISSED ALL OF THIS
+#
+# The prior rule matched `has: {stopBy: end, pattern: $FN($$$ARGS)}`.
+# In tree-sitter that only matches a BARE-IDENTIFIER callee, so
+# `self.walk(..)` -- the dominant Rust idiom and the shape of every
+# lopdf finding -- never matched. It also suppressed on the bare token
+# `depth` appearing anywhere, so threading `depth + 1` without ever
+# comparing it silenced the rule on genuinely unbounded recursion.
+# Measured on the adversarial fixture set: 3/12 true shapes caught,
+# versus 8/12 here, and 0/6 of the two open upstream findings versus 6/6.
+#
+# ---------------------------------------------------------------------
+# LIMITS -- these need types or an interprocedural call graph and will
+# never be a pattern:
+#
+#  L1 MUTUAL RECURSION (a -> b -> a). Needs a call graph. Not detected
+#     at all. This is the single biggest blind spot.
+#  L2 `self.field.method()` where `field` holds a same-typed subtree
+#     (`self.left.insert(v)` in a BST) is indistinguishable from
+#     delegation to a differently-typed inner (`self.reader.config()`)
+#     without type information. The field-receiver form is excluded, so
+#     BST-shaped recursion through a named field is missed.
+#  L3 Recursion through a trait object / generic callback other than
+#     serde's (a user `Visitor`, `Fold`, `dyn Handler`) is invisible.
+#     serde is covered only because its protocol is name-defined.
+#  L4 Compiler-generated recursive Drop glue for a recursive type
+#     (ciborium's `Value` teardown) has no source to match.
+#  L5 GUARD ORDER. A depth test placed AFTER the recursive call reads
+#     identically to one placed before it (fixture TP-10, missed).
+#  L6 A depth bound spelled with no depth-ish word and no counter
+#     (`if n > 1000 { return }`) is not recognised, so such a safe
+#     recursion is still reported.
+#  L7 STRUCTURAL BOUNDEDNESS is invisible: fixed-arity ASTs and
+#     tail recursion on a shrinking slice are reported (fixtures FP-01,
+#     FP-02). Deciding these needs the type's recursive shape.
+#  L8 `crate::module::f()` calling itself from inside `f` is not
+#     matched -- the qualifier is restricted to `Self`/`self` because
+#     every other module path in the corpus was delegation to a
+#     same-named function elsewhere (rustls `fn fips() { fips() }`).
+#  L9 The G2 suppressor below is name-shaped. A function called
+#     `enter_depth` that does not actually bound will silence the rule.
+#     It is scoped to tokens naming THIS mechanism only -- never
+#     generic `validate_*`/`check_*` verbs, which would silence on a
+#     name rather than a behaviour.
+# =====================================================================
+
+id: rip-recursion-selfcall-no-depth-cap
+language: rust
+severity: warning
+message: "self-recursive call with no depth bound in scope ($FN)"
+utils:
+  # ===================================================================
+  # depth-bound-present -- the single suppression predicate.
+  #
+  # A recursion counts as BOUNDED only if the function shows one of the
+  # shapes below. Merely *mentioning* a depth variable is deliberately
+  # NOT enough: threading `depth + 1` through a descent that never
+  # compares it is unbounded recursion, and the previous version of this
+  # rule was blind to exactly that (adversarial case TP-08).
+  # ===================================================================
+  depth-bound-present:
+    any:
+      # G1  A branch TESTS a depth-ish quantity AND some counter or
+      #     container ADVANCES. Both legs are required. The test alone is
+      #     satisfied by a dead guard whose counter never moves (TP-09);
+      #     the advance alone is satisfied by `depth + 1` with no
+      #     comparison at all (TP-08). The word list is matched against
+      #     the CONDITION TEXT ONLY, so `if buf.len() > cap` (a size
+      #     limit, not a depth limit) does not suppress.
+      - all:
+          - has:
+              stopBy: end
+              any:
+                - kind: if_expression
+                  has: { field: condition, regex: '(?i)(depth|recurs|nest|level|budget|fuel|remain|quota)' }
+                - kind: while_expression
+                  has: { field: condition, regex: '(?i)(depth|recurs|nest|level|budget|fuel|remain|quota)' }
+                - kind: match_expression
+                  has: { field: value, regex: '(?i)(depth|recurs|nest|level|budget|fuel|remain|quota)' }
+          - has:
+              stopBy: end
+              any:
+                - pattern: $D + 1
+                - pattern: $D - 1
+                - pattern: $D += 1
+                - pattern: $D -= 1
+                - pattern: $X.checked_sub($$$Y)
+                - pattern: $X.checked_add($$$Y)
+                - pattern: $X.saturating_sub($$$Y)
+                # container-as-counter: lopdf bounds `collect_resources` with
+                # `already_seen.len() >= MAX_NESTING_DEPTH` + `.insert()`, and the
+                # push/pop stack-depth idiom is equally common.
+                - pattern: $X.insert($$$Y)
+                - pattern: $X.push($$$Y)
+      # G2  The bound is delegated to an RAII guard or a counting macro
+      #     whose name states this exact mechanism: quick-xml's
+      #     `de.enter_depth()?` handing back a `DepthGuard`, rmp-serde's
+      #     `depth_count!(self.depth, ..)`. This is the ONLY name-shaped
+      #     suppressor in the rule and it is deliberately narrow -- only
+      #     tokens that name depth/recursion counting, never generic
+      #     `validate_*` / `check_*` verbs. See LIMITS: a function named
+      #     `enter_depth` that does not actually bound will silence this.
+      - has:
+          stopBy: end
+          all:
+            - kind: call_expression
+            - regex: '(?i)(enter_depth|depth_?guard|recursion_?guard|recursion_?limit|depth_?limit|enter_recursion|guard_depth|bump_depth)'
+      - has:
+          stopBy: end
+          all:
+            - kind: macro_invocation
+            - regex: '(?i)(depth|recurs)'
+      # G3  checked/saturating arithmetic applied directly to a depth-ish
+      #     name (`budget.checked_sub(1)?`) -- tests and advances at once.
+      - has:
+          stopBy: end
+          all:
+            - kind: call_expression
+            - regex: '(?i)(depth|recurs|nest|level|budget|fuel|remain|quota)[a-z_0-9\.]*\.(checked_sub|checked_add|saturating_sub|saturating_add)'
+rule:
+  kind: function_item
+  all:
+    - has: { field: name, pattern: $FN }
+    - any:
+        # (a) free function calling itself by bare name
+        - all:
+            - not:
+                inside:
+                  stopBy: end
+                  any:
+                    - kind: impl_item
+                    - kind: trait_item
+            - has:
+                field: body
+                has:
+                  stopBy: end
+                  kind: call_expression
+                  has:
+                    field: function
+                    any:
+                      # foo(...) -- bare identifier callee.
+                      - all:
+                          - kind: identifier
+                          - pattern: $FN
+        # (b) method/associated fn calling itself through self / Self
+        - all:
+            - has:
+                field: body
+                has:
+                  stopBy: end
+                  kind: call_expression
+                  has:
+                    field: function
+                    any:
+                      # self.foo(...) -- the dominant Rust recursion idiom and the shape of
+                      # every lopdf finding. The receiver must be literally `self`;
+                      # `self.inner.foo()` is delegation to another type, not recursion.
+                      - all:
+                          - kind: field_expression
+                          - has: { field: field, pattern: $FN }
+                          - has: { field: value, regex: '^self$' }
+                      # Self::foo(...) / self::foo(...). The qualifier must be exactly
+                      # `Self` or `self`, i.e. provably the same type or the same module.
+                      # A CamelCase qualifier is `Vec::new()` inside `fn new()`; ANY other
+                      # module path is delegation to a same-named function elsewhere, which
+                      # is what rustls' `fn fips() { some_module::fips() }` does 40+ times.
+                      # Cost of this narrowing: a genuine `crate::m::f()` self-call from
+                      # inside `f` is missed. That form is vanishingly rare (plain `f()`
+                      # works) whereas the delegation form is pervasive.
+                      - all:
+                          - kind: scoped_identifier
+                          - has: { field: name, pattern: $FN }
+                          - regex: '^(?:Self|self)::[A-Za-z_][A-Za-z0-9_]*$'
+    - # A recursive descent needs a base case: a branch, a loop, a binding or
+      # a closure. A function whose whole body is one unconditional same-named
+      # call has none -- and it cannot actually be recursive, because rustc's
+      # `unconditional_recursion` lint would fire and the crate would not ship.
+      # It is always delegation to a same-named *inherent* method or free fn:
+      #   fn next(&mut self) -> Option<Self::Item> { self.next().transpose() }
+      #   fn r_type(&self, e: Self::Endian) -> RelocationType { self.r_type(e) }
+      # This is the largest residual FP family in `object`, `gimli` and `bytes`.
+      has:
+        field: body
+        has:
+          stopBy: end
+          any:
+            - kind: if_expression
+            - kind: match_expression
+            - kind: while_expression
+            - kind: for_expression
+            - kind: loop_expression
+            - kind: let_declaration
+            - kind: closure_expression
+    - not: { matches: depth-bound-present }
+---
+id: rip-recursion-selfcall-via-binding-no-depth-cap
+language: rust
+severity: info
+message: "possible recursion via a same-named method on a local binding, no depth bound ($FN)"
+utils:
+  # ===================================================================
+  # depth-bound-present -- the single suppression predicate.
+  #
+  # A recursion counts as BOUNDED only if the function shows one of the
+  # shapes below. Merely *mentioning* a depth variable is deliberately
+  # NOT enough: threading `depth + 1` through a descent that never
+  # compares it is unbounded recursion, and the previous version of this
+  # rule was blind to exactly that (adversarial case TP-08).
+  # ===================================================================
+  depth-bound-present:
+    any:
+      # G1  A branch TESTS a depth-ish quantity AND some counter or
+      #     container ADVANCES. Both legs are required. The test alone is
+      #     satisfied by a dead guard whose counter never moves (TP-09);
+      #     the advance alone is satisfied by `depth + 1` with no
+      #     comparison at all (TP-08). The word list is matched against
+      #     the CONDITION TEXT ONLY, so `if buf.len() > cap` (a size
+      #     limit, not a depth limit) does not suppress.
+      - all:
+          - has:
+              stopBy: end
+              any:
+                - kind: if_expression
+                  has: { field: condition, regex: '(?i)(depth|recurs|nest|level|budget|fuel|remain|quota)' }
+                - kind: while_expression
+                  has: { field: condition, regex: '(?i)(depth|recurs|nest|level|budget|fuel|remain|quota)' }
+                - kind: match_expression
+                  has: { field: value, regex: '(?i)(depth|recurs|nest|level|budget|fuel|remain|quota)' }
+          - has:
+              stopBy: end
+              any:
+                - pattern: $D + 1
+                - pattern: $D - 1
+                - pattern: $D += 1
+                - pattern: $D -= 1
+                - pattern: $X.checked_sub($$$Y)
+                - pattern: $X.checked_add($$$Y)
+                - pattern: $X.saturating_sub($$$Y)
+                # container-as-counter: lopdf bounds `collect_resources` with
+                # `already_seen.len() >= MAX_NESTING_DEPTH` + `.insert()`, and the
+                # push/pop stack-depth idiom is equally common.
+                - pattern: $X.insert($$$Y)
+                - pattern: $X.push($$$Y)
+      # G2  The bound is delegated to an RAII guard or a counting macro
+      #     whose name states this exact mechanism: quick-xml's
+      #     `de.enter_depth()?` handing back a `DepthGuard`, rmp-serde's
+      #     `depth_count!(self.depth, ..)`. This is the ONLY name-shaped
+      #     suppressor in the rule and it is deliberately narrow -- only
+      #     tokens that name depth/recursion counting, never generic
+      #     `validate_*` / `check_*` verbs. See LIMITS: a function named
+      #     `enter_depth` that does not actually bound will silence this.
+      - has:
+          stopBy: end
+          all:
+            - kind: call_expression
+            - regex: '(?i)(enter_depth|depth_?guard|recursion_?guard|recursion_?limit|depth_?limit|enter_recursion|guard_depth|bump_depth)'
+      - has:
+          stopBy: end
+          all:
+            - kind: macro_invocation
+            - regex: '(?i)(depth|recurs)'
+      # G3  checked/saturating arithmetic applied directly to a depth-ish
+      #     name (`budget.checked_sub(1)?`) -- tests and advances at once.
+      - has:
+          stopBy: end
+          all:
+            - kind: call_expression
+            - regex: '(?i)(depth|recurs|nest|level|budget|fuel|remain|quota)[a-z_0-9\.]*\.(checked_sub|checked_add|saturating_sub|saturating_add)'
+rule:
+  kind: function_item
+  all:
+    - has: { field: name, pattern: $FN }
+    - has:
+        field: body
+        has:
+          stopBy: end
+          kind: call_expression
+          has:
+            field: function
+            any:
+              # local.foo(...) -- receiver is a plain binding, not `self`. Real when
+              # it is a child node (`child.walk()`), noise when it is an unrelated
+              # value that merely shares the method name. Untypeable here, so it gets
+              # its own lower-severity rule id rather than polluting the main one.
+              - all:
+                  - kind: field_expression
+                  - has: { field: field, pattern: $FN }
+                  - has:
+                      field: value
+                      all:
+                        - kind: identifier
+                        - not: { regex: '^self$' }
+                        - pattern: $RECV
+    # A receiver that is one of this function's own parameters is an object
+    # handed in by the caller -- delegating to it is not self-recursion.
+    - not:
+        has:
+          field: parameters
+          has: { stopBy: end, pattern: $RECV }
+    - not:
+        has:
+          field: body
+          has:
+            stopBy: end
+            kind: call_expression
+            has:
+              field: function
+              any:
+                # foo(...) -- bare identifier callee.
+                - all:
+                    - kind: identifier
+                    - pattern: $FN
+                # self.foo(...) -- the dominant Rust recursion idiom and the shape of
+                # every lopdf finding. The receiver must be literally `self`;
+                # `self.inner.foo()` is delegation to another type, not recursion.
+                - all:
+                    - kind: field_expression
+                    - has: { field: field, pattern: $FN }
+                    - has: { field: value, regex: '^self$' }
+                # Self::foo(...) / self::foo(...). The qualifier must be exactly
+                # `Self` or `self`, i.e. provably the same type or the same module.
+                # A CamelCase qualifier is `Vec::new()` inside `fn new()`; ANY other
+                # module path is delegation to a same-named function elsewhere, which
+                # is what rustls' `fn fips() { some_module::fips() }` does 40+ times.
+                # Cost of this narrowing: a genuine `crate::m::f()` self-call from
+                # inside `f` is missed. That form is vanishingly rare (plain `f()`
+                # works) whereas the delegation form is pervasive.
+                - all:
+                    - kind: scoped_identifier
+                    - has: { field: name, pattern: $FN }
+                    - regex: '^(?:Self|self)::[A-Za-z_][A-Za-z0-9_]*$'
+    - # A recursive descent needs a base case: a branch, a loop, a binding or
+      # a closure. A function whose whole body is one unconditional same-named
+      # call has none -- and it cannot actually be recursive, because rustc's
+      # `unconditional_recursion` lint would fire and the crate would not ship.
+      # It is always delegation to a same-named *inherent* method or free fn:
+      #   fn next(&mut self) -> Option<Self::Item> { self.next().transpose() }
+      #   fn r_type(&self, e: Self::Endian) -> RelocationType { self.r_type(e) }
+      # This is the largest residual FP family in `object`, `gimli` and `bytes`.
+      has:
+        field: body
+        has:
+          stopBy: end
+          any:
+            - kind: if_expression
+            - kind: match_expression
+            - kind: while_expression
+            - kind: for_expression
+            - kind: loop_expression
+            - kind: let_declaration
+            - kind: closure_expression
+    - not: { matches: depth-bound-present }
+---
+id: rip-recursion-selfref-laundered
+language: rust
+severity: info
+message: "own name referenced outside call position (closure / fn-pointer / macro), no depth bound ($FN)"
+utils:
+  # ===================================================================
+  # depth-bound-present -- the single suppression predicate.
+  #
+  # A recursion counts as BOUNDED only if the function shows one of the
+  # shapes below. Merely *mentioning* a depth variable is deliberately
+  # NOT enough: threading `depth + 1` through a descent that never
+  # compares it is unbounded recursion, and the previous version of this
+  # rule was blind to exactly that (adversarial case TP-08).
+  # ===================================================================
+  depth-bound-present:
+    any:
+      # G1  A branch TESTS a depth-ish quantity AND some counter or
+      #     container ADVANCES. Both legs are required. The test alone is
+      #     satisfied by a dead guard whose counter never moves (TP-09);
+      #     the advance alone is satisfied by `depth + 1` with no
+      #     comparison at all (TP-08). The word list is matched against
+      #     the CONDITION TEXT ONLY, so `if buf.len() > cap` (a size
+      #     limit, not a depth limit) does not suppress.
+      - all:
+          - has:
+              stopBy: end
+              any:
+                - kind: if_expression
+                  has: { field: condition, regex: '(?i)(depth|recurs|nest|level|budget|fuel|remain|quota)' }
+                - kind: while_expression
+                  has: { field: condition, regex: '(?i)(depth|recurs|nest|level|budget|fuel|remain|quota)' }
+                - kind: match_expression
+                  has: { field: value, regex: '(?i)(depth|recurs|nest|level|budget|fuel|remain|quota)' }
+          - has:
+              stopBy: end
+              any:
+                - pattern: $D + 1
+                - pattern: $D - 1
+                - pattern: $D += 1
+                - pattern: $D -= 1
+                - pattern: $X.checked_sub($$$Y)
+                - pattern: $X.checked_add($$$Y)
+                - pattern: $X.saturating_sub($$$Y)
+                # container-as-counter: lopdf bounds `collect_resources` with
+                # `already_seen.len() >= MAX_NESTING_DEPTH` + `.insert()`, and the
+                # push/pop stack-depth idiom is equally common.
+                - pattern: $X.insert($$$Y)
+                - pattern: $X.push($$$Y)
+      # G2  The bound is delegated to an RAII guard or a counting macro
+      #     whose name states this exact mechanism: quick-xml's
+      #     `de.enter_depth()?` handing back a `DepthGuard`, rmp-serde's
+      #     `depth_count!(self.depth, ..)`. This is the ONLY name-shaped
+      #     suppressor in the rule and it is deliberately narrow -- only
+      #     tokens that name depth/recursion counting, never generic
+      #     `validate_*` / `check_*` verbs. See LIMITS: a function named
+      #     `enter_depth` that does not actually bound will silence this.
+      - has:
+          stopBy: end
+          all:
+            - kind: call_expression
+            - regex: '(?i)(enter_depth|depth_?guard|recursion_?guard|recursion_?limit|depth_?limit|enter_recursion|guard_depth|bump_depth)'
+      - has:
+          stopBy: end
+          all:
+            - kind: macro_invocation
+            - regex: '(?i)(depth|recurs)'
+      # G3  checked/saturating arithmetic applied directly to a depth-ish
+      #     name (`budget.checked_sub(1)?`) -- tests and advances at once.
+      - has:
+          stopBy: end
+          all:
+            - kind: call_expression
+            - regex: '(?i)(depth|recurs|nest|level|budget|fuel|remain|quota)[a-z_0-9\.]*\.(checked_sub|checked_add|saturating_sub|saturating_add)'
+rule:
+  kind: function_item
+  all:
+    - has: { field: name, pattern: $FN }
+    - has:
+        field: body
+        has:
+          stopBy: end
+          all:
+            - kind: identifier
+            - pattern: $FN
+            # `Slab::new()` inside `fn new()` and `Iter::next(self)` inside
+            # `fn next()` are path segments that merely share the name --
+            # the identifier must not be a qualifier's tail or a field.
+            - not: { inside: { kind: scoped_identifier } }
+            - not: { inside: { kind: field_expression } }
+            # Laundering happens where the name is used as a VALUE: passed
+            # as a fn-pointer argument, bound in a `let`, or handed to a
+            # macro. A bare mention in a match arm is a shadowing local.
+            - any:
+                - inside: { kind: arguments }
+                - inside: { kind: token_tree }
+                # RHS only: `let name = self.x.name()?` shadows the fn
+                # name in the PATTERN and is not a self-reference.
+                - inside: { kind: let_declaration, field: value }
+    # `fn fmt(&self, fmt: &mut Formatter)` -- a parameter shadowing the
+    # function name is not a self-reference.
+    - not:
+        has:
+          field: parameters
+          has: { stopBy: end, pattern: $FN }
+    # Nor is a LOCAL that shadows it: `fn name() { let name = ..; f(name) }`
+    # and `match k { Kind::R(reason) => Some(reason) }` inside `fn reason()`
+    # are the two commonest shapes here. Without name resolution a shadowed
+    # binding is indistinguishable from a fn-pointer reference, so the
+    # presence of any same-named binder disqualifies the function.
+    - not:
+        has:
+          field: body
+          has:
+            stopBy: end
+            any:
+              - kind: let_declaration
+                has:
+                  field: pattern
+                  any:
+                    - pattern: $FN
+                    - has: { stopBy: end, pattern: $FN }
+              - kind: match_arm
+                has:
+                  field: pattern
+                  any:
+                    - pattern: $FN
+                    - has: { stopBy: end, pattern: $FN }
+              - kind: for_expression
+                has:
+                  field: pattern
+                  any:
+                    - pattern: $FN
+                    - has: { stopBy: end, pattern: $FN }
+              - kind: closure_parameters
+                any:
+                  - pattern: $FN
+                  - has: { stopBy: end, pattern: $FN }
+    - not:
+        has:
+          field: body
+          has:
+            stopBy: end
+            kind: call_expression
+            has:
+              field: function
+              any:
+                # foo(...) -- bare identifier callee.
+                - all:
+                    - kind: identifier
+                    - pattern: $FN
+                # self.foo(...) -- the dominant Rust recursion idiom and the shape of
+                # every lopdf finding. The receiver must be literally `self`;
+                # `self.inner.foo()` is delegation to another type, not recursion.
+                - all:
+                    - kind: field_expression
+                    - has: { field: field, pattern: $FN }
+                    - has: { field: value, regex: '^self$' }
+                # Self::foo(...) / self::foo(...). The qualifier must be exactly
+                # `Self` or `self`, i.e. provably the same type or the same module.
+                # A CamelCase qualifier is `Vec::new()` inside `fn new()`; ANY other
+                # module path is delegation to a same-named function elsewhere, which
+                # is what rustls' `fn fips() { some_module::fips() }` does 40+ times.
+                # Cost of this narrowing: a genuine `crate::m::f()` self-call from
+                # inside `f` is missed. That form is vanishingly rare (plain `f()`
+                # works) whereas the delegation form is pervasive.
+                - all:
+                    - kind: scoped_identifier
+                    - has: { field: name, pattern: $FN }
+                    - regex: '^(?:Self|self)::[A-Za-z_][A-Za-z0-9_]*$'
+                # local.foo(...) -- receiver is a plain binding, not `self`. Real when
+                # it is a child node (`child.walk()`), noise when it is an unrelated
+                # value that merely shares the method name. Untypeable here, so it gets
+                # its own lower-severity rule id rather than polluting the main one.
+                - all:
+                    - kind: field_expression
+                    - has: { field: field, pattern: $FN }
+                    - has:
+                        field: value
+                        all:
+                          - kind: identifier
+                          - not: { regex: '^self$' }
+                          - pattern: $RECV
+    - not: { matches: depth-bound-present }
+---
+id: rip-recursion-serde-reentrant-no-depth-cap
+language: rust
+severity: warning
+message: "re-entrant serde callback returns control to a caller-chosen type with no depth bound"
+utils:
+  # ===================================================================
+  # depth-bound-present -- the single suppression predicate.
+  #
+  # A recursion counts as BOUNDED only if the function shows one of the
+  # shapes below. Merely *mentioning* a depth variable is deliberately
+  # NOT enough: threading `depth + 1` through a descent that never
+  # compares it is unbounded recursion, and the previous version of this
+  # rule was blind to exactly that (adversarial case TP-08).
+  # ===================================================================
+  depth-bound-present:
+    any:
+      # G1  A branch TESTS a depth-ish quantity AND some counter or
+      #     container ADVANCES. Both legs are required. The test alone is
+      #     satisfied by a dead guard whose counter never moves (TP-09);
+      #     the advance alone is satisfied by `depth + 1` with no
+      #     comparison at all (TP-08). The word list is matched against
+      #     the CONDITION TEXT ONLY, so `if buf.len() > cap` (a size
+      #     limit, not a depth limit) does not suppress.
+      - all:
+          - has:
+              stopBy: end
+              any:
+                - kind: if_expression
+                  has: { field: condition, regex: '(?i)(depth|recurs|nest|level|budget|fuel|remain|quota)' }
+                - kind: while_expression
+                  has: { field: condition, regex: '(?i)(depth|recurs|nest|level|budget|fuel|remain|quota)' }
+                - kind: match_expression
+                  has: { field: value, regex: '(?i)(depth|recurs|nest|level|budget|fuel|remain|quota)' }
+          - has:
+              stopBy: end
+              any:
+                - pattern: $D + 1
+                - pattern: $D - 1
+                - pattern: $D += 1
+                - pattern: $D -= 1
+                - pattern: $X.checked_sub($$$Y)
+                - pattern: $X.checked_add($$$Y)
+                - pattern: $X.saturating_sub($$$Y)
+                # container-as-counter: lopdf bounds `collect_resources` with
+                # `already_seen.len() >= MAX_NESTING_DEPTH` + `.insert()`, and the
+                # push/pop stack-depth idiom is equally common.
+                - pattern: $X.insert($$$Y)
+                - pattern: $X.push($$$Y)
+      # G2  The bound is delegated to an RAII guard or a counting macro
+      #     whose name states this exact mechanism: quick-xml's
+      #     `de.enter_depth()?` handing back a `DepthGuard`, rmp-serde's
+      #     `depth_count!(self.depth, ..)`. This is the ONLY name-shaped
+      #     suppressor in the rule and it is deliberately narrow -- only
+      #     tokens that name depth/recursion counting, never generic
+      #     `validate_*` / `check_*` verbs. See LIMITS: a function named
+      #     `enter_depth` that does not actually bound will silence this.
+      - has:
+          stopBy: end
+          all:
+            - kind: call_expression
+            - regex: '(?i)(enter_depth|depth_?guard|recursion_?guard|recursion_?limit|depth_?limit|enter_recursion|guard_depth|bump_depth)'
+      - has:
+          stopBy: end
+          all:
+            - kind: macro_invocation
+            - regex: '(?i)(depth|recurs)'
+      # G3  checked/saturating arithmetic applied directly to a depth-ish
+      #     name (`budget.checked_sub(1)?`) -- tests and advances at once.
+      - has:
+          stopBy: end
+          all:
+            - kind: call_expression
+            - regex: '(?i)(depth|recurs|nest|level|budget|fuel|remain|quota)[a-z_0-9\.]*\.(checked_sub|checked_add|saturating_sub|saturating_add)'
+rule:
+  kind: function_item
+  all:
+    - has:
+        field: body
+        has:
+          stopBy: end
+          any:
+            - pattern: $V.visit_map($$$A)
+            - pattern: $V.visit_seq($$$A)
+            - pattern: $V.visit_enum($$$A)
+            - pattern: $V.visit_some($$$A)
+            - pattern: $V.visit_newtype_struct($$$A)
+            - pattern: $V.newtype_variant_seed($$$A)
+            - pattern: $V.newtype_variant($$$A)
+            - pattern: $V.struct_variant($$$A)
+            - pattern: $V.deserialize($$$A)
+    - not: { matches: depth-bound-present }

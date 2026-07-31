@@ -368,8 +368,8 @@ passes (TM, CVE-seeded, blind) independently converged on the same headline find
 algorithmic-complexity DoS) — triple-convergence across differently-seeded finder pools is a strong,
 near-decisive confidence signal on its own, distinct from vote-counting within one pass. But for ciborium,
 the **blind pass alone produced by far the richest yield** — 12 confirmed findings from 5 unscoped lenses,
-including the two that ended up disclosed as the highest-severity bugs (the newtype/Option recursion-limit
-bypass, the `Segment::pull` infinite loop) — neither of which the threat model's architecture-level surface
+including the two that ended up disclosed as the highest-severity bugs (both still-embargoed advisories,
+mechanism withheld) — neither of which the threat model's architecture-level surface
 lenses (Drop-safety, tag-vs-array stack cost) had anticipated as a specific angle. CVE-seeded, meanwhile, had
 the narrowest yield of the three but still contributed something unique (the debug-only tag-vs-array
 differential) plus a pure methodology win (catching that a `git clone` of the default branch wasn't
@@ -391,7 +391,7 @@ re-ran it myself, and re-ran the full test suite myself. This is a concrete, reu
 "verify with structure" (P1) to the **fix** stage, not just the find stage — an agent's own tests can pass
 while still not proving what it claims (a test that constructs the vulnerable state differently than the real
 entry point, a subtly-wrong assertion). Separately, after both ciborium fixes were filed, a "bugs travel in
-packs" variant-analysis sweep (re-reading every `deserialize_*`/`Segment::pull`-adjacent call site for the
+packs" variant-analysis sweep (re-reading every adjacent call site for the
 same missing-guard/zero-progress pattern) confirmed both fixes were structurally *complete* — no missed
 sibling method, no missed call site — which is not guaranteed just because the reported PoC now passes; a
 fix can close the one reported instance of a pattern while leaving a sibling instance of the *same* pattern

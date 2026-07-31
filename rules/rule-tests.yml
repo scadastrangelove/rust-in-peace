@@ -1,0 +1,92 @@
+# Expectations for each candidate rule, checked by scripts/rule_test.py against DVRA ground truth.
+#
+# Three gates per rule, and a rule ships only if it passes all three:
+#
+#   positive  it MUST match the oracle's `file:vuln_line`               → recall
+#   negative  it MUST NOT match the hardened twin (`fixed_handle`)      → the guard is encoded
+#   decoys    per-decoy expectation, because the decoys test DIFFERENT defences
+#
+# The negative gate is the one that matters. DVRA puts the fixed handler in the SAME FILE as the
+# vulnerable one, so "matches the file" proves nothing — a rule has to discriminate within a file.
+#
+# Decoy expectations are deliberately NOT uniform. DVRA plants three decoys that defeat three
+# different mechanisms, and a rule set that treats them identically is lying about which mechanism
+# it relies on:
+#
+#   DVR-07-DECOY-UNSAFE   real `from_raw_parts` with an alignment problem, but `/native/*` is never
+#                         wired into the router. A pattern rule SHOULD fire here; the defence is the
+#                         reachability judge, not the rule. Expecting silence would push us toward a
+#                         rule that cannot see real unsafe.
+#   DVR-08-DECOY-UNWRAP   `.parse().unwrap()` preceded by non-empty / all-digits / len<=19 guards.
+#                         A rule MUST NOT fire: the guard is present, and this is precisely the
+#                         false-positive class that made `unwrap_used` worthless on real crates.
+#   DVR-22-BUILDRS-DECOY  build.rs reads env — but only Cargo-set, non-sensitive vars, writing only
+#                         to OUT_DIR. A rule MUST NOT fire on env reads per se; only on sensitive
+#                         names ($HOME/.ssh, AWS_*, CARGO_REGISTRY_TOKEN) or exfiltration.
+
+version: 1
+corpus: corpus/dvra-findings.jsonl
+target_root: <DVRA_ROOT>/dvra-1/source
+
+rules:
+  - id: rip-sql-string-interpolation
+    finding: DVR-01-SQLI
+    positive: { file: src/features/user_search.rs, line: 11 }
+    negative: { file: src/features/user_search.rs, fn: fixed_handle }
+    fp_budget_per_kloc: 0.05
+
+  - id: rip-path-join-without-traversal-guard
+    finding: DVR-02-PATH-TRAVERSAL
+    positive: { file: src/features/file_download.rs, line: 17 }
+    negative: { file: src/features/file_download.rs, fn: fixed_handle }
+    fp_budget_per_kloc: 0.5
+    note: >-
+      The discriminating rule. Both handlers call base.join(); only the guard differs.
+
+  - id: rip-secret-interpolated-into-log
+    finding: DVR-10-SECRET-LOG
+    positive: { file: src/features/auth.rs, line: 25 }
+    negative: { file: src/features/auth.rs, fn: fixed_handle }
+    fp_budget_per_kloc: 0.05
+
+  - id: rip-shell-command-string-built
+    finding: DVR-09-HOOK-CONFIG
+    positive: { file: src/features/hooks.rs, line: 43 }
+    negative: { file: src/features/hooks.rs, fn: fixed_handle }
+    fp_budget_per_kloc: 0.05
+    note: >-
+      Oracle marks this threat-model-dependent. The rule flags the SINK; the threat model decides
+      severity. A rule must not try to decide a threat model.
+
+  - id: rip-alloc-sized-by-request-uncapped
+    finding: DVR-06-ALLOC-DOS
+    positive: { file: src/features/upload.rs, line: 23 }
+    negative: { file: src/features/upload.rs, fn: fixed_handle }
+    fp_budget_per_kloc: 0.3
+    note: >-
+      Structural stand-in for a taint rule. `with_capacity` fired 141x across the 7-crate real corpus,
+      so its FP behaviour there is the number to watch.
+
+decoys:
+  - finding: DVR-07-DECOY-UNSAFE
+    file: src/features/native.rs
+    expect: may_fire
+    defence: reachability-judge
+    reason: real unsafe, but /native/* is never wired into the router
+  - finding: DVR-08-DECOY-UNWRAP
+    file: src/features/validation.rs
+    expect: must_not_fire
+    defence: guard-encoding
+    reason: parse().unwrap() is preceded by non-empty / all-digits / len<=19 guards
+  - finding: DVR-22-BUILDRS-DECOY
+    file: build.rs
+    expect: must_not_fire
+    defence: sink-specificity
+    reason: reads only Cargo-set non-sensitive env vars, writes only to OUT_DIR
+
+# The false-positive corpus: 238 kLOC of mature, heavily-reviewed real crates already scanned.
+# A rule that lights up here is measurably over-broad, and it is checkable in seconds.
+fp_corpus:
+  description: 7 real crates from the 2026-07-28 batch (12,910 hits baseline)
+  crates: [h2, hyper, rustls, object, lopdf, quick-xml, httparse]
+  results_root: <RESULTS_DIR>

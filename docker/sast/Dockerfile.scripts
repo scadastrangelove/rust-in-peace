@@ -1,0 +1,18 @@
+# Fast script-iteration overlay.
+#
+# The runner and normalizer need several rounds of fixing against real crates; the tool layer under
+# them does not. Rebuilding the base for a one-line shell fix costs ~40 minutes of cargo installs, so
+# iterate here — this rebuild is seconds.
+#
+#   docker build -f Dockerfile.scripts -t vuln-pipeline-sast:v1.1 .
+#
+# Fold the stabilized scripts back into the base image on its next full rebuild (they are already
+# COPY'd last there, so a future base build picks them up without invalidating the tool layers).
+ARG BASE=vuln-pipeline-sast:v1
+FROM ${BASE}
+
+COPY run-all.sh normalize.py lint_catalog.py ruleclass.py /opt/sast/
+RUN chmod +x /opt/sast/run-all.sh
+
+WORKDIR /src
+CMD ["/opt/sast/run-all.sh"]

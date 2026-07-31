@@ -1,0 +1,10 @@
+name: rip/rust-queries
+version: 0.0.1
+library: false
+warnOnImplicitThis: false
+dependencies:
+  codeql/rust-all: "*"
+# Run with the CodeQL CLI you supply yourself; this repo ships queries only.
+#   codeql query run --database=<db> \
+#     --additional-packs=<codeql-dist>/qlpacks \
+#     rules/codeql/rust/<query>.ql
