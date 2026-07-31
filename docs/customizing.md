@@ -1,7 +1,8 @@
 # Customizing the pipeline
 
 The pipeline ships two worked profiles — `rust` (Miri / ASan / panic / hang +
-cargo-fuzz) and the base `cpp` (ASan) — but its overall shape is general.
+cargo-fuzz) and the base `cpp` (ASan), plus an experimental `android-app`
+profile — but its overall shape is general.
 Supporting another language or bug class means adding a profile: a new
 `harness/<lang>/` package and one registry entry, updating only the parts that
 are language- and detector-specific. The `rust` profile in `harness/rust/` is a

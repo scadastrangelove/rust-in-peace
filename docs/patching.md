@@ -32,7 +32,7 @@ you can review and upstream.
 The patch stage ships with the pipeline. No extra install is needed.
 
 Your target's `config.yaml` needs a `build_command` and optionally a 
-`test_command` for use in the verification ladder. The four targets included
+`test_command` for use in the verification ladder. The demo targets included
 with this repo already have these.
 
 ```bash
