@@ -1,0 +1,152 @@
+# CLS-SPAWN — command/shell injection sinks (rule class: process spawn).
+#
+# Three rules, three DISTINCT shapes, deliberately never merged into one `any:` (see the incident
+# log in dvra-seeds.yml — merging cost a silent false negative because ast-grep `constraints:` is
+# RULE-level: a metavariable left unbound by the branch that matched still has its own constraint
+# evaluated, and that constraint vetoes matches which came in through a sibling branch). One shape,
+# one rule, one constraint block. If you are tempted to add a 4th shape to any of these three, give
+# it its own id instead.
+#
+# Design invariant for this whole file: TUNE FOR RECALL. This is a candidate generator — a
+# reachability judge and a finder run downstream of it (ADR-2). A false positive here costs one
+# agent read; a false negative is permanent and silent. Every constraint below exists to remove a
+# specific, checked false-positive family, never to make the rule "look" more precise.
+#
+# Full incident history (the single-rule draft that fired on `Command::new("valgrind")`, the "a
+# literal program name is safe" mistake that blinded the rule to `Command::new("sh")` — DVRA-002 and
+# DVRA-006 — and the any:-merge bug) is preserved verbatim in dvra-seeds.yml. This file is the
+# post-incident, tested, canonical version; dvra-seeds.yml is the record of how we got here.
+#
+# INTEGRATION NOTE: dvra-seeds.yml still defines these same three rule ids. Until it is pruned, do
+# not point `ast-grep scan` at a ruleDirs that includes BOTH dvra-seeds.yml and this file — ast-grep
+# will load duplicate ids. This file was validated in an isolated sandbox for exactly that reason.
+#
+# REGRESSION GATE (full detail + file:line in rules/cls-spawn-tests.yml): all 4 DVRA ground-truth
+# sites fire (dvra-1 hooks.rs:43; dvra-3 lib.rs:158, :192, :174) across THREE independent DVRA
+# implementations (dvra-1/2/3); the named hardened twins (fixed_handle, safe_argument_example, and
+# dvra-1's fixed_handle against all three rules) are silent; 0 hits from the two severity:error
+# rules across 25 real crates / ~1.1M lines, including rustls's own CI tooling
+# (valgrind/setarch/openssl) that produced the original false-positive report against draft 1.
+# Adversarial corpus (22 synthetic sites, /tmp/cls-spawn/adversarial_src on the SAST box): exactly
+# 7/7 predicted-fire sites fired (3 fire-by-design, 2 division-of-labor between rules 2/3, 1
+# .args()-chaining regression check, 1 intentional gap-closure) and exactly 7/7 predicted-silent
+# sites in the miss corpus stayed silent, all counted directly off the ast-grep JSON, not estimated.
+# One of those 7 misses (qualified Command paths) was found to be REAL in ripgrep, not just
+# synthetic, and was closed in this pass — see the note on rip-shell-spawned-by-name below.
+
+# ── rip-shell-command-string-built · CWE-78 ────────────────────────────────────────────────────
+# vuln : dvra-1 src/features/hooks.rs:43 — format!("sh -c \"{}\"", would_run); would_run templates
+#        a request-derived $ARG (hooks.rs:33-39).
+# fixed: dvra-1 src/features/hooks.rs fn fixed_handle — never builds a shell string; argv-splits
+#        and never spawns a shell at all.
+# Keys on a shell-invocation TOKEN inside a format! string. Regex widened here — case-insensitive
+# (Windows spells it "PowerShell"/"CMD.EXE"), +zsh/dash/ksh/csh/tcsh/fish -c, +bare `cmd /c` without
+# ".exe". Purely additive over the shipped/gated version: every string the old regex matched still
+# matches the new one, so the existing positive/negative gate cannot regress.
+id: rip-shell-command-string-built
+language: rust
+severity: error
+message: "command string built for a shell — request-derived data becomes shell injection (CWE-78)"
+note: |
+  Does NOT catch a "sh -c ..." string assembled by concatenation (String::push_str/+) instead of
+  format!() -- confirmed miss, documented in cls-spawn-tests.yml, not closed this pass (would need
+  its own rule id, not a branch here).
+rule:
+  pattern: format!($FMT, $$$ARGS)
+constraints:
+  FMT:
+    regex: "(?i)((sh|bash|zsh|dash|ksh|csh|tcsh|fish)\\s+-c|/bin/(sh|bash|zsh|dash|ksh)|cmd(\\.exe)?\\s*/c|powershell(\\.exe)?|pwsh)"
+
+---
+# ── rip-shell-spawned-by-name · CWE-78 ─────────────────────────────────────────────────────────
+# vuln : dvra-3 crates/config/src/lib.rs:158 (run_vulnerable, DVRA-002) and :192
+#        (unreachable_legacy_export::export, DVRA-006) — both
+#        `Command::new("sh").arg("-c").arg(..)`. Independently cross-confirmed in a SECOND
+#        implementation: dvra-2 crates/worker-engine/src/lib.rs:21 (run_post_process, DVRA-004) —
+#        `Command::new("/bin/sh").arg("-c").arg(&config.command)`.
+# fixed: dvra-3 lib.rs fn run_fixed (:174) — argv-style, no shell.
+# THE canonical case of the whole rule class — the one draft 1's "a literal program name is safe"
+# fix blinded us to (see dvra-seeds.yml). Matches the program name ITSELF, independent of whatever
+# `.arg`/`.args(..)` chain follows: the shell-ness lives in the name, not in how the caller
+# assembles its arguments afterward.
+#
+# The SHELL regex is intentionally a name allowlist, not "any Command::new(..)" — that is what
+# keeps it silent on valgrind/setarch/openssl (the original rustls CI false-positive source) without
+# reintroducing draft 1's "non-literal only" mistake. Path prefix is a general "anything ending in
+# a literal /" rather than an enumerated {/bin/, /usr/bin/} list, so /usr/local/bin/, /opt/homebrew/
+# /bin/, and busybox-style install prefixes are covered too — verified this cannot over-match
+# lookalikes (`/usr/bin/openssh-keygen`, `bashful-cleanup-tool`) because the pattern is fully
+# end-anchored: the basename must equal a listed name (+ optional .exe), not merely contain one.
+#
+# THREE callee spellings, one metavariable, one constraint block — safe to share because all three
+# branches bind the SAME $SHELL in the SAME role (the program-name argument), unlike the historical
+# any:-merge bug where two DIFFERENT metavariables ($FMT and $PROG) wrongly shared one constraint.
+# The fully-qualified branches are not theoretical: `std::process::Command::new(bin)` is exactly how
+# ripgrep spells its `--pre` preprocessor spawn (crates/core/search.rs:303) and its hostname-override
+# spawn (crates/core/flags/hiargs.rs:1373) — both real, both missed by the bare-`Command::new`-only
+# draft of this rule until this fix (see cls-spawn-tests.yml adversarial log). A `use X as Command`
+# rename is NOT covered and cannot be without symbol resolution — that stays a documented gap.
+id: rip-shell-spawned-by-name
+language: rust
+severity: error
+message: "spawning a shell interpreter by name — anything interpolated into its argument is injectable (CWE-78)"
+note: |
+  Fires inside #[cfg(test)] modules and build.rs-shaped code BY DESIGN -- that is a reachability
+  judgment for the downstream stage (see profiles/rust/fp-rules.txt RULE R2/R5), not this rule's job.
+  Does NOT catch a `use std::process::Command as Cmd` rename -- needs symbol resolution this rule
+  doesn't have; documented gap, not tuned away.
+rule:
+  any:
+    - pattern: Command::new($SHELL)
+    - pattern: std::process::Command::new($SHELL)
+    - pattern: process::Command::new($SHELL)
+constraints:
+  SHELL:
+    regex: "(?i)^\"([\\w./-]*/)?(sh|bash|zsh|dash|ksh|csh|tcsh|fish|ash|cmd|command\\.com|powershell|pwsh)(\\.exe)?\"$"
+
+---
+# ── rip-spawn-computed-program · CWE-78 ────────────────────────────────────────────────────────
+# vuln : dvra-3 crates/config/src/lib.rs:174 — fn run_fixed: `Command::new(&self.config.fixed_program)`.
+# negative (same concern, different sink): dvra-3 lib.rs fn safe_argument_example (:210) —
+#        `Command::new("printf")`, a literal.
+#
+# HONEST CALL, as requested: run_fixed is simultaneously rip-shell-spawned-by-name's NEGATIVE (it
+# never touches a shell — that gate is correct) and THIS rule's POSITIVE (the program identity is
+# not a literal — this gate is *also* correct). Both are right at once because the two rules ask
+# different questions: "is a shell being spawned by name" vs. "who controls the binary". This is
+# NOT noise. `PostProcessConfig` (same file, :41-49) carries `fixed_program: String` right next to
+# an explicit `threat_model: ThreatModel` field with variants `TrustedOperator | TenantControlled`
+# (:51-56) — the authors modeled, in-line, that whether this config is attacker-influenced is a
+# per-deployment question. That is exactly as threat-model-dependent as DVR-09, and the resolution
+# is the same one already adopted for rip-shell-command-string-built: the rule flags the SINK, the
+# threat model decides severity, and the rule must not try to guess the threat model itself.
+#
+# Constraint deliberately excludes ONLY the two literal-string node kinds, nothing else — a
+# format!(..)-computed name, a const-bound identifier, or a field access all still count as
+# "computed" here, which is intentional over-inclusion in service of recall (see draft-1 postmortem
+# in dvra-seeds.yml: excluding on anything beyond "is this node itself a literal" is how the rule
+# went blind to Command::new("sh") the first time).
+#
+# Same three-spelling `any:` as rip-shell-spawned-by-name, same justification: one metavariable
+# ($PROG), one meaning, one constraint. ripgrep's `hostname()` helper (flags/hiargs.rs:1355-1373,
+# doc comment: "makes it possible for end users to override how ripgrep determines the hostname")
+# is a real, shipped instance of exactly this shape reached only through the qualified spelling.
+id: rip-spawn-computed-program
+language: rust
+severity: warning
+message: "process spawned with a computed program name — who controls the binary? (CWE-78)"
+note: |
+  Broadest, most recall-favoring rule in the class: any non-literal program name counts, including
+  a const-bound identifier a human would call "basically a literal" (see draft-1 postmortem above).
+  Fires on dvra-3's run_fixed by design -- that is correct, not noise; see the note above.
+rule:
+  any:
+    - pattern: Command::new($PROG)
+    - pattern: std::process::Command::new($PROG)
+    - pattern: process::Command::new($PROG)
+constraints:
+  PROG:
+    not:
+      any:
+        - kind: string_literal
+        - kind: raw_string_literal

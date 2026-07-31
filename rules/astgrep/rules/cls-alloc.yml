@@ -1,0 +1,508 @@
+# ── HARVEST FROM THE OPENGREP TAINT EXPERIMENT — ONE ADOPTED, ONE REJECTED (2026-07-28) ─────────
+#
+# A parallel port of this class to OpenGrep taint (`rules/opengrep/rust/alloc-taint.yml`) scored
+# 2/11 against this rule's 11/11 on identical ground truth, and produced two recommendations.
+#
+# REJECTED — "add `read_exact` / `extend_from_slice` / `skip` to the sink list". The taint port found
+# 25 source-connected sites to this rule's 2, but all 23 extra came from those three sinks, and they
+# are a DIFFERENT AND WEAKER MECHANISM, not a missed instance of ours:
+#   * `read_exact(&mut buf)` reads `buf.len()` bytes — the allocation already happened, and the
+#     dangerous form `read_exact(&mut vec![0; n])` is already covered by the `vec!` sink.
+#   * `extend_from_slice(src)` grows by `src.len()`, not by a parsed N.
+#   * `skip(n)` advances a cursor; it allocates nothing.
+# The taint port's own report called them noisy — it matched `data.extend_from_slice(b"!<arch>\n")`
+# and `data.skip(4)` on *literal* arguments because the receiver was tainted. Measured directly here,
+# as an ast-grep probe with literals excluded (so strictly cleaner than the taint version):
+# **+93 hits across just 4 crates** (lopdf 44, object 41, image-png 8, ttf-parser 0) and **zero at
+# any ground-truth site** — several hundred hits corpus-wide for no measured recall. Not adopted.
+#
+# ADOPTED IN SPIRIT, NOT EXPRESSIBLE HERE — OpenGrep's `by-side-effect: true` sanitizer models
+# `if n > CAP { return }` correctly and survives the adversarial unrelated-cap case that silences
+# this rule's tier 2b. ast-grep has no sanitizer concept, so the gap is recorded rather than closed;
+# it is the strongest argument in the corpus for a dataflow engine on THIS class specifically.
+
+# ═══════════════════════════════════════════════════════════════════════════════════════════════
+# CLASS: allocation or indexing sized by a value parsed from untrusted bytes, with no upper bound.
+# (CWE-770 uncontrolled resource consumption / CWE-789 memory allocation with excessive size;
+#  where the sink is a subscript, CWE-129 improper validation of array index.)
+# ═══════════════════════════════════════════════════════════════════════════════════════════════
+#
+# WHY THIS FILE EXISTS. The pre-existing `rip-alloc-sized-by-request-uncapped` (dvra-seeds.yml)
+# requires `req.header(..)` / `req.query_get(..)` / `req.param(..)` in the enclosing function. It
+# was developed against a deliberately-vulnerable *web app* and scored ZERO across 12 real crates —
+# not low precision, zero coverage. Six parser crates in that corpus hold 35 `with_capacity` sites
+# and contain no `req.*` accessor anywhere. A byte parser reads its lengths from a buffer, not from
+# a request. These rules are the parser-shaped sibling of that rule.
+#
+# MECHANISM. A number that came from parsed bytes reaches an allocation or an index without an
+# upper-bound check. Ground truth this class was written and measured against:
+#   lopdf  xref `/W` field widths → `vec![0_u8; field_widths[0] as usize]`     merged, PR #533
+#   png    zTXt/iTXt `fdeflate::decompress_to_vec(v)` — size implicit in the input   open, #697
+#   png    `rgba_palette[input[0] as usize]` / PLTE-length slice of a 256-entry array
+#   image  AVIF decode-before-limits                                            (NOT covered, below)
+#
+# ── THE APPROXIMATION, stated plainly, because it is the whole story ────────────────────────────
+# ast-grep has NO DATAFLOW. source→sink cannot be traced. What is actually implemented:
+#
+#  (1) SINK SHAPE, syntactic. A sizing/indexing expression that is not a literal, not a
+#      SCREAMING_CONST, and not a bare `x.len()`. Excluding `x.len()` rests on a security argument,
+#      not an FP argument: an allocation bounded by the length of bytes the process ALREADY HOLDS
+#      cannot amplify. Amplifying shapes built from `.len()` (`x.len() * 64`, `x.len() + n`) are
+#      deliberately NOT excluded.
+#
+#  (2) SOURCE, only in tier 1, and only two hops: either the byte read is INSIDE the size
+#      expression, or the size variable is `let`-bound in the same function from an expression
+#      containing a byte read. The second form is crude intra-function dataflow bought with
+#      metavariable unification — `let $N = ..read..;` where `$N` is the same `$N` the allocation
+#      is sized by. Tier 2 requires NO source at all: in a codec crate every buffer is attacker
+#      bytes, and demanding a recognisable source is precisely the mistake that made the
+#      request-shaped rule blind to parser code.
+#
+#  (3) ABSENCE OF A CAP, in two dialects depending on what the syntax permits:
+#        · UNIFIED — for call-form sinks the size metavariable `$N` is bound, so the cap test is
+#          `not has: $N > $CAP` against that exact expression. Verified on probes: an unrelated
+#          `m > 100` elsewhere in the function does NOT silence `with_capacity(n)`, while
+#          `n > MAX` does.
+#        · TEXTUAL — inside `vec![..]` the macro token tree is OPAQUE to ast-grep. `has:` cannot
+#          descend into it and `vec![$X; $N]` only matches when the repeat count is a single token;
+#          `vec![0_u8; field_widths[0] as usize]` binds nothing. With no metavariable available the
+#          cap test degrades to "does the enclosing function contain ANY cap-shaped comparison".
+#      A CAP-SHAPED comparison is deliberately only `>` / `>=` against something that LOOKS like a
+#      limit: a SCREAMING_CONST, a 3-or-more-digit literal, or an identifier containing
+#      max/limit/cap/bound/budget/remaining. `<` and `<=` are deliberately NOT cap-shaped, and a
+#      1-or-2-digit literal is not either. That is exactly why the PRE-FIX lopdf site still fires
+#      despite holding `field_widths.len() < 3` (a sufficiency check, not a cap) while the MERGED
+#      fix's `field_widths[0] > MAX_XREF_FIELD_WIDTH` silences it. The cost is paid on purpose: an
+#      upper bound written backwards (`MAX < n`, `n <= MAX`) is not recognised, so those sites keep
+#      firing. A false positive costs one agent read; a false negative is permanent.
+#
+#  (4) IMPLICIT-SIZE sinks get their own rule (rip-decompress-output-unbounded), because the png
+#      zTXt bomb has NO length field anywhere — output size is a function of the compressed input,
+#      so every size-expression rule above is structurally blind to it.
+#
+# ── WHAT THESE RULES CANNOT SEE — the honest list ───────────────────────────────────────────────
+#   · A cap in a CALLER. Every rule here is function-local; a private fn whose only caller
+#     validates the length is a guaranteed false positive.
+#   · A cap applied inside a HELPER (`let n = checked_len(hdr)?;`) — invisible → fires → FP.
+#   · A cap enforced by a TYPE. `hdr.count: u8` can never exceed 255; the matcher sees an
+#     identifier. Same blind spot LESSONS records for quick-xml's u16 counter.
+#   · A cap written as an unusual comparison direction (`MAX < n`, `n <= MAX`) or as a predicate
+#     (`if !fits(n) {..}`, `ensure_capacity(n)?`) → fires → FP.
+#   · A LENGTH THREADED THROUGH A CALL. `read_chunk(len)` where `len` was parsed three frames up
+#     is invisible unless the allocation itself is dynamic (tier 2 catches it only by shape).
+#   · ORDERING bugs — image's AVIF decode-before-limits. "The cap exists but runs too late" is a
+#     DIFFERENTIAL between two paths, not a property of one site; no single line is wrong. That
+#     belongs to the limit-bypass enumerator (rip-families.yml / RIP-E010), not here. This class
+#     does NOT claim the image/AVIF ground-truth site.
+#   · Multiplication OVERFLOW as such. `vec![0; w * h]` fires as an uncapped allocation, but that
+#     the product wraps in release is the counter-overflow family, not this one.
+#   · Anything inside a macro other than the `vec!` family, and anything inside it finer than text.
+#   · A clamp applied at the `let` rather than at the allocation, when the sink is a macro:
+#     `let n = x.clamp(0, MAX); vec![0u8; n]` still fires — the macro's text holds no `.clamp(`, and
+#     a clamp is a call, not the cap-shaped COMPARISON the textual guard looks for. Measured, not
+#     theorised; left unfixed on purpose, because widening the guard to "any `.min(`/`.clamp(`
+#     anywhere in the function" would silence real sites and a false hit costs one read.
+#   · CONFIRMED by adversarial test: an UNRELATED cap-shaped comparison in the same function
+#     (`if other > MAX_OTHER {..}` next to `vec![0u8; hdr.data_len as usize]`) silences the macro
+#     rule completely. This is the single largest recall hole in the file and it is structural —
+#     it disappears only if ast-grep learns to descend into macro token trees.
+#   · Fallible allocation is treated as a MITIGATION: `try_reserve`, `try_with_capacity` and
+#     `image`'s `vec_try_with_capacity` are excluded from tier 2 (they return `Result` instead of
+#     aborting). They remain in tier 1, where the source is visible — an attacker-chosen size is
+#     still worth a read even when the allocation is fallible.
+#
+# ── CALIBRATION ────────────────────────────────────────────────────────────────────────────────
+# This is a CANDIDATE GENERATOR, never a verdict — a reachability judge and a finder run
+# downstream. Tuned for RECALL and NOT narrowed until quiet. The sub-shape that carries the signal
+# is tier 1 (`rip-alloc-sized-by-parsed-length`, `rip-decompress-output-unbounded`); tier 2 is the
+# recall net and carries the false positives. Measured volume and FP fractions are in the campaign
+# report, not asserted here.
+#
+# SEVERITY encodes the tier, not the confidence of a verdict: `warning` = source-connected (tier 1),
+# `info` = shape-only recall net (tier 2). Nothing here is `error` — ast-grep exits non-zero on
+# `error`, and this rule dir's contract (sgconfig.yml) is that its output is a WORKLIST, not alerts.
+#
+# Test, bench, example and fuzz paths are excluded from every rule: they are not attack surface and
+# they dominated raw volume (hyper 34/34 `read_to_end` hits were tests, examples and benches).
+# Interop harnesses that do not use those directory names are NOT excluded — rustls keeps its in
+# `openssl-tests/` and `bogo/`, and 4 of its 4 decompress hits came from there.
+# `#[cfg(test)] mod test(s)` blocks inside `src/` are excluded too — they were 25 of image-png's 88
+# raw hits. Test helpers in a module NOT named `test`/`tests` remain: the residual noise source.
+
+# ── TIER 1 · allocation sized by a value that demonstrably came from a byte read ────────────────
+# `Vec::with_capacity(r.read_u32::<BigEndian>()? as usize)`, or the two-hop form
+# `let n = u32::from_be_bytes(b) as usize; ... buf.resize(n, 0)`.
+# Source and sink are connected here (in-expression, or through one `let` in the same function),
+# so this tier is close to a verdict: the attacker picks the allocation size unless a cap sits on
+# the same expression, which the unified `not` already removes.
+id: rip-alloc-sized-by-parsed-length
+language: rust
+severity: warning
+message: "allocation sized by a value read from untrusted bytes, with no upper bound on that value (CWE-789)"
+note: |
+  The size is the byte read, or a local let-bound directly from one. Attacker chooses the
+  allocation size. Check for a cap between the read and the allocation, in a caller, or in the type.
+files:
+  - "**/*.rs"
+ignores:
+  - "**/tests/**"
+  - "**/test/**"
+  - "**/*-tests/**"
+  - "**/*_tests/**"
+  - "**/benches/**"
+  - "**/bench/**"
+  - "**/examples/**"
+  - "**/example/**"
+  - "**/fuzz/**"
+  - "**/build.rs"
+rule:
+  all:
+    - any:
+        # cast-stripping forms first, so $N binds to the pre-cast expression a cap is written on
+        - pattern: $C::with_capacity($N as $T)
+        - pattern: $V.reserve($N as $T)
+        - pattern: $V.reserve_exact($N as $T)
+        - pattern: $V.try_reserve($N as $T)
+        - pattern: $V.resize($N as $T, $$$REST)
+        - pattern: $V.resize_with($N as $T, $$$REST)
+        - pattern: $V.set_len($N as $T)
+        - pattern: vec_try_with_capacity($N as $T)
+        - pattern: $C::with_capacity($N)
+        - pattern: $V.reserve($N)
+        - pattern: $V.reserve_exact($N)
+        - pattern: $V.try_reserve($N)
+        - pattern: $V.resize($N, $$$REST)
+        - pattern: $V.resize_with($N, $$$REST)
+        - pattern: $V.set_len($N)
+        - pattern: vec_try_with_capacity($N)
+        - pattern: $V.repeat($N)
+    - any:
+        # (a) the byte read is inside the size expression
+        - has:
+            stopBy: end
+            all:
+              - kind: call_expression
+              - regex: '\b(?:read_[iu](?:8|16|24|32|48|64|128)|get_[iu](?:8|16|24|32|48|64|128)(?:_[lb]e)?|read_uint|read_int|get_uint|read_varint|read_leb128|from_be_bytes|from_le_bytes|from_ne_bytes|read_at|read_bytes|read_slice|read_array|next_u32|next_u64)\b|(?:\.|::)read(?:_at)?::<'
+        # (b) the size is a local let-bound from an expression containing a byte read
+        - inside:
+            kind: function_item
+            stopBy: end
+            has:
+              stopBy: end
+              all:
+                - any:
+                    - pattern: let $N = $INIT;
+                    - pattern: let mut $N = $INIT;
+                - has:
+                    stopBy: end
+                    all:
+                      - kind: call_expression
+                      - regex: '\b(?:read_[iu](?:8|16|24|32|48|64|128)|get_[iu](?:8|16|24|32|48|64|128)(?:_[lb]e)?|read_uint|read_int|get_uint|read_varint|read_leb128|from_be_bytes|from_le_bytes|from_ne_bytes|read_at|read_bytes|read_slice|read_array|next_u32|next_u64)\b|(?:\.|::)read(?:_at)?::<'
+    # …and that value is not clamped at the allocation
+    - not:
+        has:
+          stopBy: end
+          any:
+            - pattern: $A.min($B)
+            - pattern: $A.clamp($B, $C)
+    # …nor anywhere else in the function
+    - inside:
+        kind: function_item
+        stopBy: end
+        not:
+          has:
+            stopBy: end
+            any:
+              - pattern: $N > $CAP
+              - pattern: $N >= $CAP
+              - pattern: $N as $T2 > $CAP
+              - pattern: $N as $T2 >= $CAP
+              - pattern: $N.min($CAP)
+              - pattern: $N.clamp($LO, $HI)
+              - pattern: $N.checked_mul($CAP)
+    - not:
+        inside:
+          stopBy: end
+          kind: mod_item
+          has:
+            field: name
+            regex: '^tests?$'
+
+---
+# ── TIER 2a · call-form allocation with a dynamic, uncapped size ────────────────────────────────
+# The workhorse and the recall net. Size is neither a literal, nor a SCREAMING_CONST, nor a bare
+# `x.len()`; and the SAME expression is not compared against an upper bound anywhere in the
+# enclosing function. No source evidence is required — see approximation (2) above.
+# This tier carries the false positives. Dominant FP families, in order: capacity from a
+# caller-validated argument; capacity derived by arithmetic from `.len()`; capacity bounded by its
+# own type; image-processing code whose "size" comes from already-decoded dimensions rather than
+# from the file. Each costs one read downstream.
+id: rip-alloc-uncapped-dynamic-size
+language: rust
+severity: info
+message: "allocation sized by a dynamic value with no upper-bound check on that value in this function (CWE-770)"
+note: |
+  Function-local check only, and NO source evidence — a cap in a caller, in a helper, or implied by
+  the type is invisible and makes this a false positive. Establish the value's provenance first.
+files:
+  - "**/*.rs"
+ignores:
+  - "**/tests/**"
+  - "**/test/**"
+  - "**/*-tests/**"
+  - "**/*_tests/**"
+  - "**/benches/**"
+  - "**/bench/**"
+  - "**/examples/**"
+  - "**/example/**"
+  - "**/fuzz/**"
+  - "**/build.rs"
+rule:
+  all:
+    - any:
+        - pattern: $C::with_capacity($N as $T)
+        - pattern: $V.reserve($N as $T)
+        - pattern: $V.reserve_exact($N as $T)
+        - pattern: $V.resize($N as $T, $$$REST)
+        - pattern: $V.resize_with($N as $T, $$$REST)
+        - pattern: $V.set_len($N as $T)
+        - pattern: $C::with_capacity($N)
+        - pattern: $V.reserve($N)
+        - pattern: $V.reserve_exact($N)
+        - pattern: $V.resize($N, $$$REST)
+        - pattern: $V.resize_with($N, $$$REST)
+        - pattern: $V.set_len($N)
+        - pattern: $V.repeat($N)
+    - not:
+        has:
+          stopBy: end
+          any:
+            - pattern: $A.min($B)
+            - pattern: $A.clamp($B, $C)
+    - inside:
+        kind: function_item
+        stopBy: end
+        not:
+          has:
+            stopBy: end
+            any:
+              - pattern: $N > $CAP
+              - pattern: $N >= $CAP
+              - pattern: $N as $T2 > $CAP
+              - pattern: $N as $T2 >= $CAP
+              - pattern: $N.min($CAP)
+              - pattern: $N.clamp($LO, $HI)
+              - pattern: $N.checked_mul($CAP)
+    - not:
+        inside:
+          stopBy: end
+          kind: mod_item
+          has:
+            field: name
+            regex: '^tests?$'
+constraints:
+  N:
+    not:
+      regex: '^(?:[0-9][0-9_]*(?:usize|u8|u16|u32|u64|i32|i64)?|[A-Z][A-Z0-9_]{1,}|[A-Za-z_][A-Za-z_0-9.]*\.len\(\)|[A-Za-z_][A-Za-z_0-9.]*\.size\(\)|[A-Za-z_][A-Za-z_0-9.]*\.count\(\))$'
+
+---
+# ── TIER 2b · `vec![elem; n]` with a dynamic, uncapped repeat count ─────────────────────────────
+# THIS IS THE lopdf `/W` SHAPE: `vec![0_u8; field_widths[0] as usize]`.
+# `vec![0u8; n]` allocates AND zeroes n bytes eagerly — unlike `with_capacity`, an oversized n is
+# not merely a reservation, it is a committed write of n bytes.
+# ast-grep cannot descend into a macro token tree, so there is no `$N` to unify against a cap and
+# the whole detector runs on the macro's TEXT: reject literal / SCREAMING_CONST / `.len()` repeat
+# counts, then require that the enclosing function holds no cap-shaped comparison at all. That last
+# clause is coarser than tier 2a — any cap-shaped `>` anywhere in the function silences every
+# `vec![_; n]` in it — and it is exactly why the merged lopdf fix goes quiet while the pre-fix code
+# fires on all three widths.
+id: rip-alloc-vec-repeat-uncapped
+language: rust
+severity: info
+message: "vec![_; n] whose repeat count is a dynamic value, in a function with no upper-bound check (CWE-789)"
+note: |
+  Eager zeroing allocation. Cap detection here is function-scoped and TEXTUAL (macro token trees
+  are opaque to the matcher), so a cap on a different value in the same function silences this, and
+  a cap in a caller is invisible.
+files:
+  - "**/*.rs"
+ignores:
+  - "**/tests/**"
+  - "**/test/**"
+  - "**/*-tests/**"
+  - "**/*_tests/**"
+  - "**/benches/**"
+  - "**/bench/**"
+  - "**/examples/**"
+  - "**/example/**"
+  - "**/fuzz/**"
+  - "**/build.rs"
+rule:
+  kind: macro_invocation
+  all:
+    - regex: '^(?:vec|smallvec|tinyvec|arrayvec|bitvec)!\s*\['
+    - regex: '(?s);'
+    # repeat count is not a literal
+    - not: { regex: '(?s);\s*[0-9][0-9_]*(?:usize|u8|u16|u32|u64|i32|i64|f32|f64)?\s*\]\s*$' }
+    # …not a const
+    - not: { regex: '(?s);\s*[A-Z][A-Z0-9_]*\s*\]\s*$' }
+    # …not the measured length of something already in memory
+    - not: { regex: '(?s);\s*[A-Za-z_][A-Za-z_0-9.]*\.len\(\)\s*\]\s*$' }
+    # …and not clamped inline
+    - not: { regex: '(?s)\.min\(|\.clamp\(' }
+    - inside:
+        kind: function_item
+        stopBy: end
+        not:
+          has:
+            stopBy: end
+            all:
+              - kind: binary_expression
+              - regex: '>=?\s*(?:[A-Z][A-Z0-9_]{2,}|[0-9]{3,}|[A-Za-z_.:]*(?:max|MAX|Max|limit|Limit|LIMIT|cap|bound|budget|remaining)[A-Za-z_0-9.():<>]*)'
+    - not:
+        inside:
+          stopBy: end
+          kind: mod_item
+          has:
+            field: name
+            regex: '^tests?$'
+
+---
+# ── TIER 2c · index or slice bounded by a parsed or computed value ──────────────────────────────
+# THIS IS THE png PLTE SHAPE: `rgba_palette[input[0] as usize]` indexes a fixed 256-entry array
+# with a raw parsed byte, and `rgba_palette[trns.len()..(palette.len() / 3)]` bounds it with the
+# parsed PLTE chunk length divided by three.
+# Indexing is far too common to flag wholesale, so the rule keys on the three subscript shapes that
+# actually signal "this offset came from the file":
+#     a widening CAST      `buf[n as usize]`      — a parsed integer used as an offset
+#     SCALING arithmetic   `buf[..len / 3]`       — a parsed count converted to an offset
+#     a STRUCT FIELD       `&data[..hdr.length]`  — a decoded header field used as an offset
+# A bare `buf[i]` loop variable and cursor arithmetic (`buf[i + 1]`, `buf[i - 1]`) are deliberately
+# NOT flagged: `+`/`-` are cursor moves, `*` `/` `%` `<<` are the scaling ops that turn a parsed
+# count into a large offset. This is the one place recall was traded for volume, stated not hidden.
+id: rip-index-by-parsed-value-uncapped
+language: rust
+severity: info
+message: "index or slice bound is a cast, a scaled value or a decoded field, with no upper-bound check in this function (CWE-129)"
+note: |
+  Panic on out-of-range is the usual outcome; on a fixed-size array fed from a variable-length
+  chunk it is attacker-triggerable. Check what bounds this subscript against the indexed length.
+files:
+  - "**/*.rs"
+ignores:
+  - "**/tests/**"
+  - "**/test/**"
+  - "**/*-tests/**"
+  - "**/*_tests/**"
+  - "**/benches/**"
+  - "**/bench/**"
+  - "**/examples/**"
+  - "**/example/**"
+  - "**/fuzz/**"
+  - "**/build.rs"
+rule:
+  any:
+    - all:
+        - kind: index_expression
+        - any:
+            # widening cast inside the subscript
+            - regex: '(?s)\[[^\[]*\bas\s+(?:usize|isize|u8|u16|u32|u64|u128|i8|i16|i32|i64)\b'
+            # scaling arithmetic inside the subscript
+            - regex: '(?s)\[[^\[]*(?:\*|/|%|<<)[^\[]*\]'
+            # struct field as the subscript / range bound
+            - regex: '(?s)\[\s*\.{0,2}\s*[A-Za-z_][A-Za-z_0-9]*(?:\.[A-Za-z_][A-Za-z_0-9]*)+\s*(?:\.\.)?\s*\]'
+        - not:
+            has:
+              stopBy: end
+              any:
+                - pattern: $A.min($B)
+                - pattern: $A.clamp($B, $C)
+        - inside:
+            kind: function_item
+            stopBy: end
+            not:
+              has:
+                stopBy: end
+                all:
+                  - kind: binary_expression
+                  - regex: '>=?\s*(?:[A-Z][A-Z0-9_]{2,}|[0-9]{3,}|[A-Za-z_.:]*(?:max|MAX|Max|limit|Limit|LIMIT|cap|bound|budget|remaining)[A-Za-z_0-9.():<>]*)'
+        - not:
+            inside:
+              stopBy: end
+              kind: mod_item
+              has:
+                field: name
+                regex: '^tests?$'
+    # unchecked indexing is worth a read unconditionally — it is UB, not a panic
+    - all:
+        - any:
+            - pattern: $BUF.get_unchecked($I)
+            - pattern: $BUF.get_unchecked_mut($I)
+        - not:
+            inside:
+              stopBy: end
+              kind: mod_item
+              has:
+                field: name
+                regex: '^tests?$'
+
+---
+# ── TIER 1 · implicit size: decompression / drain-to-end with no output bound ───────────────────
+# THIS IS THE png zTXt/iTXt SHAPE (#697, open): `fdeflate::decompress_to_vec(v)`. There is no
+# length field anywhere — output size is a function of the compressed input, so every rule above is
+# structurally blind to it. A 2 MiB cap already existed in the crate (DECOMPRESSION_LIMIT) and
+# `get_text()` simply did not use it; the fix routes through `decompress_to_vec_bounded(v, limit)`.
+# Keying on "a decompression or drain sink that takes no limit argument" catches the whole family
+# (zip bombs, `read_to_end` on an attacker socket) at low volume.
+# `read_to_end` is required to take `&mut $V`: quick-xml has its OWN `Reader::read_to_end(end_name)`
+# that skips to a matching end tag, and 20 of 22 hits in that crate were that name collision.
+id: rip-decompress-output-unbounded
+language: rust
+severity: warning
+message: "decompression or read-to-end with no output-size bound — the output size is chosen by the compressed input (CWE-409 decompression bomb)"
+note: |
+  Look for a `*_bounded` / `*_with_limit` sibling in the same crate, or `Read::take(n)` before the
+  drain. If a limit constant already exists in the crate and this path skips it, that is the
+  limit-bypass family and is directly reportable.
+files:
+  - "**/*.rs"
+ignores:
+  - "**/tests/**"
+  - "**/test/**"
+  - "**/*-tests/**"
+  - "**/*_tests/**"
+  - "**/benches/**"
+  - "**/bench/**"
+  - "**/examples/**"
+  - "**/example/**"
+  - "**/fuzz/**"
+  - "**/build.rs"
+rule:
+  all:
+    - not:
+        inside:
+          stopBy: end
+          kind: mod_item
+          has:
+            field: name
+            regex: '^tests?$'
+    - any:
+        - pattern: $M::decompress_to_vec($X)
+        - pattern: decompress_to_vec($X)
+        - pattern: $M::decompress_to_vec_zlib($X)
+        - pattern: decompress_to_vec_zlib($X)
+        - pattern: $M::inflate($X)
+        - pattern: $M::uncompress($X)
+        - all:
+            - any:
+                - pattern: $R.read_to_end(&mut $V)
+                - pattern: $R.read_to_string(&mut $V)
+            - not:
+                inside:
+                  stopBy: end
+                  kind: function_item
+                  has:
+                    stopBy: end
+                    any:
+                      - pattern: $A.take($B)
+                      - pattern: $A.by_ref().take($B)

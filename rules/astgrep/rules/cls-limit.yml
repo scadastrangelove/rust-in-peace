@@ -1,0 +1,396 @@
+# =============================================================================
+# cls-limit — the "limit-bypass" class ENUMERATOR (not a matcher)
+# =============================================================================
+#
+# WHY THIS IS ENUMERATE-ONLY
+# --------------------------
+# Every finding in this class is a RELATION, never a single bad line: a cap
+# exists, one entry point honours it, a sibling entry point does not. No line
+# is individually wrong, so no pattern can match "the bug". Both halves of the
+# relation ARE enumerable, so this file emits both and lets the downstream
+# agent perform the mirror walk (compare A against B).
+#
+#   Half A  (cls-limit-{const,field,fn,param,variant,type,init,guard,magic})
+#           WHERE CAPS LIVE. Every syntactic shape in which this corpus
+#           expresses a cap/budget/quota.
+#   Half B  (cls-limit-{optout,sibling-recursion,sibling-alloc})
+#           WHERE THE CAP IS ABSENT. Sites that disable a cap outright, and
+#           siblings of limit-bearing code that never reference the limit.
+#
+# SUCCESS CRITERION IS COMPLETENESS, NOT PRECISION. A missed cap is a missed
+# mirror-walk pair. Volume is acceptable; silence is not. Do NOT "tune" this
+# by deleting name alternatives — that is how caps go missing.
+#
+# VALIDATED AGAINST GROUND TRUTH (crate : what the rules must surface)
+# -------------------------------------------------------------------
+#   seed crate : a recursion limit expressed several ways, none of them a const
+#                (a field, a guard fn, `*_with_recursion_limit` entry points, a
+#                cap parameter, an `*Exceeded` variant, a bare-literal default).
+#                Derived from sibling deserialize methods that re-enter without
+#                consulting a recursion limit the crate defines
+#                (private advisory; mechanism withheld).
+#   miniz_oxide: `decompress_with_limit` is honoured by one caller and bypassed
+#                by `decompress` / `decompress_to_vec` / `decompress_to_vec_zlib`,
+#                which pass `usize::MAX`.  -> cls-limit-optout surfaces all three.
+#   object     : Zstd `read_to_end` with no size cap (PR #951 added `.take(limit)`).
+#   image      : `Limits` type + per-codec `set_limits`; codecs that stub it out.
+#
+# SHAPES KNOWINGLY NOT COVERED (documented misses — see report)
+# ------------------------------------------------------------
+#   * Caps enforced inside `macro_rules!` bodies (hyper h1/decode.rs put_u8!,
+#     h2 limited_write_buf!). The check has no enclosing fn and the bound
+#     arrives as a macro metavariable.
+#   * Caps imported from another crate (image delegates to `tiff::Limits`);
+#     the cap crosses a crate boundary and only the local handle is visible.
+#   * Type-invariant caps with no cap-ish identifier — e.g. a `u8` field that
+#     structurally bounds a count, or `impl PayloadSize for U24 { const MAX }`.
+#     cls-limit-type catches the named subset (NonZero*, *Limit* types) only.
+#   * Caps expressed purely as a fixed-size array + `try_push` (gimli
+#     `[(Register, RegisterRule); MAX_RULES]` + `Error::StackFull`). The const
+#     is caught by cls-limit-const; the enforcement site is not.
+#   * `.min()` / `.clamp()` silent truncation is caught only when an operand is
+#     cap-named; anonymous clamps are missed.
+#   * Dataflow: "this allocation is sized by attacker-controlled input" is not
+#     decidable syntactically. cls-limit-sibling-alloc approximates it by
+#     requiring a NON-constant size expression.
+#
+# OPERATIONAL NOTES (cost us real time — do not relearn these)
+# -----------------------------------------------------------
+#   * ONE malformed rule file makes ast-grep abort the WHOLE scan and emit
+#     ZERO findings, reporting the error ONLY on stderr. Never discard stderr;
+#     a "clean" run with no output is usually a parse error, not a clean crate.
+#   * Quote every `pattern:` containing `": "` or YAML eats it. Preferring
+#     `kind:` + `has:` over `pattern:` avoids the problem entirely.
+#   * `if $X > $N` is NOT a standalone Rust parse and yields
+#     "Rule must specify a set of AST kinds to match". Use `kind:
+#     binary_expression`.
+#   * ast-grep 0.45.0: a rule-level `constraints:` block does NOT veto `any:`
+#     branches that fail to bind the metavariable (verified empirically — the
+#     function branch still fires). Regardless, this file scopes every regex
+#     inside its own branch so behaviour cannot drift between versions.
+# =============================================================================
+
+# --- Half A.1: named constants ------------------------------------------------
+# Covers module-level, function-local AND associated (impl-scope) consts, which
+# `pattern: const $L: $T = $V` handles but `kind:` handles more robustly.
+# KNOWN NOISE: object/elf.rs|pe.rs|macho.rs carry hundreds of MAX_* PROTOCOL
+# constants (IMAGE_SYM_SECTION_MAX, CPU_SUBTYPE_*_MAX). Those are format-spec
+# values, not budgets. They are retained deliberately: suppressing on name is
+# how a real cap gets dropped. Triage them by whether they gate a loop/alloc.
+id: cls-limit-const
+language: rust
+severity: hint
+message: "limit-inventory[const]: named constant that may express a cap/budget"
+rule:
+  any:
+    - kind: const_item
+      has:
+        field: name
+        regex: "(?i)(^max$|^min$|max_|_max$|limit|_cap$|cap_|capacity|budget|quota|threshold|window|ceiling|headroom|^fuel$|^gas$|slack|allowance|_bound$|_bounds$|bounded|depth|nesting|recurs|size$|_len$|count$)"
+    - kind: static_item
+      has:
+        field: name
+        regex: "(?i)(max_|_max$|limit|_cap$|cap_|capacity|budget|quota|threshold|window|_bound$|_bounds$|bounded|depth|nesting|recurs)"
+
+---
+# --- Half A.2: struct fields --------------------------------------------------
+# The single most under-detected shape: the seed crate's ENTIRE recursion limit is a
+# field named `recurse` — no "limit"/"max" token anywhere. Vocabulary is widened
+# to the flow-control dialect (window/credit/available/remaining) because h2 and
+# quinn express every budget that way and match none of the obvious keywords.
+id: cls-limit-field
+language: rust
+severity: hint
+message: "limit-inventory[field]: struct field that may hold a cap/budget/counter"
+rule:
+  kind: field_declaration
+  has:
+    field: name
+    regex: "(?i)(^max$|^max_|_max$|limit|^cap$|_cap$|capacity|budget|remaining|threshold|window|credit|available|quota|ceiling|headroom|^fuel$|^gas$|slack|^depth$|nesting|recurs|_size$|allowance|left$)"
+
+---
+# --- Half A.3: function names -------------------------------------------------
+# Deliberately CONTAINS, not ENDS-WITH. The original enumerator anchored with
+# `$` on five suffixes and therefore could not see the seed crate's
+# `from_reader_with_recursion_limit` at all. Also covers the builder/setter
+# family (set_max_*, with_limits, max_frame_size) and the OPT-OUT family
+# (no_limits, unlimited) which marks caps being switched off.
+id: cls-limit-fn
+language: rust
+severity: hint
+message: "limit-inventory[fn]: function whose name implies it takes/sets/enforces a cap"
+rule:
+  kind: function_item
+  has:
+    field: name
+    regex: "(?i)(limit|^max_|_max_|_max$|bounded|capped|_cap$|budget|recurs|nesting|no_limits|unlimited|quota|threshold|check_dimensions|reserve|try_reserve|with_capacity)"
+
+---
+# --- Half A.4: parameters threading a cap -------------------------------------
+# lopdf is the archetype: `limit: Option<usize>` is threaded through an entire
+# decode subsystem, and `depth: usize` through every nom combinator. A cap
+# passed as a parameter has no declaration site to find, so this is the only
+# shape that sees it.
+id: cls-limit-param
+language: rust
+severity: hint
+message: "limit-inventory[param]: parameter threading a cap/depth/budget through calls"
+rule:
+  kind: parameter
+  has:
+    field: pattern
+    regex: "(?i)(^max_|_max$|limit|^depth$|budget|^remaining$|quota|threshold|nesting|recurs|_cap$)"
+
+---
+# --- Half A.5: error / status variants ----------------------------------------
+# HIGHEST-PRECISION SHAPE IN THE FILE, and the cheapest proof that a cap exists
+# at all: a crate does not define `RecursionLimitExceeded` unless something
+# enforces recursion. Use these as the ENTRY POINT to the mirror walk — grep the
+# variant's construction sites, then ask which sibling paths never construct it.
+id: cls-limit-variant
+language: rust
+severity: hint
+message: "limit-inventory[variant]: error/status variant proving a cap is enforced somewhere"
+rule:
+  kind: enum_variant
+  has:
+    field: name
+    regex: "(Exceeded|Exhausted|TooLarge|TooBig|TooDeep|TooMany|TooLong|TooSmall|Oversized|LimitReached|LimitError|SizeLimit|DepthLimit|NestLimit|StackFull|Overflow|OutOfMemory|InsufficientMemory|Limit$|Limits$)"
+
+---
+# --- Half A.6: dedicated limit types ------------------------------------------
+# image / image-png / bytes / regex all hoist the cap into a TYPE. Once a
+# `Limits` struct exists, the mirror walk is "which codecs accept it and which
+# ignore it" — image's broken-Limits-across-codecs finding is exactly that.
+# NonZero*/newtype forms encode the cap as a type invariant.
+id: cls-limit-type
+language: rust
+severity: hint
+message: "limit-inventory[type]: dedicated limit/budget type or type-invariant cap"
+rule:
+  any:
+    - kind: struct_item
+      has:
+        field: name
+        regex: "(Limit|Limits|Limiter|Budget|Quota|Bounded|Capped)"
+    - kind: enum_item
+      has:
+        field: name
+        regex: "(Limit|Limits|Limiter|Budget|Quota)"
+    - kind: type_identifier
+      regex: "^(Limits|Limit|NonZeroUsize|NonZeroU64|NonZeroU32|NonZeroU16|NonZeroU8)$"
+
+---
+# --- Half A.7: field initializers = the DEFAULT value of a cap ----------------
+# Catches caps whose default is a bare literal with no named const — invisible
+# to every const/static rule. The seed crate's `recurse: 256` (twice) is only ever
+# seen here, as is image-png's cap-disabling `Limits { bytes: usize::MAX }`.
+id: cls-limit-init
+language: rust
+severity: hint
+message: "limit-inventory[init]: default/assigned value of a cap field"
+rule:
+  kind: field_initializer
+  has:
+    field: field
+    regex: "(?i)(^max_|_max$|limit|limits|^cap$|_cap$|budget|^remaining$|threshold|window|credit|quota|^depth$|nesting|^recurse$)"
+
+---
+# --- Half A.8: enforcement sites (countdown budgets, bounding, clamping) ------
+# A cap that is declared but never enforced is the whole bug. This lists the
+# ENFORCEMENT primitives so the mirror walk can ask "declared here, enforced
+# where?". Covers: countdown budgets (`self.recurse -= 1`, saturating_sub /
+# checked_sub — image-png and the seed crate enforce this way and never compare
+# against a ceiling), the `.take(n)` reader bound (object's PR #951 fix), and
+# min/clamp truncation.
+id: cls-limit-guard
+language: rust
+severity: hint
+message: "limit-inventory[guard]: cap ENFORCEMENT site (countdown, .take bound, clamp)"
+# MEASURED TUNING (do not revert without re-measuring): the arithmetic forms
+# below are gated on a cap-ish token appearing IN THE EXPRESSION. Ungated, a
+# bare `saturating_sub`/`checked_sub`/`+=` matches all integer arithmetic in the
+# corpus and this rule measured only ~30% signal (`out_slice.len().saturating_sub(3)`,
+# `output_index += advance_output_bytes`). `bytes`/`size`/`len` were removed from
+# the token set for the same reason. This is NOT name-suppression of a cap: it
+# requires a cap to be NAMED somewhere in the expression before calling an
+# arithmetic op a limit guard. `.take()`/`try_reserve` stay ungated — they are
+# bounding primitives regardless of naming.
+rule:
+  any:
+    - pattern: "$R.take($N)"
+    - pattern: "$X.try_reserve($N)"
+    - pattern: "$X.try_reserve_exact($N)"
+    - all:
+        - any:
+            - pattern: "$X.saturating_sub($N)"
+            - pattern: "$X.checked_sub($N)"
+        - regex: "(?i)(max|limit|cap|budget|remaining|window|credit|quota|depth|recurse|nesting|threshold|available)"
+    - kind: compound_assignment_expr
+      regex: "(?i)(max_|_limit|limits|budget|remaining|depth|recurse|window|credit|nesting|quota|threshold)"
+    - kind: call_expression
+      all:
+        - regex: "\\.(min|clamp)\\("
+        - regex: "(?i)(max|limit|cap|budget|remaining|window|quota|threshold)"
+
+---
+# --- Half A.9: inline magic-number caps ---------------------------------------
+# Caps with NO named constant: `if count > 15`, `if password.len() > 127`.
+# SCOPED DELIBERATELY: the left operand must be size-ish and the literal must
+# have >=2 digits. Unscoped, this shape returns 307 hits on object alone and is
+# unreadable; scoped it returns ~26. This is the ONE rule here that trades
+# completeness for usability, so state the cost plainly: it MISSES single-digit
+# caps (`if depth > 8`) and caps on oddly-named operands. It is a supplement to
+# the named shapes, never the primary detector.
+id: cls-limit-magic
+language: rust
+severity: hint
+message: "limit-inventory[magic]: comparison against an inline numeric cap (no named const)"
+rule:
+  kind: binary_expression
+  all:
+    - regex: "(>=|<=|>|<)\\s*\\(?\\s*([0-9][0-9_]{1,}|0x[0-9a-fA-F]{2,}|1\\s*<<)"
+    - has:
+        field: left
+        regex: "(?i)(len|size|count|depth|num|remaining|total|bytes|width|height|capacity|nesting|recurs|level|index|offset)"
+
+# =============================================================================
+# HALF B — THE MIRROR. Where the cap is absent.
+# =============================================================================
+
+---
+# --- Half B.1: the cap, explicitly switched off -------------------------------
+# THE HIGHEST-VALUE RULE IN THIS FILE. A sentinel (`usize::MAX`) or `None`
+# passed where a cap is expected is a cap being disabled ON PURPOSE, and the
+# unlimited public twin of a `_with_limit` API is almost always implemented
+# exactly this way.
+#
+# GROUND TRUTH: on miniz_oxide this returns 4 hits, 3 of which are the finding:
+#   inflate/core.rs:1406  decompress_with_limit(r, in_buf, out, out_pos, usize::MAX, flags)
+#   inflate/mod.rs:146    decompress_to_vec_inner(input, 0, usize::MAX)
+#   inflate/mod.rs:159    decompress_to_vec_inner(input, TINFL_FLAG_PARSE_ZLIB_HEADER, usize::MAX)
+#
+# The `arguments contains a comma` test (>=2 args) is load-bearing: without it
+# this rule drowns in numeric conversions like `u64::from(u32::MAX)`, which took
+# object from 0 useful hits in 9 down to 0 hits in 0. A 1-arg `T::MAX` is a cast;
+# a multi-arg `T::MAX` is a limit argument.
+id: cls-limit-optout
+language: rust
+severity: hint
+message: "limit-MIRROR[optout]: a cap is explicitly disabled here (MAX sentinel / None / no_limits)"
+rule:
+  any:
+    - kind: call_expression
+      all:
+        - regex: "(usize|u64|u32|u16|u8|i64|i32|i16)::MAX"
+        - has:
+            field: arguments
+            regex: ","
+    - kind: call_expression
+      regex: "(no_limits|without_limits|unlimited|disable_limit|ignore_limit)"
+    - kind: call_expression
+      all:
+        - regex: "(?i)(limit|_max|bounded|capped)"
+        - has:
+            field: arguments
+            regex: "\\bNone\\b"
+    - kind: field_initializer
+      all:
+        - has:
+            field: field
+            regex: "(?i)(max_|limit|budget|quota|window|remaining)"
+        - regex: "(::MAX|\\bNone\\b)"
+
+---
+# --- Half B.2: the recursion sibling ------------------------------------------
+# HOW "SIBLING" IS APPROXIMATED: same `impl` block. A function is flagged when
+#   (a) it lives in an impl where SOME member references a limit token,
+#   (b) it references NO limit token itself, and
+#   (c) it re-enters — i.e. hands `self` to another call.
+# (a)+(b) is the asymmetry; (c) is what makes it a RECURSION risk rather than
+# just an unrelated helper, and is what keeps volume sane.
+#
+# GROUND TRUTH: on the seed crate this returns FIVE functions for the whole crate,
+# two of which are the private advisory's bypass methods (mechanism withheld pending
+# vendor publication): sibling deserialize methods that re-enter without consulting
+# the recursion field, while their siblings all call self.recurse.
+#
+# LIMITATION: impl-scoped only. Free functions at module scope are NOT covered
+# here (miniz_oxide's unlimited twins are free functions) — cls-limit-optout is
+# what catches those. Trait DEFAULT method bodies are also out of scope.
+# Visibility is deliberately NOT required: the seed crate's two bypass methods are
+# trait-impl methods carrying no `pub`, so a `pub` filter would erase the finding.
+id: cls-limit-sibling-recursion
+language: rust
+severity: hint
+message: "limit-MIRROR[sibling]: re-entrant fn in a limit-bearing impl that never consults the limit"
+rule:
+  kind: function_item
+  all:
+    - inside:
+        kind: impl_item
+        stopBy: end
+        regex: "(recurse|_limit|limits|max_|budget|remaining|nesting|\\.take\\()"
+    - not:
+        regex: "(recurse|_limit|limits|max_|budget|remaining|nesting|\\.take\\()"
+    - has:
+        stopBy: end
+        any:
+          - pattern: "$F(self)"
+          - pattern: "$F($A, self)"
+          - pattern: "$F(self, $$$B)"
+          - pattern: "$F(&mut self)"
+          - pattern: "$F($A, &mut self)"
+
+---
+# --- Half B.3: the allocation sibling -----------------------------------------
+# The object/Zstd shape: a function that fills a buffer with no size cap.
+# `read_to_end` / `read_to_string` are unbounded BY CONSTRUCTION — they read
+# until EOF — so they are listed regardless of size expression. For the
+# reserve/resize/vec! family the size argument is required to be NON-CONSTANT
+# (not an integer literal, not an ALL_CAPS const), which is the cheapest
+# syntactic stand-in for "attacker-controlled" and drops the `vec![0; LZ_DICT_SIZE]`
+# class of false positives.
+#
+# NOTE ON A SHARP EDGE: this rule excludes functions mentioning `.take(`, so on
+# a corpus checkout that ALREADY CONTAINS the fix it will correctly go quiet on
+# the fixed function. Absence here is not proof of absence of the bug — check
+# whether the tree is pre- or post-fix before reading a zero.
+#
+# PATH FILTER, MEASURED: without `ignores`, 47% of this rule's hits were test /
+# bench / fuzz fixtures slurping a file into a Vec — definitionally not attack
+# surface, and by far the worst signal ratio of any rule here. This is the only
+# rule carrying a path filter; the INVENTORY rules deliberately keep their test
+# hits, because a test named `test_uncompressed_stream_honors_limit` is direct
+# evidence that a cap exists and documents its intended semantics.
+id: cls-limit-sibling-alloc
+language: rust
+severity: hint
+message: "limit-MIRROR[sibling-alloc]: fn fills a buffer with no cap in scope"
+ignores:
+  - "**/tests/**"
+  - "**/test/**"
+  - "**/benches/**"
+  - "**/bench/**"
+  - "**/fuzz/**"
+  - "**/examples/**"
+rule:
+  kind: function_item
+  all:
+    - not:
+        regex: "(_limit|limits|\\bmax_|budget|remaining|\\.take\\(|::MAX|try_reserve)"
+    - has:
+        stopBy: end
+        any:
+          - pattern: "$R.read_to_end($$$A)"
+          - pattern: "$R.read_to_string($$$A)"
+          - all:
+              - any:
+                  - pattern: "Vec::with_capacity($N)"
+                  - pattern: "$V.reserve($N)"
+                  - pattern: "$V.resize($N, $$$B)"
+                  - pattern: "vec![$Z; $N]"
+              - not:
+                  has:
+                    field: arguments
+                    regex: "^\\(\\s*[0-9]"

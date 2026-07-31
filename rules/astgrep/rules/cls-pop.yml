@@ -1,0 +1,265 @@
+# ── CLASS: unguarded pop (stack/operand pop with no emptiness guard) ─────────────────────────────
+#
+# Ground truth: ttf-parser CFF2 `operator::BLEND` (src/tables/cff/cff2.rs:383) pops the operand
+# count `n` BEFORE any stack-length check; the check `if p.stack.len() < len` only lands at :388.
+# Confirmed firing on that exact line by this rule, HEAD of the vendored corpus.
+#
+# SUPERSEDES `rip-stack-pop-without-emptiness-check` in rip-families.yml (kept under a distinct id
+# so both can load; that one should be deleted by its owner). Three earlier drafts, three distinct
+# systematic failures — all three are fixed here and all three are worth remembering:
+#
+#   v1  required `.pop().unwrap()`, the std `Vec` idiom, and scored ZERO on the crate it came from.
+#       ttf-parser's `ArgumentsStack::pop() -> f32` is infallible BY SIGNATURE
+#       (`let x1 = self.x + self.stack.pop();`) and on an empty stack silently underflows
+#       `self.len -= 1` into a wrapped index. That is the MORE dangerous shape: no Option, no
+#       unwrap, nothing for a reviewer or a token-matcher to catch. Encode the mechanism, not one
+#       library's spelling.
+#   v2  required "no guard anywhere in the function" — missed BLEND because the guard EXISTS, just
+#       after the defective pop. Order matters, presence does not.
+#   v3  used `not: follows:` on the pop node. MEASURED: that clause is very nearly a NO-OP. A pop
+#       is essentially never a direct sibling of a statement — `p.stack.pop()` sits inside a
+#       let_declaration / binary_expression / call arguments, so its own previous siblings are `=`,
+#       `let`, other arguments. On the adversarial corpus v3 suppressed 2 of 25 genuinely-guarded
+#       pops; on ttf-parser it suppressed 0 of 37. It looked like ordering logic and was not.
+#
+# ── WHAT THIS VERSION MATCHES ────────────────────────────────────────────────────────────────────
+#
+# `$S.$POP()` where $POP ∈ {pop, pop_front, pop_back, pop_first, pop_last} — Vec/String, VecDeque,
+# BTreeSet/BTreeMap, and any domain type spelling its own `pop`. Fallible and infallible alike.
+# NOT gated on `unwrap`. NOT gated on receiver or method names (no "looks like a stack" test) — the
+# v1 failure is precisely what name-gating produces.
+#
+# ── ORDERING: WHAT THIS VERSION CAN AND CANNOT SEE ───────────────────────────────────────────────
+#
+# The ordering approximation is `inside` (stopBy: end) composed with `follows` (stopBy: end): a
+# guard suppresses when it is a PRECEDING SIBLING OF ANY ANCESTOR of the pop. Because the ancestor
+# walk climbs out through blocks, loops and match arms, this DOES see a guard that precedes an
+# enclosing construct — which is the whole gap `follows` alone had.
+#
+# The guard must additionally be matched at the *statement* level: tree-sitter wraps a guard `if`
+# in an `expression_statement`, and a bare `if_expression` pattern does not match that wrapper.
+# That single fact is why v3 silently did nothing. Both spellings are covered (see the
+# `&GUARD_IF` / `kind: expression_statement` pair).
+#
+#   CAN see                                        CANNOT see
+#   ─────────────────────────────────────────────  ──────────────────────────────────────────────
+#   guard then pop, same block                     guard in a different function (no interproc)
+#   guard then enclosing for/while/loop then pop   guard reached only via a helper call
+#   guard then enclosing match then pop            guard in an earlier match arm / if-else branch
+#   guard then several statements then pop         a guard whose body does not bail out (required:
+#   the pop nested arbitrarily deep after it       return / break / continue somewhere inside)
+#                                                  compound conditions — `if a && s.len() < 4`,
+#                                                    `if s.len() == 4 || (w.is_none() && ...)`
+#                                                  guards on a DIFFERENT receiver that still imply
+#                                                    this one (`set.len() == 1` ⇒ `set.lits`)
+#                                                  assert!/debug_assert! as the guard
+#                                                  `match s.len() { 1 => s.pop().unwrap(), .. }`
+#
+# THIS IS NOT DOMINANCE. It is textual precedence over the ancestor chain. It over-suppresses
+# whenever a textually-earlier guard does not actually dominate (e.g. a guard inside an `if` arm
+# that the pop's path never took), and it under-suppresses on every "CANNOT see" row above. No
+# control-flow graph is consulted, and none is claimed.
+#
+# ── ARITY: THE RULE COUNTS TO ONE, NEVER FURTHER ─────────────────────────────────────────────────
+#
+# `if s.len() < 4 { return }` proves FOUR elements; `if s.is_empty() { return }` and
+# `while !s.is_empty()` prove ONE. ast-grep cannot count pops, so a guard that proves N and a block
+# that pops N+1 is the permanent hazard — and it is exactly the shape of the bugs this class exists
+# to find. The compromise implemented: a guard suppresses only until ANOTHER pop of the SAME
+# receiver appears earlier in the same block (the `not: inside(stopBy: block) > follows > has` leg).
+# So the FIRST pop after a guard is suppressed and every SUBSEQUENT one re-fires.
+#
+#   caught  `if s.len() < 2 { return } let a = s.pop(); let b = s.pop(); s.pop()`  ← 3rd pop fires
+#   caught  `while !s.is_empty() { let a = s.pop(); let b = s.pop(); }`            ← 2nd pop fires
+#   cost    ttf-parser charstring.rs — 14 arity-CORRECT pops re-fire as FPs.
+#
+# Measured price of this leg corpus-wide: +14 hits (all in ttf-parser), one crate, ~9% of volume.
+# Bought: the entire over-pop family. Under ADR-2 (FP = one agent read, FN = permanent and silent)
+# that trade is not close.
+#
+# ── OPTION-HANDLED SUPPRESSION (the one SOUND suppression here) ──────────────────────────────────
+#
+# `unwrap_or`, `ok_or`, `map_or`, `and_then`, `is_some`, `?`, `if/while let Some(x) = …`,
+# `match … { Some/None }`, `let … else` — these method names and destructurings exist on Option, so
+# their presence PROVES the pop is the fallible std-collection kind AND that the None case is
+# handled. Zero recall cost against the dangerous infallible-pop class. It removes 124 of 361 raw
+# hits — 34% of the raw volume — which answers "how much is benign Option-matched Vec::pop()".
+#
+# `unwrap()` / `expect()` / `unwrap_unchecked()` are deliberately NOT in that list: they prove
+# Option-ness and then throw the proof away. They stay candidates.
+#
+# The list is enumerated rather than written as `$S.$POP().$M(...)` on purpose — a metavariable
+# method would also swallow `p.stack.pop().max(0.0)` on an INFALLIBLE pop, which proves nothing.
+#
+# ── KNOWN MISSES (adversarially probed, not hypothetical) ────────────────────────────────────────
+#
+#   OUT OF CLASS  a pop open-coded without any `pop` call — `self.len -= 1; self.data[self.len]`,
+#                 `v.remove(v.len() - 1)`, `v.truncate(v.len() - 1)`. This rule is keyed on the
+#                 call; those need cls-loop/enumerator coverage instead.
+#   WRAPPERS      `while let Some(x) = unsafe { q.pop_front() }` — an `unsafe`/paren block between
+#                 the let-condition value and the pop defeats the Option-handled leg, so it stays a
+#                 (harmless) candidate. Erring toward firing, by choice.
+#   ARITY         see above — N+1 pops behind a proof of N are caught only when the extra pops are
+#                 in the SAME block; a second pop inside a nested loop body is not.
+#
+# NOT missed, verified by probe: pop in a nested match arm; pop inside a closure; pop in a helper
+# whose ONLY guard lives in the caller; a guard on a different receiver; a guard whose body does
+# not bail; custom emptiness spellings (`self.len == 0`, `self.top > 0`, `is_valid()`) — all of
+# those still fire, which is the intent. Unrecognised guard spelling must mean "candidate", never
+# "clean".
+#
+# ── KNOWN FALSE HITS (accepted; do not "fix" by tightening) ──────────────────────────────────────
+#
+#   discarded    `s.pop();` as a bare statement — for Vec/String the Option is simply dropped and
+#                nothing can fault. ~35 of the 152 corpus hits (x509-parser's 7 are all this: a
+#                trailing-separator strip). NOT suppressed: for an INFALLIBLE domain pop the same
+#                statement underflows, and nothing syntactic tells the two apart. Highest-yield
+#                optional suppression if downstream volume ever becomes the binding constraint.
+#   test code    ~35 of 152 (tracing-mock, rustls-test, quinn tests, quick-xml's #[cfg(test)]
+#                resolver tests, actix-web test_utils). Left in deliberately — reachability is the
+#                downstream judge's call, not a matcher's, and `#[cfg(test)]` is the judge's
+#                cheapest possible filter.
+#   builder      `v.push(x); v.pop().unwrap()` — needs dataflow.
+#   compound     see the ORDERING table; ttf-parser cff1.rs 539-572 and ripgrep printer/*.rs are
+#                all genuinely guarded by `&&`/`||` conditions this rule does not decompose.
+#
+# ── MEASURED VOLUME (25-crate vendored corpus, ast-grep 0.45.0) ──────────────────────────────────
+#
+#   361  raw — all five pop spellings, zero suppression
+#   237  + Option-handled leg           (−124, −34%)
+#   152  + ordering/containment legs    (−85 further)   ← this rule
+#
+#   ttf-parser 23 · regex 35 · quick-xml 16 · quinn 11 · tracing 10 · rustls 9 · ntex 9 ·
+#   actix-web 8 · ripgrep 8 · x509-parser 7 · h2 4 · hyper 4 · gimli 3 · object 3 ·
+#   fdeflate 1 · image-png 1 · (bytes, ciborium, http, httparse, image, lopdf, miniz_oxide,
+#   msgpack-rust, serde: 0)
+#
+#   Hand-classified all 152: 114 benign (75%), 38 warrant a read (25%), of which 1 is the known
+#   ttf-parser CFF2 defect. regex's 29 `self.pop().unwrap()` on the HIR translator stack dominate
+#   the candidate set and are correctly shaped — their safety rests on an AST-walk invariant, which
+#   is a judge's job, not a matcher's.
+#
+id: cls-pop-no-emptiness-guard
+language: rust
+severity: warning
+message: "pop with no emptiness/length guard reaching it — empty-stack underflow, panic, or a silent default on crafted input"
+note: |
+  Candidate generator, never a verdict. Tuned for recall per ADR-2: a false positive costs one
+  agent read, a false negative is permanent and silent. Ordering is textual precedence over the
+  ancestor chain, NOT control-flow dominance. Suppression is receiver-scoped: the guard must
+  mention the same $S as the pop.
+rule:
+  # Mechanism, not spelling: every std pop-shaped method, fallible or infallible, unwrapped or not.
+  pattern: $S.$POP()
+  not:
+    any:
+      # ── LEG 1 (sound) — the Option is destructured or defaulted at the use site. These method
+      # names / patterns exist on Option, so they prove BOTH that the pop is fallible AND that the
+      # None case is handled. unwrap/expect are excluded on purpose.
+      - inside:
+          stopBy: end
+          any:
+            - kind: let_condition            # if let / while let, incl. labelled loops and `x @ Some(_)`
+              has:
+                field: value
+                pattern: $S.$POP()
+            - pattern: "match $S.$POP() { $$$ARMS }"
+            - pattern: "let Some($X) = $S.$POP() else { $$$B };"
+            - pattern: "$S.$POP()?"
+            - pattern: "$S.$POP().unwrap_or($$$A)"
+            - pattern: "$S.$POP().unwrap_or_default()"
+            - pattern: "$S.$POP().unwrap_or_else($$$A)"
+            - pattern: "$S.$POP().ok_or($$$A)"
+            - pattern: "$S.$POP().ok_or_else($$$A)"
+            - pattern: "$S.$POP().map($$$A)"
+            - pattern: "$S.$POP().and_then($$$A)"
+            - pattern: "$S.$POP().is_some()"
+            - pattern: "$S.$POP().is_none()"
+            - pattern: "$S.$POP().map_or($$$A)"
+            - pattern: "$S.$POP().map_or_else($$$A)"
+            - pattern: "$S.$POP().or_else($$$A)"
+            - pattern: "$S.$POP().inspect($$$A)"
+            - pattern: "$S.$POP().filter($$$A)"
+      # ── LEG 2 (approximate) — a guard for the SAME receiver reaches this pop, and no other pop of
+      # that receiver got between them.
+      - all:
+          - any:
+              # 2a: check-then-BAIL precedes an ancestor.  `if s.len() < 4 { return Err(..) }`
+              #     The bail requirement (return/break/continue) is what makes precedence mean
+              #     something: `if s.is_empty() { log(..) }` guards nothing and must still fire.
+              - inside:
+                  stopBy: end
+                  follows:
+                    stopBy: end
+                    any:
+                      - &GUARD_IF
+                        kind: if_expression
+                        all:
+                          - has:
+                              field: condition
+                              any:
+                                - pattern: $S.is_empty()
+                                - pattern: $S.len() < $N
+                                - pattern: $S.len() <= $N
+                                - pattern: $S.len() == 0
+                                - pattern: $S.len() != $N   # arity-exact bail, the CFF idiom
+                          - has:
+                              stopBy: end
+                              any:
+                                - kind: return_expression
+                                - kind: break_expression
+                                - kind: continue_expression
+                      # tree-sitter wraps a statement-position `if` in expression_statement, and a
+                      # bare if_expression pattern does NOT match that wrapper. Missing this is what
+                      # made v3's ordering clause a no-op. Both spellings, one anchor.
+                      - kind: expression_statement
+                        has: *GUARD_IF
+              # 2b: the pop sits INSIDE a construct whose own condition proves non-emptiness. This
+              #     one really is dominance — the condition governs the body.
+              - inside:
+                  stopBy: end
+                  any:
+                    - kind: while_expression
+                      has: &POSCOND
+                        field: condition
+                        any:
+                          - pattern: $S.len() >= $N
+                          - pattern: $S.len() > $N
+                          - pattern: $S.len() == $N
+                          - pattern: "!$S.is_empty()"
+                          - pattern: $S.len() != 0
+                          - pattern: "matches!($S.last(), Some($$$P))"
+                          - pattern: "matches!($S.first(), Some($$$P))"
+                          - pattern: "matches!($S.front(), Some($$$P))"
+                          - pattern: "matches!($S.back(), Some($$$P))"
+                          - pattern: "matches!($S.peek(), Some($$$P))"
+                          - kind: let_condition          # if let Some(_) = s.last() { s.pop() }
+                            has:
+                              field: value
+                              any:
+                                - pattern: $S.last()
+                                - pattern: $S.last_mut()
+                                - pattern: $S.front()
+                                - pattern: $S.back()
+                                - pattern: $S.peek()
+                                - pattern: $S.first()
+                    - kind: if_expression
+                      has: *POSCOND
+          # THE ARITY VETO. Any guard proves a finite count; this rule cannot count. So a guard
+          # covers only until the next pop of the same receiver in the same block — after that,
+          # re-fire. `stopBy: {kind: block}` bounds the walk: with stopBy:end the ancestor chain
+          # escapes to file scope and previous top-level *functions* containing pops re-fire
+          # everything (measured, then fixed).
+          - not:
+              inside:
+                stopBy:
+                  kind: block
+                follows:
+                  stopBy: end
+                  has:
+                    stopBy: end
+                    pattern: $S.$POP()
+constraints:
+  # Rule-level, and every branch above binds $POP via the top-level pattern, so no branch is vetoed.
+  POP:
+    regex: ^(pop|pop_front|pop_back|pop_first|pop_last)$

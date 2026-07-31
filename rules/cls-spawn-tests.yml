@@ -1,0 +1,221 @@
+# Expectations for the cls-spawn rule class (rules/astgrep/rules/cls-spawn.yml), checked the same
+# way rule-tests.yml is: a positive the rule MUST match, a negative (hardened twin, same file) it
+# MUST NOT match. Same shape as rule-tests.yml, with one structural addition: this class's ground
+# truth is not all in one DVRA implementation, so target_root becomes target_roots + a `target` key
+# per entry. rip-shell-command-string-built's site is dvra-1; the other two rules' primary sites are
+# dvra-3, independently cross-confirmed in dvra-2 (see also_verified / decoys below).
+#
+# scripts/rule_test.py as written assumes a single --src root and does not read `target`/
+# `target_roots` — it was not extended for this file. Everything below was instead verified by hand
+# against the live ast-grep JSON output (container: vuln-pipeline-sast:v1.7, sandbox
+# /tmp/cls-spawn/ on the SAST box), which is the authoritative record for this rule class. Extending
+# rule_test.py to multi-root is a reasonable follow-up, not done here (out of this class's scope).
+
+version: 1
+corpus: corpus/dvra-findings.jsonl
+target_roots:
+  dvra1: <DVRA_ROOT>/dvra-1/source
+  dvra2: <DVRA_ROOT>/dvra-2
+  dvra3: <DVRA_ROOT>/dvra-3
+
+rules:
+  - id: rip-shell-command-string-built
+    finding: DVR-09-HOOK-CONFIG
+    target: dvra1
+    positive: { file: src/features/hooks.rs, line: 43 }
+    negative: { file: src/features/hooks.rs, fn: fixed_handle }
+    fp_budget_per_kloc: 0.05
+    note: >-
+      Carried over from rule-tests.yml's existing gated entry so the whole class lives in one test
+      file; rule-tests.yml's own copy is unchanged. FMT regex was widened (case-insensitive, +zsh/
+      dash/ksh/csh/tcsh/fish -c, +bare `cmd /c`) but purely additively, so this gate cannot regress.
+      CONFIRMED MISS: a "sh -c ..." string built by String::push_str/+ instead of format!() is
+      invisible to this rule (adversarial_src/adversarial_misses.rs:47-56 on the sandbox) — it only
+      keys on the format! macro shape. Not closed this pass; would need its own rule id.
+
+  - id: rip-shell-spawned-by-name
+    finding: DVRA-002
+    target: dvra3
+    positive: { file: crates/config/src/lib.rs, line: 158, fn: run_vulnerable }
+    negative: { file: crates/config/src/lib.rs, fn: run_fixed }
+    fp_budget_per_kloc: 0.05
+    also_verified:
+      - finding: DVRA-006A
+        file: crates/config/src/lib.rs
+        line: 192
+        fn: unreachable_legacy_export::export
+        note: >-
+          Second literal Command::new("sh") sink, same file. Oracle labels it reachable:false (not
+          wired to any router) but defect:true — same precedent as DVR-07-DECOY-UNSAFE: the rule
+          SHOULD fire, reachability is the downstream judge's job, not this rule's.
+      - finding: DVRA-004
+        target: dvra2
+        file: crates/worker-engine/src/lib.rs
+        line: 21
+        fn: run_post_process
+        note: >-
+          Independent second implementation. Command::new("/bin/sh") (full path, not bare "sh") —
+          confirms the SHELL regex's path-prefix branch on a codebase this rule was not developed
+          against. Oracle: reachable-real, CWE-78, TM-02 tenant-controlled ⇒ attacker_controlled.
+    note: >-
+      THE canonical case of the class — draft 1's "a literal program name is safe" fix blinded this
+      exact shape; see dvra-seeds.yml for the incident record. Rule now matches Command::new /
+      std::process::Command::new / process::Command::new, all sharing one $SHELL metavariable and
+      constraint (safe: same metavariable, same role, unlike the historical any:-merge bug). The
+      qualified-path branches were added because ripgrep's --pre preprocessor spawn
+      (crates/core/search.rs:303) and hostname-override spawn (crates/core/flags/hiargs.rs:1373)
+      are real, shipped instances of this exact shape, missed until this pass — see fp_corpus below.
+
+  - id: rip-spawn-computed-program
+    finding: DVRA-run_fixed-computed-program
+    target: dvra3
+    positive: { file: crates/config/src/lib.rs, line: 174, fn: run_fixed }
+    negative: { file: crates/config/src/lib.rs, fn: safe_argument_example }
+    fp_budget_per_kloc: 0.15
+    note: >-
+      HONEST DUAL ROLE (asked for explicitly): run_fixed is simultaneously
+      rip-shell-spawned-by-name's NEGATIVE (never touches a shell — correct) and THIS rule's
+      POSITIVE (program identity is not a literal — also correct). Not noise: PostProcessConfig
+      (same file, :41-49) carries `fixed_program: String` next to an explicit
+      `threat_model: ThreatModel { TrustedOperator, TenantControlled }` field (:51-56) — the authors
+      modeled in-line that whether this config is attacker-influenced is a per-deployment question,
+      exactly as threat-model-dependent as DVR-09. The rule flags the sink; it must not guess the
+      threat model, same resolution already used for rip-shell-command-string-built.
+
+# Decoys are per-decoy, not uniform — each one defeats a DIFFERENT mechanism, and treating them the
+# same would misstate which defence a rule relies on. All four below are `must_not_fire`: this class
+# has no DVR-07-style "should fire, reachability is the defence" decoy of its own (DVRA-006A above
+# plays that role but is listed under also_verified since it is oracle-defect:true, not a decoy).
+decoys:
+  - finding: DVRA-006B
+    target: dvra3
+    file: crates/config/src/lib.rs
+    fn: safe_argument_example
+    expect: must_not_fire
+    defence: sink-specificity (argument, not shell, position)
+    reason: >-
+      Command::new("printf").arg("%s").arg(untrusted) — untrusted value is ONE argument to a fixed
+      literal program, never interpreted by a shell. Oracle: defect:false, attacker_controlled:true,
+      reachable:false. "Scanners that flag any Command use may report this" per the file's own
+      comment — this is the decoy draft 1 was actually vulnerable to.
+  - finding: DVRA-014
+    target: dvra2
+    file: crates/worker-engine/src/lib.rs
+    fn: print_label_safely
+    expect: must_not_fire
+    defence: sink-specificity, cross-confirmed in a second implementation
+    reason: >-
+      Command::new("/bin/echo").arg(untrusted_label) — oracle title is literally "Fixed-program
+      Command::new false positive"; defect:false, expected_signal "Shell metacharacters remain one
+      argument and do not create a marker." Same species as DVRA-006B, independent codebase.
+  - finding: dvra-1-fixed-handle-all-rules
+    target: dvra1
+    file: src/features/hooks.rs
+    fn: fixed_handle
+    expect: must_not_fire
+    defence: sink-specificity
+    reason: >-
+      Never routes through a shell for ANY of the three rules (argv-splits and returns; no
+      Command::new call at all). Confirmed silent on all three rule ids, not just rule 1's own gate.
+  - finding: rustls-ci-tooling-original-fp
+    target: real-crate-corpus (rustls, the corpus tree (rustls))
+    file: "ci-bench/src/valgrind.rs (:84,187,219), openssl-tests/src/*.rs"
+    expect: must_not_fire
+    defence: name-allowlist specificity (rule 2) + literal-exclusion (rule 3)
+    reason: >-
+      Command::new("valgrind") / ("setarch") / ("openssl") — the ORIGINAL false-positive report
+      against draft 1 (which matched every Command::new(..)). Confirmed zero matches across the
+      entire rustls tree under the current split design; see fp_corpus.
+
+# Adversarial log (mandate item 3). One-line case + verdict; the reasoning for each lives in
+# cls-spawn.yml's per-rule comments. All cases were written as adversarial_src/*.rs in the sandbox
+# (/tmp/cls-spawn/adversarial_src on the SAST box) and run through the live container — nothing
+# here is a prediction that wasn't checked.
+adversarial:
+  misses_still_open:
+    - "use std::process::Command as Cmd; Cmd::new(\"sh\") — TOTAL miss, both rules; needs symbol
+      resolution this tool doesn't have. Unfixable syntactically, not tuned away."
+    - "Command::new(r\"sh\") (raw string) — rip-shell-spawned-by-name misses (regex assumes plain
+      quoting); rip-spawn-computed-program correctly silent BY DESIGN (raw_string_literal is still
+      a literal). Low real-world value (bizarre spelling for a bare shell name)."
+    - "\"sh -c ...\" built by String::push_str/+ instead of format!() — rip-shell-command-string-
+      built misses; see that rule's own note."
+    - "shell invoked through a helper crate's own API (duct::cmd!(\"sh\",\"-c\",x),
+      subprocess::Exec::shell(x)) — total miss, all three rules; no Command::new, no shell token
+      inside a format!. Accepted architectural gap, would need one rule per helper crate."
+    - "Command::new(\"env\").arg(\"sh\").arg(\"-c\"..) / Command::new(\"busybox\").arg(\"sh\")..
+      — literal-but-unrecognized launcher name; miss on both rules. DELIBERATELY not closed: env/
+      busybox are overwhelmingly used for non-shell reasons, so adding them trades a wide FP class
+      for a narrow recall gain. Recorded, not fixed."
+  misses_closed_this_pass:
+    - case: "std::process::Command::new(..) / process::Command::new(..) — fully qualified or
+        brought in via `use std::process;` rather than `use std::process::Command;`"
+      evidence: >-
+        NOT synthetic. ripgrep crates/core/search.rs:303 (--pre preprocessor spawn) and
+        crates/core/flags/hiargs.rs:1373 (hostname-override spawn) both spell it
+        std::process::Command::new(bin); ripgrep tests/util.rs:182,184 and rustls
+        connect-tests/tests/common/mod.rs:152 spell it process::Command::new(..). All five were
+        missed by the bare-`Command::new`-only draft; found by grepping the FP corpus by hand after
+        noticing the pattern in ripgrep, not by the rule itself — the rule could not see them until
+        the fix below.
+      fix: >-
+        Added as sibling `any:` branches in both rip-shell-spawned-by-name and
+        rip-spawn-computed-program, sharing the SAME metavariable/constraint as the bare
+        Command::new(..) branch — safe because all branches bind the metavariable in the identical
+        role, unlike the historical any:-merge bug (two DIFFERENT metavariables sharing one
+        constraint). Reverified: dvra1/dvra2/dvra3 positives/negatives unchanged after the fix
+        (no regression), and all five real sites above now fire.
+  false_hits_by_design_confirmed:
+    - "#[cfg(test)] helper spawning a real, literal, non-interpolated shell command — FIRES on
+      rip-shell-spawned-by-name. Correct: same precedent as DVR-07-DECOY-UNSAFE, reachability/
+      context is the downstream judge's job."
+    - "build.rs-shaped shell invocation (./configure) — FIRES on rip-shell-spawned-by-name. Correct:
+      operator-only trust boundary is RULE R2/R5 in profiles/rust/fp-rules.txt, a downstream triage
+      concern, not this rule's."
+    - "const-bound but never-varying program path (Command::new(ONE_TRUE_PATH)) — FIRES on
+      rip-spawn-computed-program. Correct: deliberate over-inclusion: a syntactic rule cannot see
+      that a const never varies; see draft-1 postmortem in cls-spawn.yml."
+  false_hits_confirmed_silent:
+    - "/usr/bin/openssh-keygen, bashful-cleanup-tool, washington-tool — substring/prefix lookalikes
+      of shell names, regression check for the broadened path-prefix group. Confirmed silent: the
+      group is end-anchored on the basename, so it cannot over-match a lookalike."
+    - "Command::new(\"rustc\"), (\"printf\") — confirmed silent on both rules."
+    - "Command::new(\"valgrind\"), (\"setarch\"), (\"openssl\") — confirmed silent; see decoys."
+
+# The false-positive corpus: 25 real crates, ~1.1M lines, 2026-07-28 batch. Scanned as a single
+# ast-grep run (mount the corpus tree as /src); results at
+# /tmp/cls-spawn/results/fpcorpus.jsonl on the SAST box (not checked into this repo).
+fp_corpus:
+  description: >-
+    actix-web bytes ciborium fdeflate gimli h2 http httparse hyper image image-png lopdf
+    miniz_oxide msgpack-rust ntex object quick-xml quinn regex ripgrep rustls serde tracing
+    ttf-parser x509-parser
+  results_root: <CORPUS_TREE>
+  totals:
+    rip-shell-command-string-built: 0
+    rip-shell-spawned-by-name: 0
+    rip-spawn-computed-program: 10
+  by_crate: { ripgrep: 6, serde: 2, rustls: 1, object: 1 }
+  # all other 21 crates: 0
+  hits_reviewed:
+    - { file: serde/serde/build.rs, line: 62, verdict: "build.rs, program=env::var_os(\"RUSTC\") — R2/R5 operator-controlled, not attacker-reachable. Not worth a look." }
+    - { file: serde/serde_core/build.rs, line: 106, verdict: "identical pattern to the above. Not worth a look." }
+    - { file: object/xtask/src/main.rs, line: 285, verdict: "cargo-xtask dev tooling, not attacker-reachable. R2. Not worth a look." }
+    - { file: ripgrep/tests/util.rs, line: "48,182,184", verdict: "integration-test harness spawning the just-built rg binary / a cross-compile runner. R5, test-only. Not worth a look." }
+    - { file: rustls/connect-tests/tests/common/mod.rs, line: 152, verdict: "integration-test harness spawning a test TLS client binary. R5, test-only. Not worth a look." }
+    - { file: ripgrep/crates/cli/src/decompress.rs, line: 182, verdict: "bin defaults are a hardcoded literal table (gzip/bzip2/xz/...), but the PUBLIC associate()/try_associate() builder API takes an arbitrary program from any embedding caller. No wiring from rg's own CLI flags to that API found. Not a vulnerability in ripgrep; worth a one-line library-API design note, nothing urgent." }
+    - { file: ripgrep/crates/core/search.rs, line: 303, verdict: "REAL, shipped, user-facing: the --pre preprocessor flag spawns self.config.preprocessor (direct from the --pre CLI argument) via std::process::Command::new(bin). Exactly the shape this rule is FOR. Confirmed non-issue only because no privilege boundary is crossed (the invoking local user chooses their own --pre command) — same threat-model class as run_fixed/DVR-09. The single best real-world illustration of the rule doing its job correctly." }
+    - { file: ripgrep/crates/core/flags/hiargs.rs, line: 1373, verdict: "REAL, shipped: hostname() override, doc comment states it exists so end users can override hostname detection. Same verdict as search.rs:303 — correctly flagged, not a live bug, no boundary crossed." }
+  verdict: >-
+    Zero hits from the two severity:error rules across the entire corpus, INCLUDING rustls's CI
+    tooling (Command::new("valgrind")/("setarch")/("openssl")) — the exact code that produced the
+    original false-positive report against draft 1. That FP class is fully closed under the current
+    split design, not by "literal=safe" (the mistake that lost DVRA-002/006) but by a name
+    allowlist that only recognizes actual shell interpreters. All 10 rip-spawn-computed-program
+    (severity:warning) hits were individually read and traced: 8 of 10 are build.rs/xtask/
+    test-harness tooling (textbook RULE R2/R5 in profiles/rust/fp-rules.txt — correct exclusions at
+    triage time, and correct for the generator to have surfaced); 2 of 10 (ripgrep's --pre and
+    hostname-override) are genuine, shipped, user-facing computed-program spawns that the rule is
+    CORRECTLY designed to catch. None of the 10 is a nonsensical match. None motivate narrowing the
+    rule — per mandate, a false negative here is permanent and silent, a false positive costs one
+    agent read, and the read cost measured here is 10 reads across 1.1M lines.

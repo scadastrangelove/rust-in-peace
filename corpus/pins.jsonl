@@ -1,0 +1,9 @@
+{"_comment": "Corpus pins for the sast-driven mode and (later) rule scoring \u2014 IMPROVEMENTS W29. `ref` is what gets checked out; `pin_source` says whether it is an exact campaign pin (from the target's THREAT_MODEL.md, so results are comparable with that campaign) or `resolve` (default branch, whose SHA the run resolves and records in manifest.json \u2014 that resolved SHA becomes the pin for later runs). NEVER hand-write a SHA you have not verified: a fabricated pin silently scores a different tree."}
+{"name": "h2", "repo": "https://github.com/hyperium/h2", "ref": "9416dc875da6d6b900eedc22636413c62dae912b", "pin_source": "campaign", "layer": "protocol-state-machine"}
+{"name": "hyper", "repo": "https://github.com/hyperium/hyper", "ref": "67ace6484db5d4a15367013847768f5f94f4b97d", "pin_source": "campaign", "layer": "protocol-state-machine"}
+{"name": "rustls", "repo": "https://github.com/rustls/rustls", "ref": "bd9f7f59aa79", "pin_source": "campaign", "layer": "protocol-state-machine"}
+{"name": "quick-xml", "repo": "https://github.com/tafia/quick-xml", "ref": "HEAD", "pin_source": "resolve", "layer": "data-format-parser"}
+{"name": "lopdf", "repo": "https://github.com/J-F-Liu/lopdf", "ref": "HEAD", "pin_source": "resolve", "layer": "data-format-parser"}
+{"name": "object", "repo": "https://github.com/gimli-rs/object", "ref": "HEAD", "pin_source": "resolve", "layer": "data-format-parser"}
+{"name": "zune-jpeg", "repo": "https://github.com/etemesi254/zune-image", "ref": "HEAD", "pin_source": "resolve", "layer": "data-format-parser"}
+{"name": "httparse", "repo": "https://github.com/seanmonstar/httparse", "ref": "HEAD", "pin_source": "resolve", "layer": "data-format-parser"}

@@ -1,0 +1,331 @@
+# =============================================================================
+# cls-subtree - ENUMERATOR for: exponential blowup from walking a shared-subtree
+#               graph (a DAG) as if it were a tree.
+# =============================================================================
+#
+# THE CLASS
+# ---------
+# A format permits nodes to be SHARED (the same child reachable from many
+# parents => a DAG, not a tree). The parser walks it recursively -- or with an
+# explicit worklist -- with no memoization and no global visited set. A crafted
+# input with high sharing forces `branching ^ depth` visits over only
+# `depth + 1` distinct nodes, so a tiny file burns unbounded CPU.
+#
+# No single line is wrong. The defect is an ABSENCE (no memo table / no total
+# work budget) on a structure that can share. That is why this is an
+# ENUMERATOR: it emits traversals that would blow up IF the input format
+# permits sharing. Deciding whether the format actually permits sharing is the
+# downstream mirror walk's job, not this rule's.
+#
+# Confirmed instances this rule is calibrated against:
+#   object     Mach-O exports-trie shared-subtree DoS      (PR 953)
+#   ttf-parser glyf/gvar composite-glyph blowup   13,600x  (PR 224)
+#   ttf-parser COLR layer-graph blowup           175,000x  (PR 225)
+#
+# -----------------------------------------------------------------------------
+# *** A DEPTH CAP IS NOT SHARING PROTECTION *** (the subtlest point in the class)
+# -----------------------------------------------------------------------------
+# This is the single easiest way to write a rule that misses the entire class.
+#
+# ttf-parser had BOTH a depth cap (`MAX_COMPONENTS = 32`) and an active-path
+# cycle detector (`RecursionStack::contains`), and still blew up 175,000x.
+# Neither construct bounds TOTAL work:
+#
+#   * A depth cap bounds the LENGTH of one root-to-leaf chain. It says nothing
+#     about how many times a subtree is re-entered via SIBLING branches at the
+#     same or shallower depth. `branching ^ depth` stays exponential while
+#     every path stays under the cap.
+#
+#   * An active-path stack (`stack.contains(x)` with a matching `pop()` when
+#     the call returns) only detects a CYCLE on the currently-active path. A
+#     DAG never cycles: the shared child is reached through several sibling
+#     branches, and each branch pops before the next one pushes. The check
+#     never fires.
+#
+# Only two constructs actually bound the work:
+#   (P1) a memo / visited set that is INSERTED INTO AND NEVER REMOVED, keyed by
+#        node identity, living for the whole traversal; or
+#   (P2) a TOTAL VISIT BUDGET threaded through every call and decremented once
+#        per node visit (what all three upstream fixes adopted:
+#        `MAX_COMPONENT_VISITS`, `MAX_PAINT_VISITS`, `NodeIterator::budget`).
+#
+# CONSEQUENCES ENCODED BELOW:
+#   * This rule does NOT suppress on `depth`/`level`/`recursion_stack`, on
+#     `.contains(..)`, or on push/pop stack discipline. The previous iteration
+#     of this enumerator suppressed on `$S.contains($K)` and therefore lost the
+#     COLR finding outright.
+#   * Rule S4 INVERTS the usual intuition: it treats a threaded depth/recursion
+#     guard as EVIDENCE OF RECURSION AND ABSENCE OF SHARING PROTECTION, and
+#     fires because of it. Its name list deliberately contains only the guards
+#     that DO NOT protect (depth counters, active-path stacks) and deliberately
+#     OMITS the ones that do (`budget`, `visits_left`, `memo`, `visited`), so
+#     properly-fixed code drops out of S4 instead of being re-reported.
+#   * No rule below suppresses on an identifier name alone.
+#
+# SHAPES DETECTED
+# ---------------
+#   S1  direct self-recursion, free function or `Self::f(..)`
+#   S2  direct self-recursion through a method, `self.f(..)`
+#         (minus the trait-delegates-to-inherent-method idiom, see S2 notes)
+#   S3  MUTUAL recursion a -> b -> a between two methods of one impl block
+#   S4  a threaded recursion guard in the signature (depth / recursion_stack),
+#         which catches mutual and indirect recursion whose back-edge S3 cannot
+#         see -- across files, trait objects, or 3+ hop cycles
+#   S5  explicit worklist / stack loop that re-pushes children, including the
+#         case where the push and the pop live in different methods of one impl
+#
+# LIMITS (what this CANNOT express)
+# ---------------------------------
+# *** THE HARD ENGINE LIMIT: ast-grep does not backtrack metavariable bindings
+# across sibling `all:` clauses. *** A metavariable binds to the FIRST matching
+# descendant; if a later clause then fails, the match is abandoned rather than
+# retried with the next candidate. Measured directly: for
+#     fn walk_a(g: &Graph, n: usize) { for c in g.children(n) { walk_b(g, c); } }
+# a `$B($$$)` clause binds $B to `g.children` and never retries with `walk_b`,
+# so a free-function mutual-recursion rule matches only when the recursive call
+# happens to be the first call in the body. A file-scoped `a -> b -> a` variant
+# was built and measured: it found 2 of the intended cases and missed the rest
+# for exactly this reason, so it was DROPPED rather than shipped as a rule that
+# silently works only sometimes.
+#
+# This is also why S3 pins the receiver to literal `self`: that makes the
+# binding of $B near-deterministic (a method body rarely has more than one
+# `self.X(..)` candidate), which is what makes S3 reliable where the
+# free-function form is not.
+#
+# Consequently NOT detected:
+#   * mutual recursion between FREE functions (`a -> b -> a` with no `self`),
+#     unless a guard parameter is threaded through it (then S4 catches it).
+#   * mutual recursion crossing FILE boundaries, a trait object / dyn dispatch,
+#     a function pointer, or a closure -- again unless S4's guard applies.
+#   * S3 is impl-scoped AND 2-hop: `a -> b -> c -> a` is missed unless a guard
+#     parameter is threaded (S4).
+#   * recursion passed as a FUNCTION VALUE rather than called:
+#     `t.children.iter().map(depth_of)` is a recursive walk that no rule here
+#     sees, because there is no `depth_of(..)` call node.
+#   * S5 requires push and pop to name the same receiver expression
+#     syntactically (`self.stack`), in the same function or the same impl. A
+#     worklist held in a LOCAL variable whose push happens in a free helper
+#     function is missed.
+#   * whether the INPUT FORMAT actually permits sharing. This is the core open
+#     question per hit and is deliberately left to the mirror walk.
+#
+# DELIBERATE FALSE HITS (not bugs -- the cost of "completeness beats precision")
+# -----------------------------------------------------------------------------
+# This enumerator does NOT suppress on the two constructs that genuinely fix
+# the class (P1 memo, P2 visit budget). So a traversal that is ALREADY CORRECT
+# still reports:
+#     fn walk(g:&G, n:usize, budget:&mut u32)->Option<()> {          // P2: safe
+#         *budget = budget.checked_sub(1)?; ... }
+#     fn walk(g:&G, n:usize, seen:&mut HashSet<usize>) {             // P1: safe
+#         if !seen.insert(n) { return; } ... }
+# Both are flagged by S1. This is chosen on purpose: the previous iteration of
+# this enumerator tried to encode "is it protected?" as a suppressor and lost
+# the COLR finding outright, because `.contains()` looks like protection and is
+# not. Handing the reviewer the discriminator (P1/P2 above) is safer than
+# applying it blind. Also expect to see: recursion over a strictly-shrinking
+# slice, plain arithmetic recursion (`gcd`), and pretty-printers threading
+# `indent` -- all structurally identical to the real thing.
+#
+# Volume note: S1/S4 are the broad nets and carry most of the noise; S3 and S5
+# are narrow and high-yield. Triage cost is intentionally traded for recall.
+# =============================================================================
+
+id: cls-subtree-s1-self-recursion-free
+language: rust
+severity: hint
+message: >-
+  Self-recursive function with no total-visit budget. If the traversed
+  structure can share subtrees (a DAG), this is exponential. A depth cap does
+  not prevent this.
+rule:
+  kind: function_item
+  all:
+    - has: { field: name, pattern: $FN }
+    - has:
+        stopBy: end
+        any:
+          - pattern: $FN($$$)
+          - pattern: "Self::$FN($$$)"
+    # Same structural delegation exclusion as S2, for the free-function case: a
+    # trait method whose entire body forwards to a same-named FREE function in
+    # another module is a name collision, not recursion. rustls does this in
+    # `verify_tls13_signature` and `fips`; it accounted for 12 of 17 S1 hits
+    # there. Real recursion has a base case or a loop, so it never has a body
+    # consisting of nothing but the call.
+    - not:
+        has:
+          field: body
+          any:
+            - pattern: "{ $FN($$$) }"
+            - pattern: "{ $FN($$$); }"
+            - pattern: "{ $FN($$$).$M() }"
+            - pattern: "{ $FN($$$).$M($$$) }"
+            - pattern: "{ Ok($FN($$$)) }"
+            - pattern: "{ Some($FN($$$)) }"
+            - pattern: "{ Self::$FN($$$) }"
+            - pattern: "{ Self::$FN($$$); }"
+            - pattern: "{ Ok(Self::$FN($$$)) }"
+            - pattern: "{ Some(Self::$FN($$$)) }"
+
+---
+# S2: method self-recursion `self.f(..)` inside `fn f`.
+# The `not` clause removes ONLY the trait-delegates-to-inherent-method idiom
+#   `fn next(&mut self) -> Option<Self::Item> { self.next().transpose() }`
+# which is a NAME COLLISION between a trait method and an inherent method of
+# the same name, not recursion at all. It is excluded structurally (the body is
+# nothing but the delegating call), never by matching on the name `next`.
+# Measured: this exclusion drops object from 52 hits to 4 without losing a
+# single genuine self-recursive method.
+id: cls-subtree-s2-self-recursion-method
+language: rust
+severity: hint
+message: >-
+  Self-recursive method with no total-visit budget. Exponential if the walked
+  structure permits shared subtrees.
+rule:
+  kind: function_item
+  all:
+    - has: { field: name, pattern: $FN }
+    - has: { stopBy: end, pattern: self.$FN($$$) }
+    - not:
+        has:
+          field: body
+          any:
+            - pattern: "{ self.$FN($$$) }"
+            - pattern: "{ self.$FN($$$); }"
+            - pattern: "{ self.$FN($$$).$M() }"
+            - pattern: "{ self.$FN($$$).$M($$$) }"
+            - pattern: "{ Ok(self.$FN($$$)) }"
+            - pattern: "{ Some(self.$FN($$$)) }"
+
+---
+# S3: mutual recursion a -> b -> a within one impl block.
+# This is the shape a direct-self-call rule structurally cannot see, and it is
+# the shape of the COLR finding: `parse_paint` -> `parse_paint_impl` ->
+# `parse_paint`, where NEITHER function ever calls itself directly.
+#
+# The receiver is pinned to literal `self` on purpose: an unpinned `$X.$B(..)`
+# binds $B to foreign methods (`self.data.len()`), which produced 64 hits of
+# pure noise on ttf-parser during calibration.
+#
+# The `not: self.$A(..)` clause removes the degenerate case where the rule
+# matches a function against ITSELF as its own recursion partner ($A == $B).
+# That degenerate match is what made the previous enumerator report a hit on
+# `object` -- it was matching `fn next() { self.next() }` delegators, NOT the
+# exports-trie walk. Direct self-calls are S1/S2's job, so nothing is lost.
+id: cls-subtree-s3-mutual-recursion
+language: rust
+severity: hint
+message: >-
+  Mutual recursion (a -> b -> a) between methods of one impl. Shared-subtree
+  inputs blow up exponentially; an active-path cycle check does not stop a DAG.
+rule:
+  kind: function_item
+  all:
+    - has: { field: name, pattern: $A }
+    - has: { stopBy: end, pattern: self.$B($$$) }
+    - not: { has: { stopBy: end, pattern: self.$A($$$) } }
+    - inside:
+        stopBy: end
+        kind: impl_item
+        has:
+          stopBy: end
+          all:
+            - kind: function_item
+            - has: { field: name, pattern: $B }
+            - has: { stopBy: end, pattern: self.$A($$$) }
+
+---
+# S4: a recursion guard threaded through the signature.
+#
+# This rule exists because of the depth-cap point above. A `depth: u8` or a
+# `recursion_stack: &mut RecursionStack` parameter is proof that the author
+# knew the function recurses, AND is one of the two constructs that does NOT
+# bound total work on a DAG. So its presence is a positive signal, not a
+# suppressor.
+#
+# Because the guard is threaded through EVERY function in a recursion cycle,
+# this catches mutual/indirect recursion that S3 cannot see (cycles spanning
+# files, traits, or 3+ hops). On ttf-parser it recovers all four members of the
+# COLR cycle -- paint_impl, paint_v1, parse_paint, parse_paint_impl -- none of
+# which contains a direct self-call.
+#
+# The name list is deliberately restricted to NON-protective guards. Names that
+# indicate real protection (budget, visits_left, memo, visited, seen, cache)
+# are OMITTED so that correctly-fixed code falls out of this rule rather than
+# being re-flagged.
+id: cls-subtree-s4-threaded-depth-guard
+language: rust
+severity: hint
+message: >-
+  Traversal threads a depth/recursion guard. A depth cap or active-path cycle
+  stack bounds path LENGTH, not TOTAL visits, so a shared-subtree (DAG) input
+  still explodes. Check for a total-visit budget or a persistent memo.
+rule:
+  kind: function_item
+  has:
+    field: parameters
+    has:
+      stopBy: end
+      kind: parameter
+      has:
+        field: pattern
+        regex: "^(depth|nesting|nesting_level|recursion_depth|remaining_depth|max_depth|depth_limit|cur_depth|curr_depth|stack_depth|recursion_stack|recursion_guard|indent|indent_level)$"
+# NOTE on the omission of bare `level`: it was measured to be a HOMONYM, not a
+# depth guard. On rustls every one of its 9 matches was a severity or
+# compression level -- `AlertLevel`, `log::Level`, `CompressionLevel` -- and
+# none was a traversal. `nesting_level` and `indent_level` are kept because
+# those spellings are unambiguous. This is a fix to what the rule DETECTS, not
+# a suppression: no hit is discarded because of what it is named.
+
+---
+# S5: explicit worklist / stack loop.
+#
+# An iterative DFS/BFS blows up on a shared DAG exactly like recursion does --
+# no call stack required. This is the shape of the `object` exports-trie
+# finding: `NodeIterator::next` drains `self.stack` in a loop while
+# `NodeIterator::push_node` re-pushes children, and its ancestor check
+# (`self.stack.iter().any(|f| f.offset == child_offset)`) is once again an
+# ACTIVE-PATH check that a DAG walks straight past.
+#
+# The push and the pop are in DIFFERENT methods there, so the `any:` branch
+# below also looks for the push on the same receiver anywhere in the enclosing
+# impl block. Without that branch the object finding is missed.
+id: cls-subtree-s5-worklist-repush
+language: rust
+severity: hint
+message: >-
+  Explicit worklist loop that re-pushes children with no global visited set.
+  Iterative traversal of a shared-subtree DAG is exponential just like
+  recursion; an ancestor/active-path check does not prevent it.
+rule:
+  kind: function_item
+  all:
+    - has:
+        stopBy: end
+        any:
+          - pattern: $S.pop()
+          - pattern: $S.pop_front()
+          - pattern: $S.pop_back()
+          - pattern: $S.last_mut()
+    - has:
+        stopBy: end
+        any:
+          - kind: loop_expression
+          - kind: while_expression
+          - kind: for_expression
+    - any:
+        - has:
+            stopBy: end
+            any:
+              - pattern: $S.push($$$)
+              - pattern: $S.push_back($$$)
+        - inside:
+            stopBy: end
+            kind: impl_item
+            has:
+              stopBy: end
+              any:
+                - pattern: $S.push($$$)
+                - pattern: $S.push_back($$$)

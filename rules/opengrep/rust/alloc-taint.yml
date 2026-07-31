@@ -1,0 +1,508 @@
+# ═══════════════════════════════════════════════════════════════════════════════════════════════
+# CLASS: allocation or indexing sized by a value parsed from untrusted bytes, with no upper bound.
+# ENGINE: OpenGrep 1.26.0, `mode: taint`, run with `--taint-intrafile`.
+#
+# This file is the TAINT-MODE PORT of `rules/astgrep/rules/cls-alloc.yml`, written to settle the
+# question `docs/sast-layer.md` §3.1 raised and never tested: "The Rust taint path is the least-
+# proven part of the whole design ... an assumption, not a verified capability."
+#
+# It is now tested. The short version, so nobody has to read to the bottom:
+#
+#   TAINT WORKS FOR RUST — and it LOSES to the syntactic approximation on this class, 2/11 vs
+#   11/11 on ground truth, at 1.3x the volume. Do not carry it for this class. Keep cls-alloc.yml.
+#
+# The rules below are kept because the measurement should be reproducible, not because they should
+# be deployed. `sgconfig.yml`'s contract applies here too: output is a WORKLIST, never a verdict.
+# ═══════════════════════════════════════════════════════════════════════════════════════════════
+#
+# ── 1. IS RUST TAINT REAL? YES. Measured, not assumed. ─────────────────────────────────────────
+# `opengrep scan --help` lists Rust among the `--taint-intrafile` languages, and the probe corpus
+# (the probe set on the SAST box) confirms it end to end:
+#
+#   · source and sink two lines apart in one function          FIRES
+#   · source inside the sink expression                        FIRES
+#   · NEGATIVE CONTROL — sink with no source anywhere          SILENT   <- taint is really running
+#   · struct field built and read in the same function         FIRES
+#   · WITH `--taint-intrafile` only:
+#       - value returned through a 2-hop helper chain          FIRES
+#       - struct field built in fn A, read in fn C via B       FIRES
+#   · across a FILE boundary                                   SILENT   (documented: intrafile)
+#
+# Sanitizers are the pleasant surprise, and they are STRICTLY BETTER than the ast-grep version:
+#
+#   · `if n > CAP { return … }` then alloc(n)                  SILENT via `by-side-effect: true`
+#   · `.min()` / `.clamp()` / `try_into()`                     SILENT
+#   · cap applied inside a HELPER fn (`check_len(n)?`)         SILENT   <- cls-alloc calls this a
+#                                                                          known FP; taint gets it
+#                                                                          RIGHT (intrafile inlines)
+#   · ADVERSARIAL: an UNRELATED cap (`if other > MAX`) in the
+#     same function next to an uncapped alloc(n)               FIRES    <- cls-alloc tier 2b is
+#                                                                          SILENCED here. Its
+#                                                                          "single largest recall
+#                                                                          hole" does not exist in
+#                                                                          taint mode.
+#
+# `by-side-effect: true` is load-bearing. Without it, `pattern-inside: if $N > $CAP { … }` sanitizes
+# only the INSIDE of the branch — the opposite of what an early-return guard means. That one option
+# is the difference between 10 hits and 8 on the guard probe. `--guarded-taint-signatures` appears
+# in the manpage but is NOT a `scan` option in this build; guards must be written as above.
+#
+# ── 2. AND YET IT LOSES. GROUND TRUTH, HEAD TO HEAD. ───────────────────────────────────────────
+#   site                                       taint      cls-alloc (ast-grep)
+#   png zTXt/iTXt  text_metadata.rs 309/482/570  0/3 *      3/3
+#   png PLTE       palette.rs 87/97/104/111/125  2/5        5/5
+#   lopdf /W       parser_aux.rs 570/571/572     0/3        3/3   (pre-fix, PR #533 reverted)
+#   lopdf /W       post-fix                      silent     silent (ast-grep LEARNED the guard;
+#                                                                  taint never saw the site)
+#   ────────────────────────────────────────────────────────────────────────────────────────
+#   TOTAL                                        2/11       11/11
+#   * recovered 3/3 by the SEARCH-mode companion at the bottom of this file — not by taint.
+#
+# THREE INDEPENDENT REASONS, each fatal on its own:
+#
+#   (a) THE MACRO WALL. `vec![0_u8; field_widths[0] as usize]` is the lopdf sink. Taint cannot
+#       enter a Rust macro token tree — `vec![$E; $N]` matches NOTHING, and even `vec![...]`, which
+#       DOES match in `mode: search`, fires ZERO times as a taint sink. Worse, taint cannot EXIT
+#       one either: `let b = vec![0u8; n]; r.read_exact(&mut b)` leaves `b` untainted, so the
+#       read_exact sink is missed too. ast-grep at least matches the macro TEXT. This is strictly
+#       worse than the incumbent, which is explicit that macros are opaque to it and works around
+#       it textually.
+#
+#   (b) THE SOURCE IS NOT A BYTE READ. lopdf's length is `dict.get(b"W").and_then(parse_integer_
+#       array)` — a dictionary lookup. png's PLTE bound is `palette.len()`. Neither is in any
+#       byte-read vocabulary, and no vocabulary could contain them without becoming "everything".
+#       cls-alloc tier 2 requires NO source precisely because of this, and that is why it wins.
+#
+#   (c) THE INTRAFILE BOUNDARY. See §3 — a whole section, because it is the structural one.
+#
+# ── 3. THE INTRAFILE BOUNDARY, CONCRETELY (png PLTE, palette.rs:87) ────────────────────────────
+# The mandate asked for one real corpus site where the length crosses a function boundary and taint
+# loses it. This is the cleanest one, and it crosses FOUR boundaries:
+#
+#   1. decoder/stream.rs:871   `let val = u32::from_be_bytes(bytes);`
+#                              <- the chunk length. THIS IS A SOURCE AND THIS RULE MATCHES IT.
+#   2. decoder/stream.rs       `val` is dispatched through a `U32ValueKind` state machine and
+#                              stored into `self.state`            .... boundary 1: struct field
+#   3. decoder/stream.rs:1322  `info.palette = Some(Cow::Owned(self.current_chunk.raw_bytes…))`
+#                              .... boundary 2: a field on a DIFFERENT struct (`Info`)
+#   4. decoder/transform/palette.rs:39  `fn create_rgba_palette(info: &Info)` reads it back
+#                              .... boundary 3: A DIFFERENT FILE
+#   5. decoder/transform/palette.rs:87  `rgba_palette[trns.len()..(palette.len() / 3)]`
+#                              <- THE SINK. Slices a fixed 256-entry array by the parsed length.
+#
+# `--taint-intrafile` is intra-FILE. Step 4 ends the analysis, so no amount of tuning reaches the
+# sink. Taint scores 0 here. cls-alloc's tier 2c fires on it by pure SHAPE — scaling arithmetic
+# (`/ 3`) inside a subscript, no provenance required — and that is exactly why the shape rule wins:
+# it never needed to trace what taint cannot trace.
+#
+# ── 4. WHAT TAINT ACTUALLY BOUGHT — the honest accounting ──────────────────────────────────────
+# The one real gain: taint connects source to sink FAR more often than ast-grep's two-hop
+# metavariable unification can. Over 25 crates / 1.115M lines:
+#
+#   cls-alloc tier 1 (`rip-alloc-sized-by-parsed-length`, source-connected)      2 hits
+#   this file's T1  (`rip-og-alloc-taint-parsed-length`, source-connected)      25 hits
+#
+# 12x more source-connected sites. That confirms the incumbent author's measurement from the other
+# direction: the shape `let n = <byte read>; alloc(n)` really does occur ~twice in 25 real crates,
+# and dataflow is the only way to see the rest.
+#
+# THEN THE GAIN EVAPORATES ON INSPECTION. Of those 25, 23 are found by taint and NOT by ast-grep —
+# and ALL 23 are `skip()` / `read_exact()` / `extend_from_slice()` sinks, which simply are not in
+# cls-alloc's sink list. NOT ONE is a `with_capacity`/`reserve`/`resize` site that ast-grep missed.
+# The apparent advantage is a SINK-VOCABULARY difference, not a dataflow difference. Add those
+# three sinks to cls-alloc and the dataflow advantage on this corpus is zero.
+#
+# And the extra sinks are mostly noise, because taint's sink model matches the whole CALL, so a
+# tainted RECEIVER with a constant argument is indistinguishable from a tainted size:
+#     object/src/read/archive.rs:1220   `data.extend_from_slice(b"!<arch>\n")`   <- literal arg
+#     object/src/read/elf/attributes.rs:94  `data.skip(4)`                       <- literal arg
+# Same defect hides sanitizers: `full[min(size, prev)..]` (ciborium) fires DESPITE `.min()`,
+# because the min sits inside the sink expression rather than on the path to it.
+#
+# ── 5. VOLUME, 25 crates / 1.115M lines, `--taint-intrafile`, tests+benches+examples excluded ──
+#   engine     total   breakdown
+#   taint       1402   T1 alloc 25 · T2 index-from-byte-read 112 · T3 index-from-slice-byte 1265
+#   cls-alloc   1068   tier2c index 675 · tier2a alloc 248 · tier2b vec! 124 · decomp 19 · tier1 2
+#
+# Taint is 1.3x the incumbent's volume while finding 2/11 of the ground truth instead of 11/11.
+# The two engines barely even look at the same code: of ~1100 distinct sites each, only 81 are
+# shared. This is not a precision/recall trade along one axis — they are different populations.
+#
+# Per-crate taint volume (top): image-png 254, image 219, ttf-parser 131, regex 117, rustls 94,
+# quick-xml 90, fdeflate 69, gimli 64, object 60, lopdf 56, ripgrep 52, ntex 33, actix-web 27,
+# ciborium 26, h2 25, quinn 25, http 13, hyper 10, serde 8, tracing 8, bytes 7, miniz_oxide 6,
+# msgpack-rust 6, httparse 1, x509-parser 1.
+#
+# HONEST FP FRACTION. A 40-hit uniform random sample of T3 (the tier carrying 90% of the volume)
+# contained ZERO clear true positives and at most 2 sites worth a read. The rest were: literal or
+# constant indices (`chunk[6]`, `buf[..2]`), whole-slice borrows (`&buf[..]`), ENCODER-side
+# histograms over the crate's own data (fdeflate `f2[chunk[1] as usize] += 1`), and internal cursor
+# advances (`cur = &cur[i..]`). Call it >=95% FP. T1 is cheap at 25 hits but inspects no better:
+# its one `with_capacity` site, gimli line.rs:1638 `Vec::with_capacity(format_count)`, is fed by
+# `read_u8()` and therefore bounded at 255 by the TYPE — the blind spot LESSONS already records.
+# That site is also the single hit cls-alloc tier 1 finds, so both engines agree on the one
+# canonical instance in the corpus, and it is benign.
+#
+# ── 6. A SEPARATE, WORSE PROBLEM: OpenGrep CANNOT PARSE MODERN RUST ────────────────────────────
+# 12 PartialParsing failures across 6 of 25 crates. ast-grep 0.45.0 parsed all 25 with ZERO errors.
+# A partial parse is SILENT — the file is half-analyzed and the output is indistinguishable from
+# clean. This is the `docs/sast-layer.md` silent-zero failure mode, structural rather than a
+# misconfiguration:
+#     half-open range patterns   `7.. =>`, `n @ 1..`, `Some(16..)`   fdeflate, image, image-png
+#     raw-borrow `&raw const` / `&raw mut`  (stable since 1.82)      ntex (x3)
+#     inline `const` blocks in expressions                           ntex
+#     `?Sized` in an impl-Trait bound  `&(impl Foo + ?Sized)`         quinn-proto/src/packet.rs
+# That last one is quinn's core PACKET PARSER — the most attack-exposed file in the crate — only
+# partially analyzed, with no signal that anything was missed. This affects OpenGrep in `search`
+# mode too, so it is a reason to be careful with the engine generally, not just with taint.
+#
+# Taint also TIMES OUT: `rip-og-index-taint-slice-byte` hit the per-file limit on lopdf
+# parser_aux.rs and image-png filter/mod.rs at the default timeout. A timed-out file is likewise
+# silently dropped — an early ad-hoc run of lopdf returned 54 hits and a rerun returned 17 for that
+# reason. The batch above pins `--timeout 120 --timeout-threshold 0` to keep the numbers stable;
+# anyone rerunning this MUST do the same or the volume is not reproducible.
+#
+# ── 7. VERDICT ────────────────────────────────────────────────────────────────────────────────
+# NO — do not carry OpenGrep taint for this class. Ground-truth recall 2/11 vs 11/11 at 1.3x the
+# volume and >=95% FP, with three structural blockers (macro sinks, non-byte-read sources, the
+# file boundary) that no amount of rule tuning removes. §3.1's fallback — "U2 falls back to
+# structural rules with explicit sanitizer patterns" — is the correct call, and cls-alloc.yml
+# already IS that fallback.
+#
+# WHAT TO TAKE FROM IT ANYWAY, and it is not nothing:
+#   1. Port the SANITIZER model back to ast-grep thinking. Taint's `by-side-effect` cap survives
+#      the adversarial unrelated-cap test that silences cls-alloc tier 2b, and it correctly reads a
+#      cap inside a helper. Those are two of cls-alloc's four documented FP families.
+#   2. Add `skip()`, `read_exact()`, `extend_from_slice()` to cls-alloc's sink list — that, not
+#      dataflow, is where all 23 unique hits came from.
+#   3. Taint is worth REVISITING only for a target whose parse->allocate path is genuinely
+#      single-file and macro-free. None of the 25 crates here is.
+#   4. The parse-failure list in §6 is an engine-selection fact independent of this experiment.
+#
+# Reproduce: rules in <PROBE_DIR>/rules/, probes in <PROBE_DIR>/probe*/, batch in <PROBE_DIR>/batch.sh,
+# analysis in <PROBE_DIR>/{analyze,overlap}.py on the SAST box.
+# ═══════════════════════════════════════════════════════════════════════════════════════════════
+
+rules:
+
+# ══ T1 · allocation sized by a value that TAINT connects to a byte read ═══════════════
+- id: rip-og-alloc-taint-parsed-length
+  mode: taint
+  languages: [rust]
+  severity: WARNING
+  message: >-
+    allocation sized by a value that dataflow connects to a read of untrusted bytes,
+    with no upper bound on that value along the path (CWE-789)
+  options:
+    taint_assume_safe_functions: false
+    taint_assume_safe_indexes: false
+  paths:
+    exclude:
+      - "*/tests/*"
+      - "*/test/*"
+      - "*-tests/*"
+      - "*_tests/*"
+      - "*/benches/*"
+      - "*/bench/*"
+      - "*/examples/*"
+      - "*/example/*"
+      - "*/fuzz/*"
+      - "build.rs"
+  pattern-sources:
+    # byte-order reads (byteorder, bytes, positioned-io, custom cursors)
+    - pattern: $R.read_u8()
+    - pattern: $R.read_u16()
+    - pattern: $R.read_u24()
+    - pattern: $R.read_u32()
+    - pattern: $R.read_u64()
+    - pattern: $R.read_u128()
+    - pattern: $R.read_i8()
+    - pattern: $R.read_i16()
+    - pattern: $R.read_i32()
+    - pattern: $R.read_i64()
+    - pattern: $R.read_u16::<$E>()
+    - pattern: $R.read_u24::<$E>()
+    - pattern: $R.read_u32::<$E>()
+    - pattern: $R.read_u64::<$E>()
+    - pattern: $R.read_i16::<$E>()
+    - pattern: $R.read_i32::<$E>()
+    - pattern: $R.read_i64::<$E>()
+    - pattern: $R.read_uint::<$E>($N)
+    - pattern: $R.read_int::<$E>($N)
+    - pattern: $R.read_uint($N)
+    - pattern: $R.read_int($N)
+    # bytes::Buf
+    - pattern: $B.get_u8()
+    - pattern: $B.get_u16()
+    - pattern: $B.get_u24()
+    - pattern: $B.get_u32()
+    - pattern: $B.get_u64()
+    - pattern: $B.get_u16_le()
+    - pattern: $B.get_u32_le()
+    - pattern: $B.get_u64_le()
+    - pattern: $B.get_i16()
+    - pattern: $B.get_i32()
+    - pattern: $B.get_i64()
+    - pattern: $B.get_uint($N)
+    # from_*_bytes
+    - pattern: u16::from_be_bytes(...)
+    - pattern: u32::from_be_bytes(...)
+    - pattern: u64::from_be_bytes(...)
+    - pattern: u16::from_le_bytes(...)
+    - pattern: u32::from_le_bytes(...)
+    - pattern: u64::from_le_bytes(...)
+    - pattern: u16::from_ne_bytes(...)
+    - pattern: u32::from_ne_bytes(...)
+    - pattern: u64::from_ne_bytes(...)
+    - pattern: usize::from_be_bytes(...)
+    - pattern: usize::from_le_bytes(...)
+    # generic typed stream reads (ttf-parser / object / scroll)
+    - pattern: $S.read::<$T>()
+    - pattern: $S.read_at::<$T>($O)
+    - pattern: $S.gread::<$T>($O)
+    - pattern: $S.pread::<$T>($O)
+    - pattern: $S.gread_with($O, $E)
+    # varints / LEB128 (protobuf, dwarf, wasm)
+    - pattern: $R.read_varint()
+    - pattern: $R.read_leb128()
+    - pattern: $R.read_uleb128()
+    - pattern: $R.read_uleb128_u32()
+    - pattern: $R.next_u32()
+    - pattern: $R.next_u64()
+  pattern-sanitizers:
+    # ── an upper-bound COMPARISON on the tainted value itself.
+    #    `by-side-effect` is what makes the dominant Rust idiom work:
+    #        if n > CAP { return Err(..); }   // n is bounded from here on
+    #    Without it the guard only cleans the *inside* of the branch, which is the
+    #    opposite of what the code means. Measured on the probe: 10 hits -> 8.
+    - by-side-effect: true
+      patterns:
+        - pattern: $N
+        - pattern-inside: "if $N > $CAP { ... }"
+    - by-side-effect: true
+      patterns:
+        - pattern: $N
+        - pattern-inside: "if $N >= $CAP { ... }"
+    - by-side-effect: true
+      patterns:
+        - pattern: $N
+        - pattern-inside: "if $N as $T > $CAP { ... }"
+    - by-side-effect: true
+      patterns:
+        - pattern: $N
+        - pattern-inside: "if $N as $T >= $CAP { ... }"
+    # ── the positive form: work happens in the in-range branch
+    - patterns: [{pattern-inside: "if $N < $CAP { ... }"}]
+    - patterns: [{pattern-inside: "if $N <= $CAP { ... }"}]
+    - patterns: [{pattern-inside: "if ($N as $T) < $CAP { ... }"}]
+    - patterns: [{pattern-inside: "if ($N as $T) <= $CAP { ... }"}]
+    # ── clamping / narrowing calls
+    - pattern: $X.min(...)
+    - pattern: $X.clamp(...)
+    - pattern: $X.try_into()
+    - pattern: $X.saturating_sub(...)
+    - pattern: $X.checked_mul(...)
+    - pattern: $X.checked_add(...)
+    - pattern: $X.try_reserve(...)
+    - pattern: std::cmp::min(...)
+    - pattern: cmp::min(...)
+  pattern-sinks:
+    - pattern: $C::with_capacity($N)
+    - pattern: $C::with_capacity_in($N, ...)
+    - pattern: $V.reserve($N)
+    - pattern: $V.reserve_exact($N)
+    - pattern: $V.resize($N, ...)
+    - pattern: $V.resize_with($N, ...)
+    - pattern: $V.set_len($N)
+    - pattern: $V.repeat($N)
+    - pattern: $V.extend_from_slice(...)
+    - pattern: vec_try_with_capacity($N)
+    - pattern: $R.read_exact(...)
+    - pattern: $R.take($N)
+    - pattern: $I.take($N)
+    - pattern: $I.skip($N)
+    - pattern: $I.step_by($N)
+    - pattern: iter::repeat($E).take($N)
+
+# ══ T2 · index / slice bound that TAINT connects to a byte read ═══════════════════════
+- id: rip-og-index-taint-parsed-value
+  mode: taint
+  languages: [rust]
+  severity: WARNING
+  message: >-
+    index or slice bound is a value that dataflow connects to a read of untrusted bytes,
+    with no range check along the path (CWE-129)
+  paths:
+    exclude:
+      - "*/tests/*"
+      - "*/test/*"
+      - "*-tests/*"
+      - "*_tests/*"
+      - "*/benches/*"
+      - "*/bench/*"
+      - "*/examples/*"
+      - "*/example/*"
+      - "*/fuzz/*"
+      - "build.rs"
+  pattern-sources:
+    - pattern: $R.read_u8()
+    - pattern: $R.read_u16()
+    - pattern: $R.read_u32()
+    - pattern: $R.read_u64()
+    - pattern: $R.read_u16::<$E>()
+    - pattern: $R.read_u32::<$E>()
+    - pattern: $R.read_u64::<$E>()
+    - pattern: $B.get_u8()
+    - pattern: $B.get_u16()
+    - pattern: $B.get_u32()
+    - pattern: $B.get_u64()
+    - pattern: u16::from_be_bytes(...)
+    - pattern: u32::from_be_bytes(...)
+    - pattern: u64::from_be_bytes(...)
+    - pattern: u16::from_le_bytes(...)
+    - pattern: u32::from_le_bytes(...)
+    - pattern: $S.read::<$T>()
+    - pattern: $S.read_at::<$T>($O)
+  pattern-sanitizers:
+    - by-side-effect: true
+      patterns:
+        - pattern: $N
+        - pattern-inside: "if $N > $CAP { ... }"
+    - by-side-effect: true
+      patterns:
+        - pattern: $N
+        - pattern-inside: "if $N >= $CAP { ... }"
+    - patterns: [{pattern-inside: "if $N < $CAP { ... }"}]
+    - patterns: [{pattern-inside: "if $N <= $CAP { ... }"}]
+    - pattern: $X.min(...)
+    - pattern: $X.clamp(...)
+    - pattern: $X.try_into()
+    - pattern: $X.get($I)
+    - pattern: $X.get_mut($I)
+    - pattern: $X.checked_sub(...)
+  pattern-sinks:
+    - pattern: $BUF[$I]
+    - pattern: $BUF[$A..$B]
+    - pattern: $BUF[$A..]
+    - pattern: $BUF[..$B]
+    - pattern: $BUF.get_unchecked($I)
+    - pattern: $BUF.get_unchecked_mut($I)
+    - pattern: $BUF.split_at($I)
+    - pattern: $BUF.split_at_mut($I)
+    - pattern: $BUF.copy_within($R, $I)
+
+- id: rip-og-index-taint-slice-byte
+  mode: taint
+  languages: [rust]
+  severity: WARNING
+  message: >-
+    index or slice bound is a value that dataflow connects to a byte lifted out of an
+    input buffer, with no range check along the path (CWE-129)
+  paths:
+    exclude:
+      - "*/tests/*"
+      - "*/test/*"
+      - "*-tests/*"
+      - "*_tests/*"
+      - "*/benches/*"
+      - "*/bench/*"
+      - "*/examples/*"
+      - "*/example/*"
+      - "*/fuzz/*"
+      - "build.rs"
+  pattern-sources:
+    - pattern: $R.read_u8()
+    - pattern: $R.read_u16()
+    - pattern: $R.read_u32()
+    - pattern: $R.read_u64()
+    - pattern: $R.read_u16::<$E>()
+    - pattern: $R.read_u32::<$E>()
+    - pattern: $R.read_u64::<$E>()
+    - pattern: $B.get_u8()
+    - pattern: $B.get_u16()
+    - pattern: $B.get_u32()
+    - pattern: $B.get_u64()
+    - pattern: u16::from_be_bytes(...)
+    - pattern: u32::from_be_bytes(...)
+    - pattern: u64::from_be_bytes(...)
+    - pattern: u16::from_le_bytes(...)
+    - pattern: u32::from_le_bytes(...)
+    - pattern: $S.read::<$T>()
+    - pattern: $S.read_at::<$T>($O)
+    # THE AGGRESSIVE SOURCE: a byte lifted straight out of a buffer. This is what a
+    # palette / table lookup actually looks like in a codec
+    # (`rgba_palette[input[0] as usize]`). It is the only way taint reaches the png
+    # PLTE ground truth at all -- and it is also this file's entire volume problem.
+    - patterns:
+        - pattern: $BUF[$K]
+        - metavariable-regex:
+            metavariable: $BUF
+            regex: '^(?:input|buf|buffer|data|bytes|raw|src|row|chunk|slice)$'
+  pattern-sanitizers:
+    - by-side-effect: true
+      patterns:
+        - pattern: $N
+        - pattern-inside: "if $N > $CAP { ... }"
+    - by-side-effect: true
+      patterns:
+        - pattern: $N
+        - pattern-inside: "if $N >= $CAP { ... }"
+    - patterns: [{pattern-inside: "if $N < $CAP { ... }"}]
+    - patterns: [{pattern-inside: "if $N <= $CAP { ... }"}]
+    - pattern: $X.min(...)
+    - pattern: $X.clamp(...)
+    - pattern: $X.try_into()
+    - pattern: $X.get($I)
+    - pattern: $X.get_mut($I)
+    - pattern: $X.checked_sub(...)
+  pattern-sinks:
+    - pattern: $BUF[$I]
+    - pattern: $BUF[$A..$B]
+    - pattern: $BUF[$A..]
+    - pattern: $BUF[..$B]
+    - pattern: $BUF.get_unchecked($I)
+    - pattern: $BUF.get_unchecked_mut($I)
+    - pattern: $BUF.split_at($I)
+    - pattern: $BUF.split_at_mut($I)
+    - pattern: $BUF.copy_within($R, $I)
+
+# ══ T0 · implicit-size decompression — SEARCH mode, NOT taint. Stated plainly. ════════
+# The png zTXt/iTXt bomb (#697/#693, open) is `fdeflate::decompress_to_vec(v)`. There is no
+# length VALUE anywhere: the output size is a function of the compressed input. There is
+# therefore nothing for dataflow to track, and a taint rule cannot express this site at any
+# level of effort. It is carried here in `mode: search` purely so that adopting this file is
+# not a recall regression against `cls-alloc.yml`'s `rip-decompress-output-unbounded`.
+# TAINT CONTRIBUTES NOTHING TO THIS RULE. It is a one-pattern match and always was.
+- id: rip-og-decompress-output-unbounded
+  mode: search
+  languages: [rust]
+  severity: WARNING
+  message: >-
+    decompression or read-to-end with no output-size bound — the output size is chosen by the
+    compressed input (CWE-409 decompression bomb)
+  paths:
+    exclude:
+      - "*/tests/*"
+      - "*/test/*"
+      - "*-tests/*"
+      - "*_tests/*"
+      - "*/benches/*"
+      - "*/bench/*"
+      - "*/examples/*"
+      - "*/example/*"
+      - "*/fuzz/*"
+      - "build.rs"
+  patterns:
+    - pattern-either:
+        - pattern: $M::decompress_to_vec($X)
+        - pattern: decompress_to_vec($X)
+        - pattern: $M::decompress_to_vec_zlib($X)
+        - pattern: decompress_to_vec_zlib($X)
+        - pattern: $M::inflate($X)
+        - pattern: $M::uncompress($X)
+        - patterns:
+            - pattern-either:
+                - pattern: $R.read_to_end(&mut $V)
+                - pattern: $R.read_to_string(&mut $V)
+            - pattern-not-inside: |
+                fn $F(...) { ... $A.take($B) ... }
