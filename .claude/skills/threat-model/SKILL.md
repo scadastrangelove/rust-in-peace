@@ -132,6 +132,41 @@ The same flow is available manually: run `bootstrap` first, then
 
 ---
 
+## Step 1.5 — Classify the target's LAYER (bug-class & tool router) `[ADR-1]`
+
+Before deriving threats, classify the target into ONE layer and record it as `target_layer` in
+section 1. The layer decides the primary bug-class to hunt and the primary tool — routing this
+deliberately is the difference between finding the class that ships and re-running a fuzzer over
+already-fuzzed code (see `LESSONS.md` L42–L44).
+
+| Layer | Signal | Primary bug-class | Primary method | Add finders |
+|---|---|---|---|---|
+| **data-format parser** | bytes → structure; a `decode`/`parse`/`from_bytes` entry over untrusted input | panic / OOB / overflow / alloc-DoS on malformed input | **fuzz-first** | classic cargo-fuzz + `find→fuzz` CWE→oracle table |
+| **protocol / state-machine** | handshakes, sessions, negotiated params, client+server sides | missing/asymmetric enforcement, downgrade, state-transition data-loss, protocol-tied resource growth | **invariant-first** | invariant-symmetry + silent-failure differential |
+| **API-contract / library** | serialization, containers, config, fs helpers; a documented contract | contract violation, silent failure, spec/impl divergence | **differential-first** | spec-vs-impl + control-vs-attack differential |
+
+Rules:
+
+- **Fuzz only when** layer = parser (or a parser sub-surface) **and** not already well-covered by
+  OSS-Fuzz **and** the class is crash/OOB/alloc. Otherwise deprioritize byte-mutation fuzzing and
+  record *why* in section 5 (deprioritized) — a decision, not an omission.
+- **Protocol/contract targets:** enumerate the protocol's **invariants** (e.g. "QUIC uses TLS 1.3
+  only", "chunked framing terminates on a zero-size line", "recursion is bounded") and, for each,
+  locate **where it is enforced and where its mirror is not** (client↔server, send↔receive,
+  offered↔accepted, one-param↔all-params). A guard with a missing mirror is a section-4 threat with a
+  concrete evidence lead. Silent-failure bugs (validated-then-discarded, accept-what-should-reject)
+  need a control-vs-attack oracle, not a crash — flag them for that harness.
+- **Release-diff is mandatory.** If the checkout is a dev pin, note the latest released tag and flag
+  which threats are shipped vs dev-only-new vs a dev *regression* of a shipped guard — this changes
+  both severity and disclosure channel.
+- A large target can be **multi-layer** (rustls = protocol core + a `msgs/` parser sub-surface):
+  classify per sub-surface and route each.
+
+Then continue to the mode from Step 1; the layer + hunt plan feeds `bootstrap`'s "generalize vulns
+into threat classes" stage.
+
+---
+
 ## Step 2 — Shared output contract
 
 All modes MUST emit `<target-dir>/THREAT_MODEL.md` conforming to `schema.md`
@@ -152,6 +187,5 @@ After writing the file, print to the user:
 
 ## References
 
-- [docs/security.md](../../../docs/security.md) and
-  [docs/prompting.md](../../../docs/prompting.md) for the engagement-context
-  and authorization framing this skill inherits.
+- [docs/security.md](../../../docs/security.md) for the engagement-context,
+  authorization, and untrusted-input framing this skill inherits.

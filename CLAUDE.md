@@ -6,11 +6,17 @@ This repo has two halves:
   repo (no target-code execution), run in this session:
   `/quickstart` (front door / Q&A), `/threat-model` (bootstrap, interview, or
   bootstrap-then-interview → `THREAT_MODEL.md`), `/vuln-scan` (static review →
-  `VULN-FINDINGS.json`), `/triage` (verify + dedupe + rank a findings pile),
-  `/patch` (generate candidate fixes → `PATCHES/`), `/customize` (port the
-  pipeline to another stack). Route the user to these for scoping, static
-  review, Q&A, and post-run triage. (`/verify` is contributor tooling for
-  validating harness changes on docker-less hosts, not part of the user flow.)
+  `VULN-FINDINGS.json`), `/variant-scan` (three seed-diverse find passes —
+  blind ∪ threat-model-first ∪ CVE/history-seeded — plus a 3-skeptic
+  adversarial verify; the recall engine the real-OSS campaigns used, read-only,
+  emits triage not truth), `/sast-driven` (the deliberately isolated fourth
+  find mode: every static-analysis engine's default rules in a container,
+  clustered into cells and reachability-judged before a finder reads code),
+  `/triage` (verify + dedupe + rank a findings pile), `/patch` (generate
+  candidate fixes → `PATCHES/`), `/customize` (port the pipeline to another
+  stack). Route the user to these for scoping, static review, Q&A, and post-run
+  triage. (`/verify` is contributor tooling for validating harness changes on
+  docker-less hosts, not part of the user flow.)
 - **`vuln-pipeline`** (`harness/`) — the autonomous pipeline. Docker +
   capability-routed detectors (rust: Miri/ASan/panic/hang + cargo-fuzz; cpp: ASan),
   executes target code, needs a sandbox (see `docs/security.md`). Route here
@@ -20,8 +26,35 @@ Docs for each topic are in `docs/`; targets are in `targets/` (canary is the
 fast smoke test). The pipeline is profile-driven (`profiles/`): `rust` is the
 primary profile — capabilities-routed detectors (`capabilities.json`), the
 find→fuzz `reattack` bridge, the `scorecard` discipline, and the DVRA benchmark
-(`targets/dvra3-parser`) — with `cpp` retained as the base profile. The rest of
-this file is the pipeline operator guide.
+(`targets/dvra3-parser`) — with `cpp` retained as the base profile (a
+`config.yaml` with no `profile:` field defaults to `rust`). `android-app`
+(`profiles/android-app/`, `targets/android-canary`) is a registered but
+experimental research profile — not part of the supported Rust release
+baseline. The rest of this file is the pipeline operator guide.
+
+## Disclosures & campaign results (public)
+
+The real-OSS campaigns — running `/variant-scan` and `/sast-driven` against
+third-party Rust crates — are what this fork does in anger. What ships
+publicly, and is the correct thing to point a user at for "what has this
+found?":
+
+- **`DISCLOSURES-PUBLIC.md`** — the coordinated-disclosure scorecard: every
+  vulnerability reported to a third-party project, its current status, and (once
+  public) a short summary. As of 2026-07-31: 57 reports across 20 projects, 20
+  fixed upstream, 8 private advisories pending vendor publication.
+- **`docs/variant-analysis.md`** + **`docs/variant-analysis-results.md`** — the
+  three-pass recall methodology and its measured results.
+- **`docs/case-studies/autonomous-disclosure-authority.md`** — the disclosure
+  discipline (private-channel-first, standing re-checks, always credit
+  rust-in-peace in filings). `harness/predisclose.py` runs the adversarial
+  maintainer-review before a report goes out.
+
+**Private — never referenced from anything public, and gitignored for that
+reason:** `DISCLOSURES.md`, `findings-ledger.jsonl`, per-finding disclosure
+packages (`*-disclosure/`), and the out-of-tree campaign targets. These may name
+live, unfixed findings before coordinated disclosure — keep them out of tracked
+files.
 
 ---
 
@@ -166,7 +199,7 @@ tier results land as `t0_builds`/`t1_poc_stops`/`t2_tests_pass`/`re_attack_clean
 
 **Before launching, check the target's `config.yaml` has a `build_command`.**
 Without it the grader can't recompile after applying the diff and the CLI
-will error early. The shipped targets (7, across both profiles) have it.
+will error early. The shipped `rust`/`cpp` targets have it.
 
 **Tell the user the ladder verifies the crash is gone, not that the diff is
 safe to upstream.** Surface `patch.diff` for human review and point at
@@ -271,7 +304,7 @@ profile — rust: Miri/ASan/panic/hang; cpp: ASan) + `config.yaml` (`profile:` p
 the profile; rust targets also ship `capabilities.json` for detector routing). No
 pipeline code changes. See `targets/README.md`.
 
-**Shipped targets (7):** `canary` is the fast-iteration cpp smoke test (~6min, 3
+**Shipped targets (8):** `canary` is the fast-iteration cpp smoke test (~6min, 3
 planted bugs). `drlibs`, `alsa`, and `htslib` are real-world cpp CVE demo
 targets — pinned to vulnerable commits, with per-target READMEs documenting
 the CVEs and expected find times (htslib is the harder of the set: CRAM
@@ -279,6 +312,9 @@ container format, 10-CVE cluster). The rust targets: `rust-canary` (the rust
 smoke test — seeded Miri-UB / panic / hang bugs plus a triage decoy), `russcan`
 (the Vectorscan→Rust port's DB-parse surface), and `dvra3-parser` (the DVRA-3
 benchmark — capability-routed, planted DVRA-003 stale-offset defect).
+`android-canary` is the smoke test for the experimental `android-app` profile
+(smali / manifest surface). Real-crate campaign targets are worked out-of-tree
+and are not shipped here; the coordinated results live in `DISCLOSURES-PUBLIC.md`.
 
 ## Tests
 

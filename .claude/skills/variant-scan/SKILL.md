@@ -54,6 +54,12 @@ converge only on the "big" bug — everything else, each finds alone
 Run **all three by default** and union. Dropping one to "save budget" is the
 one optimization L25 explicitly warns against.
 
+There is a **fourth, separate mode** — `/sast-driven` (tool-first: every static
+analyser's default rules, clustered into cells and reachability-judged before a
+finder reads code). It is deliberately **not** folded into these three passes:
+injecting its hits here would destroy the measurement of what the blind pass
+finds on its own. Run it alongside and compare the sets.
+
 ## Arguments
 
 - `<target-dir>` (required) — source tree to scan.

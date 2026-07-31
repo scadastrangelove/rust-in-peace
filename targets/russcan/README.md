@@ -1,6 +1,6 @@
 # russcan — rust-in-peace target
 
-[russcan](https://github.com/anthropics) is a Vectorscan→Rust port (a
+russcan is a Vectorscan→Rust port (a
 multi-literal / regex matcher). This target points the `rust` profile at its
 DB-parse + confirm attack surface.
 

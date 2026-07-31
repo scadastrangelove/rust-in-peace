@@ -11,6 +11,7 @@ Miri / compile-proof).
 | [`byte_parser.rs`](byte_parser.rs) | a `&[u8]`/`&str`/`Read` parse entry | ASan |
 | [`index_arbitrary.rs`](index_arbitrary.rs) | OOB via an untrusted index/len/size | ASan (MSan if uninit-read) |
 | [`adversarial_impl.rs`](adversarial_impl.rs) | unsafe trusting a caller trait impl (higher-order / panic-safety) | Miri (surest) + ASan |
+| [`panicking_drop.rs`](panicking_drop.rs) | container whose unsafe internals restore an invariant *after* a may-unwind call | Miri (definitive — validated on a paired vuln/patched crate) |
 | [`sendsync_compileproof.rs`](sendsync_compileproof.rs) | unsound `Send`/`Sync` | the compiler (not a fuzz run) |
 | [`grammar_parser.rs`](grammar_parser.rs) | structure-gated parser (magic/length/frame — 0040) | ASan + `-dict=` grammar (MSan if uninit body) |
 | [`threaded_driver.rs`](threaded_driver.rs) | data race / Send-Sync variance (`concurrency_async`) | TSan / loom |

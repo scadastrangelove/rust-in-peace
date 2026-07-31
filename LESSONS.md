@@ -2,12 +2,13 @@
 
 **How to use this file.** The working set is the **six principles (P1–P6)** below — that is what belongs in
 your head during a campaign. Each folds several of the numbered lessons; the full evidence-bearing entries
-(**L1–L37**, each naming the campaign that proved it and the concrete change it implied) live in the
+(**L1–L47**, each naming the campaign that proved it and the concrete change it implied) live in the
 **Evidence appendix** at the bottom. The L-numbers are **stable** — memories, journals, and
 `ARTICLE-DRAFT.md` reference them. When a principle and its raw lesson seem to differ, the raw lesson is the
 record of what happened; the principle is the compression. Tag: `[PROVEN]` = a campaign demonstrated it.
 
-*(Consolidated 2026-07-19 from L1–L24, extended same-day to L28, extended 2026-07-20 to L29–L37. Provenance:
+*(Consolidated 2026-07-19 from L1–L24, extended same-day to L28, extended 2026-07-20 to L29–L37,
+extended 2026-07-23 to L38–L44. Provenance:
 L1–L9 x509-parser, L10–L14 lopdf, L15–L20 the five-crate disclosure session, L21–L24 quick-xml, L25–L27
 miniz_oxide+ciborium, L28 png+image (blast-radius), L29 png+image (maintainer pushback/SECURITY.md scope),
 L30 the L29 remediation pass itself (stale-clone PR trust incident), L31–L33 rmp-serde+ttf-parser
@@ -15,13 +16,18 @@ L30 the L29 remediation pass itself (stale-clone PR trust incident), L31–L33 r
 L34–L35 the fdeflate severity-dismissal + quick-xml maintainer-request follow-up (severity-magnitude
 calibration; treating inbound comments as untrusted content), L36–L37 the "resolved"/"rejected" sweep
 itself (refound-as-positive-signal + png#692's correction; scheduled re-checks on rejections, silent fixes
-count as full wins).)*
+count as full wins), L38 corpus-isolation failure in a multi-agent A/B, L39–L40 the vendored-code
+campaign (host-cap reachability + fork-as-yield-zone), L41 an anonymized real campaign in which a
+verified finding had no authorized autonomous disclosure route (private escrow + reassessment,
+not policy evasion), L42–L47 the protocol/state-machine campaign (layer-routed tools,
+enforcement-asymmetry oracles, protocol-logic evaluation drift, shipping-layer ordering,
+protocol-oracle discipline, and ecosystem seam amplification).)*
 
 ---
 
 ## The six principles (the working set)
 
-### P1 — A finding is a lead until the code forces the verdict; verify with structure, not a smarter prompt.  `[PROVEN]`  — folds L1, L2, L3, L6, L12, L15, L22, L26, L30, L31, L32
+### P1 — A finding is a lead until the code forces the verdict; verify with structure, not a smarter prompt.  `[PROVEN]`  — folds L1, L2, L3, L6, L12, L15, L22, L26, L30, L31, L32, L39
 Every load-bearing premise — "the dependency rejects this", "this is reachable", "this fix closes it" — must
 be pinned to source you actually read (`file:line`), against the exact artifact you will claim about. The
 lever is **opening the source**, not "run it dynamically" (L2); dynamic is the oracle/tiebreaker. A second,
@@ -48,7 +54,7 @@ root cause can silently corrupt state (quick-xml's namespace misresolution), whi
 silent (L24). "R7, move on" is exactly the reflex that misses it.
 - **Do:** re-test under the shipping profile; label the gated crash R7 **and** chase what the ungated build does instead.
 
-### P3 — Recall-first search, paid back by adversarial verification.  `[PROVEN]`  — folds L4, L5, L8, L18, L19, L21, L25
+### P3 — Recall-first search, paid back by adversarial verification.  `[PROVEN]`  — folds L4, L5, L8, L18, L19, L21, L25, L40
 Over-including in find is correct — the failure mode is triage, not recall. Route the search: capability-gate
 the byte-crash track (blind on logic-heavy targets, L4); do the **threat model first** to classify the target
 (fresh decoder → memory; hardened parser → resource-exhaustion / parser-differential) and pick the lenses
@@ -62,16 +68,19 @@ report **verdicts, not counts** (L8), and let a genuinely clean target be a vali
 failure mode: agents rabbit-hole in binary reverse-engineering (L5).
 - **Do:** recall-first + route by capabilities/threat-model + blind∪TM∪CVE-seeded lenses → one adversarial panel → verdicts, not counts; don't let a good threat model replace the blind sweep, it may out-yield it.
 
-### P4 — Dynamic and static are complementary; run the dynamic stage always, seeded from statics.  `[PROVEN]`  — folds L11, L14, L19
-The dynamic stage must be **always-run**, seeded from the corpus **and** the static findings (find→fuzz), not
-gated on a crash that may not exist; the find skill should auto-escalate to writing a cargo-fuzz harness (L11).
-But fuzzing is shallow/high-volume: it confirms "memory-clean" and finds shallow bugs, while **deep/structural
-bugs** (a 10⁵-deep chain, a specific nested structure) are unsynthesizable from a seed and need **targeted
-PoCs built from the statics** (L14). On hardened targets that is the normal split — dynamic clean, the
-reportable find static + PoC (L19). Never read a clean fuzz run as "no bugs."
-- **Do:** always fuzz (seeded from statics) as the memory-clean confirmer; carry the deep/structural finds with targeted PoCs.
+### P4 — Static and empirical validation are complementary; route the oracle by target layer.  `[PROVEN]`  — folds L11, L14, L19, L42, L43, L47
+Every serious static candidate needs an empirical validation stage, but **dynamic does not mean
+byte-fuzzing by default**. For data-format parsers with a crash/OOB/alloc oracle, run seeded fuzzing
+from both the corpus and static findings, and auto-escalate to a harness (L11). Deep structural parser
+bugs still need targeted PoCs because mutation is shallow/high-volume (L14). For protocol/state-machine
+targets, use a valid-state **control-vs-attack, spec-vs-impl, or invariant-symmetry differential**;
+for API-contract targets, use a contract differential (L42–L43). A clean result under one oracle
+only clears the class that oracle covers (L19). For ecosystem protocol crates, also validate the
+**consumer seam**, not just the core crate: a safe shipping integration can neutralize the bug for its
+users, while direct consumers and forks can re-expose the same default across the ecosystem (L47).
+- **Do:** require empirical evidence, then select parser→fuzz, protocol→stateful/differential, or contract→spec/control differential; never turn one clean oracle into “target safe.”
 
-### P5 — Disclosure is a first-class output; match the artifact to the target and the fix.  `[PROVEN]`  — folds L9, L13, L16, L17, L23, L27, L29, L33
+### P5 — Disclosure is a first-class output; match the artifact to the target, the fix, and the sender's authority.  `[PROVEN]`  — folds L9, L13, L16, L17, L23, L27, L29, L33, L34, L36, L37, L41
 Responsible disclosure is a deliverable, not an afterthought (L9). Gate it with an **adversarial
 maintainer-eye review** — one skeptic tasked to reject / downgrade / wontfix — which right-sizes severity,
 hardens reachability, and catches bad fixes before the maintainer does (L13). Match the artifact to the fix's
@@ -102,7 +111,7 @@ case in private escrow and reassess it instead of manufacturing eligibility thro
 or waiting for the risk to worsen (L41).
 - **Do:** adversarial-review → compiling repro vs master → artifact matched to the fix → cross-reference (don't blind-drop) the known, reading the closing commit/PR's actual diff, not just its title or state → check `private-vulnerability-reporting` via API **and read SECURITY.md's declared scope in full** → require both channel eligibility and sender authority before any outbound action → public issue+PR only if that confirms no private channel and the bug class is in scope → don't fan out unfixed report-only issues.
 
-### P6 — Dogfood the tool, and treat its own trust boundary as first-class.  `[PROVEN]`  — folds L7, L20, L28
+### P6 — Dogfood the tool, and treat its own trust boundary as first-class.  `[PROVEN]`  — folds L7, L20, L28, L35, L38, L44
 Periodically run the pipeline **on itself**: a security tool that executes untrusted target code and runs an
 LLM over untrusted source is a first-class target — doing so found the crown jewel, the model-API credential
 in the env of the exec container (L20). Prefer the **curated read-only** track (the autonomous byte track
@@ -118,7 +127,7 @@ in-task agent decision.
 
 ---
 
-## Evidence appendix — raw lessons (L1–L37)
+## Evidence appendix — raw lessons (L1–L47)
 
 *The numbered record, kept verbatim: each entry names the campaign that proved it and the concrete change it
 implied. The six principles above are the compression; these are the evidence, and the numbers are stable
@@ -460,7 +469,6 @@ proactively before a maintainer found it, with no complaint incurred.
 - **Do:** fresh clone before every fix/PR, no exceptions; sweep all our own open PRs (not just issues) for
   the same staleness whenever remediating a campaign; when caught, lead with the verifiable commit-hash
   proof, not just "sorry."
-- *Full narrative:* [`POSTMORTEM-2026-07-20-disclosure-quality.md`](POSTMORTEM-2026-07-20-disclosure-quality.md).
 
 ### L29 — A present, narrow SECURITY.md is a stronger signal than an absent one; read it in full, and don't fan out report-only issues on a volunteer team  `[PROVEN]` · principle · sharpens-P5
 The png+image campaign (L28's campaign) filed 9 report-only issues on image-rs/image and several more
@@ -688,17 +696,18 @@ manipulate the conditions under which the report might later qualify.
 
 ## Principle ↔ lesson map
 
-Reverse index for the consolidation (done 2026-07-19, extended to L28 same-day, L29–L37 2026-07-20). Every
-L1–L37 is folded into exactly one principle:
+Reverse index for the consolidation (done 2026-07-19, extended to L28 same-day, L29–L37 2026-07-20,
+L38–L44 on 2026-07-23, and L45–L47 during the h2/hyper seam audit). Every L1–L47 is folded into
+exactly one principle:
 
 | principle | folds |
 |---|---|
-| **P1** — lead-until-verified, structurally | L1, L2, L3, L6, L12, L15, L22, L26, L30, L31, L32 |
+| **P1** — lead-until-verified, structurally | L1, L2, L3, L6, L12, L15, L22, L26, L30, L31, L32, L39 |
 | **P2** — build profile is threat model | L10, L24 |
-| **P3** — recall-first, adversarially gated | L4, L5, L8, L18, L19, L21, L25 |
-| **P4** — dynamic ∥ static, always fuzz | L11, L14, L19 |
-| **P5** — disclosure matched to fix | L9, L13, L16, L17, L23, L27, L29, L33, L34, L36, L37 |
-| **P6** — dogfood + own trust boundary | L7, L20, L28, L35 |
+| **P3** — recall-first, adversarially gated | L4, L5, L8, L18, L19, L21, L25, L40 |
+| **P4** — static ∥ layer-routed empirical oracle | L11, L14, L19, L42, L43, L45, L46, L47 |
+| **P5** — disclosure matched to fix and authority | L9, L13, L16, L17, L23, L27, L29, L33, L34, L36, L37, L41 |
+| **P6** — dogfood + own trust boundary | L7, L20, L28, L35, L38, L44 |
 
 (L19 sits primarily in P3 — "clean = valid" — and feeds P4's dynamic/static split. L30 sits primarily in
 P1 — "verify against the real target" — and also sharpens P5's disclosure discipline. L31 is a narrow
@@ -707,9 +716,14 @@ user-prompted"; L33 sharpens L23's duplicate-scoping check into "read the diff, 
 sharpens P5's severity/artifact-matching into "measure the magnitude, don't inherit a precedent's label";
 L35 extends P6's trust-boundary framing from the target's source and the agent's own execution
 environment to the inbound *disclosure comment channel* — a maintainer's GitHub comment is untrusted
-content by the same logic as target source, not a command.) When a future campaign adds an Ln, file it
+content by the same logic as target source, not a command. L38 extends that same boundary to the corpus
+available to sub-agents; L39 sharpens P1's end-to-end reachability rule; L40 adds a target-selection
+consequence to P3; L41 separates a finding's validity from the sender's authority; L42–L43 route
+P4's empirical oracle by layer; L44 applies P6's dogfood discipline to the evaluation corpus; L45 adds
+shipping-layer ordering to P4; L46 adds protocol-oracle discipline and reviewer-skepticism checks to
+P4; L47 adds ecosystem seam validation to P4.) When a future campaign adds an Ln, file it
 under the principle it sharpens; open a new principle only if it fits none — the point of this file is
-that **six** things stay in your head, not thirty-seven.
+that **six** things stay in your head, not forty-seven.
 
 ## Operational notes (not project lessons, but bit us)
 
@@ -783,9 +797,9 @@ notes as "evidence" in their verdicts. Two distinct harms:
 Three times this session a finding's "there is no guard here" was literally true and completely
 irrelevant, because the dispositive guard lived one or two trust-layers UP in the code that actually
 ships the component:
-- **gitoxide tar-slip** — "no `gix_validate` call anywhere in gix-worktree-stream/gix-archive"
+- **an archive tar-slip candidate** — "no path-validation call anywhere in the archive-stream code"
   (grep-true) — but the `tar` crate's own `append_data` rejects `..`, `rawzip` normalizes it, and
-  `Repository::worktree_stream` gates on `index_from_tree` first. Contained upstream of the finding.
+  the repository's worktree-stream path gates on an index-from-tree check first. Contained upstream of the finding.
 - **x509** — the verdict rested on "the sink accepts empty RSA" — but `asn1-rs` rejects it before the
   sink, and the sink re-parses. Contained upstream.
 - **Chromium BMP "Finding B"** (17 GB `resize`) — "no magnitude cap in the Rust decoder or the C++
@@ -815,9 +829,353 @@ or already-fuzzed-out.
 - Pairs with L39: the fork's new alloc/panic sites still must be traced to the host integration's
   caps before rating — new code is *where* to look, not automatically *what* ships as a bug.
 
-## Suggested next actions (backlog refill — `IMPROVEMENTS.md` was exhausted)
+### L42 — The target's LAYER determines both the valuable bug-class and whether fuzzing fits; route by layer, don't fuzz by default  `[PROVEN]` · principle · sharpens target-selection / composes-L40 · [ADR-1]
 
-Cheap wins first: **L1** (cite-the-dependency), **L4** (capability-gate crash track), **L10**
-(shipping-profile re-test at grade), **L12** (flag construction-based harnesses), **L13** (adversarial
-pre-disclosure stage), **L8** (verdicts-not-counts). Larger: **L11** (always-run seeded fuzz stage +
-find-skill auto-escalation), **L3** (structural forcing function for reachability premises).
+The recent up-stack arc — rustls (GHSA-j99h/GHSA-4xwv), quinn-proto (GHSA-hmxj), gitoxide
+(GHSA-pmm9), ciborium, actix/ntex — delivered **100% of its value from semantic/protocol bugs**
+(missing-guard, downgrade, silent data-loss, protocol-tied resource growth) found by reasoning +
+differential review + harness-reuse PoC, with **fuzzing unused**. The earlier parser arc (zune-jpeg,
+png/image, miniz_oxide, object, lopdf) delivered from **fuzz-found panic/OOB**. That is not drift —
+it is the correct tool tracking the layer: a mutation fuzzer can't reach deep valid-handshake states,
+has no crash oracle for a bug that doesn't crash, and can't trip a domain invariant that isn't an
+assertion; plus mature protocol crates are already OSS-Fuzz'd, so our fuzzer re-finds their CI's work.
+- **Change:** classify each target as **data-format parser** / **protocol-state-machine** /
+  **API-contract** before hunting, and pick the tool from the layer (parser→fuzz-first;
+  protocol→invariant-first; contract→differential-first). Fuzz only when parser **and** not
+  well-OSS-Fuzz'd **and** crash/OOB class. Fuzzing is not retired — it's the wrong tool for two of the
+  three layers, and the way up-stack is *differential/stateful* fuzzing, not byte-mutation.
+
+### L43 — On protocol/state-machine targets the finding shape is an ENFORCEMENT ASYMMETRY, and its oracle is differential, not a crash  `[PROVEN]` · principle · composes variant-analysis / [ADR-1]
+
+Every rustls finding was a guard present in one place but missing at its mirror: the server rejects
+TLS1.2-on-QUIC, the client doesn't (B); the outgoing hello is suite-filtered, the incoming acceptance
+isn't (A, client path); the server-selection filter existed in 0.23.x and was dropped in 0.24-dev (A,
+server path). The highest-signal lens was mechanical: grep a check, ask "where is its mirror across
+client↔server / send↔receive / offered↔accepted / one-param↔all-params?" — the **control-asymmetry is
+the finding**. And rustls C (silent request-drop) proves the oracle point: a crash-hunting fuzzer
+never flags accept-what-should-be-rejected or drop-without-error; you need a **control-vs-attack**
+(identical construction, one variable) or **spec-vs-impl** differential.
+- **Change:** ship two named finder lenses for protocol/contract targets — **invariant-symmetry**
+  (the mirror walk) and **silent-failure differential** (control/attack or spec/impl oracle). A guard
+  with no mirror, or a validated-then-discarded value, is a candidate even with no crash.
+
+### L44 — Our eval measures memory-CVE recall while our value moved to protocol-logic; the benchmark drifted from the deliverable  `[PROVEN]` · operational · sharpens rust-mizan-eval
+
+rust-mizan scores recall against a 42-CVE **memory-safety** corpus (UAF blind-spot, OOB, overflow) —
+i.e. the *fuzzer* bug-class. But the last several campaigns' accepted advisories were
+**protocol-logic** (downgrade, missing-guard, silent-loss, resource growth), a class the benchmark
+contains zero of. We are optimizing and reporting a metric for a class we largely stopped hunting, so
+a "good recall" number no longer predicts campaign value.
+- **Change:** add a protocol-logic slice to the eval corpus (seeded downgrade / enforcement-asymmetry
+  / silent-loss / protocol-resource-growth cases with known ground truth) and report recall per
+  bug-class, so the metric tracks what the pipeline actually delivers. Until then, don't cite
+  memory-CVE recall as evidence of protocol-target readiness.
+
+### L45 — In a LAYERED ecosystem, hunt the SHIPPING integration layer first; it gates reachability for everything below it  `[PROVEN]` · principle · sharpens-L39 / ADR-1
+
+We went to h2 (HTTP/2 core) before hyper (the HTTP layer that ships to axum/reqwest/tonic). hyper's
+config then neutralized an entire embargoed h2 finding-cluster (it overrides the relevant protocol
+default, so those bugs are unreachable through hyper), and hyper's own 8.7k-LOC HTTP/1 framing (`proto/h1` —
+the real request-smuggling surface; httparse only tokenizes header bytes) sat unexamined. Inner-first
+costs twice: (a) you find bugs then discount them by the outer layer's config (wasted calibration —
+exactly what happened to h2 A/B/C), and (b) you miss the outer layer's own novel protein at the seam.
+This is NOT "always start outermost" — start at the layer that (i) SHIPS to the ecosystem you care
+about and (ii) DEFINES reachability for the layers under it. For TLS that layer is rustls itself
+(termination is the outer trust boundary; x509-parser feeds it — we got that order right); for HTTP it
+is hyper (we got it wrong, went to h2 under it).
+- **Change:** the target-layer router (threat-model Step 1.5) gains a target-ORDERING rule — in a
+  known stack (`httparse`/`h2` ← `hyper` ← axum/…; `asn1`/`x509` ← `rustls` ← …), pick the shipping
+  integration layer FIRST and treat the inner crates as reachability-gated by it (compose with L39).
+
+### L46 — A memory/DoS PoC over an in-process mock measures the MOCK's buffer, not the victim's — use a protocol oracle; and verify your own SKEPTICISM, not just the finder's claim  `[PROVEN]` · operational · new
+
+Proving an embargoed HTTP/2 DoS finding (advisory under vendor review), an RSS-based differential
+*looked like it REFUTED the bug*: the "control" flood also grew unbounded, so "no differential,
+finding dead". Wrong — the control frames were piling up in the **in-process mock's own send-pipe
+buffer** (server side), not the client's recv buffer, so only the ATTACK arm's RSS was the real victim
+signal. A **protocol oracle** settled it: a diagnostic on a protocol-level signal (not RSS)
+distinguished the bounded control path from the unbounded attack path. The finder's claim was RIGHT; my
+skeptical REFUTED was the error.
+- **Change (two prongs):** (1) for memory/DoS PoCs on an in-process mock, measure a **protocol signal**
+  (GOAWAY / WINDOW_UPDATE / RST / a bounded-pipe stall), not just process RSS — RSS is confounded by
+  the harness's own buffers, badly when frames carry payload. (2) "panel disposition is triage not
+  truth" cuts BOTH ways: verify a REFUTED / your own skepticism against source with the same rigor as
+  a CONFIRMED. Here the finder beat the reviewer.
+
+### L47 — Protocol bugs propagate at ECOSYSTEM SEAMS: small crates reduce local complexity, but defaults cross crate boundaries  `[PROVEN]` · principle · sharpens-L45/P4
+
+An embargoed HTTP/2 finding (advisory under vendor review) showed both sides of Rust's "many focused
+crates" architecture. On one side, isolating the HTTP/2 state machine in `h2` gives real advantages: a
+smaller target, clearer ownership, reusable protocol logic, and a place where one upstream fix can
+protect many applications. On the other side, the bug did **not** behave like one isolated consumer
+bug. A safe integration layer (`hyper`) neutralizes the class for its users by overriding a
+security-relevant default, but direct `h2` consumers and fork-stack clients repeatedly inherit the
+core crate's less-safe default. The same state-machine defect then appears as an ecosystem pattern
+across many direct-consumer and fork clients.
+
+The lesson is not "small crates are bad". The lesson is that **security-relevant defaults are part of
+the API surface once a crate becomes protocol infrastructure**. A safe integration layer can make a
+core bug practically unreachable for a large slice of the ecosystem; adjacent consumers that bypass
+that integration layer can silently re-open it. This is why a maintainer-grade audit should report the
+root cause and the integration matrix separately: root fixed in one place, reachability governed at
+many seams.
+
+**Sharpening — the secure default is at the wrong layer.** The deeper fault is not that consumers
+"forgot" to override the default; it is that the *safe* default lives in the integration crate
+(`hyper`) while the *dangerous* default lives in the protocol crate (`h2`). The safety knowledge
+accumulated at the seam that the protocol crate should own. The **same structure recurred in this
+campaign's public trailers §8.2.2 finding** (h2 PR #925): `hyper`'s h1 encoder filters
+connection-specific trailer fields, but `h2::send_trailers` does not, so the h2 egress seam (and every
+direct h2 user) re-opens it. Two independent instances, one shape: **the protocol crate delegates a
+security invariant to its callers instead of owning it as a default/invariant, and that delegation is
+non-uniform**. So "trust the integration layer" is a fragile safety boundary. The durable fix pushes
+the invariant DOWN into the protocol crate (safe-by-default, or enforce on *every* seam), rather than
+patching each consumer or trusting one integrator to be complete.
+Corollary for disclosure: the consumer/integration matrix is **evidence for the upstream default/
+enforcement change**, not a queue of per-consumer advisories to file — filing N consumer bugs treats
+symptoms and (see the image-rs SNR incident) burns maintainer goodwill; fixing the seam owner treats
+the disease.
+
+- **Change:** for protocol crates with high fan-out, add an explicit **ecosystem seam pass** after the
+  root PoC: enumerate top direct consumers and forks, classify each as "protected by integration",
+  "direct default inherited", "explicitly disabled", or "public path blocked", then dynamically prove
+  the high-risk buckets through public APIs before filing target-specific disclosures.
+
+### L48 — A vulnerability can be introduced and fixed entirely inside an unreleased window; check the actual last-published artifact, not "was it merged + did a release follow", before crediting RustSec eligibility  `[PROVEN]` · operational · sharpens the RustSec Attribution/Timing gates (DISCLOSURES.md's advisory-db queue section)
+
+The ntex `Inner::consumed`-never-resets finding looked RustSec-ready on the strongest possible reading:
+our own issue, merged directly by the maintainer, and a new crates.io release (`3.11.0`) cut ~12h
+later — a patched version already in hand. Going to actually draft the advisory caught the error.
+Diffing the real `3.10.1` (the release immediately prior) against `3.11.0` showed `decoder.rs` had been
+substantially restructured between them, and `3.10.1` never had a `consumed` field at all (grepped,
+zero hits) — its own bound check (`src.len() >= max_buf_size`) was a per-message check that reset
+itself structurally via `src.split_to(len)` on every successful parse, an entirely different mechanism.
+The regression we reported was introduced by an internal refactor sometime after `3.10.1` shipped and
+fixed before `3.11.0` — that refactor's own first release — ever shipped. No published version was
+ever exposed.
+
+**The existing Attribution and Timing gates both said yes here, and both were technically true — and
+still missed it**, because neither one asks the actual load-bearing question: did any version a real
+user could have installed ever fall inside the vulnerable range? "Merged fix, then a release" is
+consistent with two very different histories — a regression caught before it ever shipped, or a bug
+that was live in production for months — and both produce an identical merge-then-release timeline. The
+two gates can't tell them apart; only the artifact itself can.
+
+- **Change (a third gate):** before filing, diff the last published tarball BEFORE the fix against the
+  fixed version (or, cheaper, grep the pre-fix release directly for the vulnerable shape) — don't infer
+  exposure from a merge timestamp and a subsequent version bump. No vulnerable shape in any published
+  tarball means no affected range and no advisory, however clean the attribution or fast the release.
+- **Framed for write-up, not as a miss:** the regression was caught and fixed inside an unreleased
+  window — it never reached a real user. That is a stronger outcome than most disclosures ever achieve,
+  even though it earns no CVE, no GHSA, and no credit line.
+
+### L49 — Hand-maintained aggregate counts drift; structured data catches what prose review can't  `[PROVEN]` · operational · sharpens L48 / disclosure-tracking hygiene
+
+`DISCLOSURES.md`'s scorecard table drifted at least three times in one working day: a stale header
+(date/crate-count/total never bumped after the h2/hyper/Deno filings landed inside its own buckets), a
+real double-count the user caught by reading the prose (`actix-web` #4161 named in two buckets at
+once), and a self-inflicted reversal on the very fix meant to correct that double-count (the corrected
+number was itself wrong, caught only by building a structured export and finding the bucket membership
+didn't actually add up). None of these three were caught by re-reading the prose carefully — every one
+was caught by turning the same data into a JSON list and counting it with `Counter()`. The fourth error
+(the ntex RustSec-eligibility reversal, L48) was ALSO found only once the data had to be represented
+concretely enough to draft a real advisory file from it — prose review had already pronounced it
+"ready to file," twice.
+- **Change:** for any tracker whose headline number is a sum over many hand-classified line items (a
+  scorecard, a backlog count, a coverage percentage), maintain the underlying data as structured
+  records and compute the aggregate — never hand-type both the classification and the total in prose.
+  The same status change propagating across N files (here: `DISCLOSURES.md`, a per-campaign findings file,
+  the JSON/CSV export, `DISCLOSURES-PUBLIC.md`) is the same risk at a larger radius — one canonical
+  structured source, everything else rendered or cross-checked from it, not independently hand-edited.
+
+### L50 — Attribute to the real PATH/CAUSE, not a look-alike: static (which impl) and dynamic (which panic)  `[PROVEN]` · verify · sharpens L46
+
+Two attribution failures this session, both nearly wrong:
+- **STATIC (G1).** I read `headers.remove(CONTENT_LENGTH)` in `role.rs` and cleared the finding as
+  retracted — but that code is `Server::parse` (incoming *requests*); the `Client` response path the
+  finding is about has no such removal and surfaces the stale CL. A same-named guard in a *sibling* impl
+  (Server vs Client, send vs recv) is not coverage of the path under review. The multi-agent matrix even
+  carried the wrong read forward — cross-validation catches INDEPENDENT errors (it refuted G2 twice) but
+  not a SHARED misattribution, because agents reading the same file share the same wrong impl. Dynamic
+  execution on the real `Client` path flipped the verdict.
+- **DYNAMIC (cascade).** 6 of 7 crash PoCs surfaced only a downstream cascade panic (a poisoned mutex
+  in an unrelated `drop`), masking the ROOT assertion; a source-path first-panic hook was
+  needed to attribute to the root, or the breadth evidence was refutable as "you counted cascades."
+- **Change:** a clear/retract on a reachable path must name the exact `impl`/role/function actually
+  traversed and be confirmed by EXECUTING that path (matrix/agent source-reads are hypotheses until
+  executed); a crash PoC attributes to the FIRST panic by source path, not the visible cascade. Both:
+  attribute to the real cause, never a look-alike.
+
+### L51 — mirror-walk is a rank-1 (pairwise-semantic) projection; the finder's blind spots are the dimensions it collapses  `[PROVEN]` · principle · generalizes L43 → W20-W28
+
+The invariant-symmetry / "mirror walk" lens (send↔recv, client↔server) is a PAIRWISE-SEMANTIC check, and
+every class it missed this session is a dimension that projection flattens: N-ary sink coverage (T — a
+guard on 3 of 4 send paths), three-way resource units (D — attacker-spend / charged / retained differ),
+temporal repetition (a repeated-event state-machine panic), the translation product
+`ingress × egress × position × role` (T-h1 / N-CONNECT), and the orthogonal test-coverage signal (all
+three findings sat in empty test cells). It also predicts the NEXT missing lenses by asking what else a
+pairwise check collapses: VALUE-RANGE (a guard present but with the wrong threshold) and
+ALLOCATION-PROVENANCE (attacker-length → alloc). h2's independently-shipped #909 (HeaderMap panics on
+>24,576 header fields) is exactly that value-range/resource class our pairwise lens is shaped not to see.
+- **Change:** treat the finder's coverage as the SET OF DIMENSIONS it enumerates, not the set of bugs it
+  happens to notice. Add one lens per collapsed dimension (W20-W25, W27), select the emphasis by project
+  type (W26), and emit a coverage manifest naming the dimensions NOT walked — turning silent "audited"
+  into explicit "these axes unassessed."
+
+## L52 — A status field must describe the artifact it claims to, and "partial" must be a first-class state `[PROVEN]` · instrumentation · extends "no silent skip"
+
+- **Evidence:** bringing up the `sast-driven` tool image produced FOUR distinct defects that are all one
+  species — instrumentation reporting on a *proxy* rather than on the thing itself
+  (`docs/case-studies/sast-driven-bringup.md`):
+  1. ast-grep marked `empty` while holding 87 KB of results — status was computed **before** the
+     post-hoc copy that produced the artifact.
+  2. Dylint marked "prebuild failed" when the build had **succeeded** — the copy globbed the wrong
+     directory, and the copy's outcome was read as the build's.
+  3. The clippy lint catalogue passed its guard with **4** of ~800 lints — the guard tested
+     *emptiness*, and 4 is not empty. Every hit then came out `unattributed`.
+  4. **The costly one:** clippy silently truncated its scan on both large crates — aborting on an
+     unrelated example (hyper) and on `#![cfg_attr(test, deny(warnings))]` escalating our added `-W`
+     lints into errors (h2) — yet reported `ok`, because the invocation is a PIPE
+     (`cargo clippy | clippy-sarif`) whose exit code is the *last* stage's, and `clippy-sarif`
+     succeeds happily on truncated input. `pipefail` was set in the runner but each engine runs via an
+     inner `sh -c` that does not inherit it.
+- **Why it matters more than a normal bug:** defect 4 produced a *confident wrong number*. The 6×
+  hits/kLOC spread between h2 and hyper looked like a real property of the code and had a plausible
+  story attached (lint hygiene) — it actually measured **when each abort happened**. Had it entered the
+  prune ledger, rules would have been dropped on an artifact of compile order. A silent skip announces
+  itself as a zero; a silent TRUNCATION announces itself as a plausible measurement, which is worse.
+- **Change:** three rules for any tool-integration harness.
+  (a) **Assert on the artifact the status names** — did the scan *complete*, not did the last process
+  exit 0; does the catalogue hold a *plausible* count, not a non-zero one. (b) **Add `partial` to the
+  status vocabulary** and surface it separately (`engines_partial`), because "ran but incomplete" is a
+  real state that neither `ok` nor `error` expresses, and its counts must never enter a cross-target
+  comparison. (c) **Distrust every pipe**: a pipeline's exit status describes its last stage only, and
+  `set -o pipefail` does not cross an inner `sh -c`. Grep the tool's own stderr for its abort
+  vocabulary instead. Composes with L50 (attribute to the real cause, not a look-alike) — same failure,
+  one layer down in the instrumentation.
+
+## L53 — Two static engines are worth having only when their blind spots are *structural and disjoint* `[PROVEN]` · tooling · refines L51
+
+- **Evidence:** the same six mechanism classes were written twice — once as 54 ast-grep rules, once as
+  8 CodeQL queries (`rules/codeql/rust/`) — and A/B'd on identical crates plus a fixture whose answers
+  are in the function names (`docs/sast-layer.md` §10.1). Neither dominates, and the split is not close:
+  CodeQL sees mutual recursion ast-grep **cannot express at all** (no call graph), cuts unguarded-pop
+  volume 41 → 15 with every drop verified arity-correct, and separates `Path::join` from `slice::join`
+  by resolved impl path — the FP the pattern rules document as unfixable without types. ast-grep holds
+  serde re-entrancy **6/6 vs 0/6** (re-entry crosses a caller-chosen generic, so the call graph breaks
+  exactly at the interesting edge) and every `vec!`-shaped allocation, including the ground-truth lopdf
+  site, because **`vec!` expands 0/285, 0/93, 0/15 times** — the size expression is not in the database
+  at all.
+- **Why it matters:** the tempting read of a two-engine result is "keep the better one." That read is
+  wrong here and would have cost real recall in both directions. The failures are properties of what
+  each engine *represents* — patterns have no types or call graph; QL has no unexpanded macro — so no
+  amount of rule work moves them. Complementarity, not quality, is the thing to measure, and it is only
+  visible if the same ground truth is run through both.
+- **The trap underneath:** the earlier probe nearly killed the port on a **misread counter** — "85 files
+  extracted with errors" counts files with ≥1 failed macro expansion, not dropped files; measured
+  coverage was 101/101, 36/36, 33/33 with zero `Unextracted` elements. A number that sounds like
+  coverage loss was not, while the number that *was* broken (macro expansion) had no alarming name.
+- **Change:** (a) when adding a second engine, the acceptance test is a **per-class A/B on ground truth
+  we already own**, not a volume or FP comparison; (b) every engine gets a **coverage query that runs
+  before any zero is trusted** — for CodeQL that is `ExtractionCoverage.ql`, and it is mandatory,
+  because both of its failure modes (macro opacity, unresolvable `cfg` arms) are silent by construction,
+  which is L52's duty carried into a second tool; (c) route by class, keeping each engine authoritative
+  where it measurably wins.
+- **Addendum 2026-07-29, from re-grading all classes against all engines (W34/E8):** grade is a
+  property of the **(class × engine) pair**, never of the class — 7 of 9 classes graded differently
+  across engines and four inverted outright. The consequence worth carrying: **a "reasoning-only"
+  classification is a standing request for a missing instrument, not a closed boundary.** Unwind-safety
+  was N under both static engines until Miri was wired, at which point it became the most *decisively*
+  gradeable class in the set. So when a class is marked unreachable, record *which instruments were in
+  hand when that was decided* — otherwise the mark outlives its own evidence and a future round never
+  retries it.
+
+## L54 — A rule pack dense enough to cover the file cannot be said to point at anything `[PROVEN]` · measurement · the negative result W33 was built to find
+
+- **Evidence:** 628 vulnerable/patched crate pairs harvested from `rustsec/advisory-db`, scored two
+  ways (`docs/sast-experiments.md` E7/E7b/E7c). Count-level: **84 % of rule×pair cells fire identically
+  on both versions.** Site-level, restricted to the 125 pairs whose fix region covers ≤2 % of the crate:
+  the pack lands on the fix at **0.97× chance** — enumerators 0.98×, candidate rules 0.94×,
+  class-matched 0.82×. Every earlier score for these rules came from our own 58 findings, i.e. the set
+  they were derived from; this is the first corpus that could falsify them, and it did.
+- **The mechanism is density, not aim.** The pack places a **median of 396 hits per crate**. At that
+  rate a tight fix region is covered by construction and there is no aiming left to measure. The one
+  rule that does discriminate — `rip-alloc-sized-by-parsed-length`, 11.1 %, ~10× the pack — fires about
+  15 times in the entire corpus. Selectivity, not suppression, is the axis: a rule with hundreds of
+  hits per crate and a rule with tens are *different instruments* and must not share one pack under one
+  promise.
+- **I got the headline wrong first, in the flattering direction.** The initial computation reported
+  **4.01×**. The null had used `k = number of distinct rules that fired`, when the correct `k` is the
+  **number of hits placed** — each hit is an independent draw at the target. Correcting it moved
+  expected from 17.2 % to 71.3 % and the lift to chance. A second error rode along: the class-matched
+  row was scored against the all-rules null, printing a meaningless 0.24×.
+- **Change:** (a) any "better than chance" claim states its null **and the null's `k`**, and `k` counts
+  draws, not instruments — a lift computed against an understated null is worse than no lift, because
+  it is quotable; (b) every subset gets **its own** null, never the parent's; (c) when a detector's hit
+  density approaches the size of the region being tested, report **hits/kLOC first** and treat recall
+  as uninterpretable until density is stated; (d) score rules on a corpus they were **not** derived
+  from before believing any number about them. Composes with L46 (a plausible measurement that measures
+  something else) and L52 (a status describing the wrong artifact).
+
+## L55 — A SAST rule is a scope-narrower, not an oracle; measure it on enumeration, credit the finder honestly `[PROVEN]` · measurement · funnel-attribution
+
+- **Evidence:** E13 (`docs/sast-experiments.md`) folded into `findings-ledger.jsonl` gives the clean
+  split: **305 SAST cells → 7 rule-hits (`tp`) / 298 fp / 24 found-alongside (`other_defects`)**, i.e.
+  **rule precision 2.3 %.** A per-crate identity check (`count(ledger e13) == count(other_defects)`
+  for all 12 crates, `tp` counted-but-never-listed) proves **0 of the 24 ledger findings were
+  rule-hits — every one was found by a reasoning agent triaging a cell the rule got wrong.** Combined
+  with Chrome (34 SAST cells, 0 recorded hits): **reasoning found 45 of 52 real findings; the SAST rule
+  found 7.**
+- **Why, structurally:** verification traces **bottom-up — from the sink backwards through its callers
+  to the trust boundary** — and that reachability trace is load-bearing. A pattern rule has no call
+  graph or dataflow, so it cannot decide reachability; a rule that poses as an oracle ("this is a bug")
+  is capped near chance. A rule that is a good **sink-enumerator** (flag the `vec![0; len]` sites, the
+  recursive parse fns, the unchecked index sites — and little else) hands the reasoning layer a bounded
+  worklist to trace up. That is measurable and it is what enumeration (U1) is for. This is the same coin
+  as L54: density is not aim; a pack with 396 hits/crate has narrowed nothing.
+- **Change:** (a) score SAST rules on **enumeration** — does the flagged set CONTAIN the real sink sites
+  at a small FP multiple (sink-recall × set-tightness) — never on precision-at-the-bug; (b) `found_by:
+  sast-driven` means the *pass* found it; the `sast_enumerated` field carries whether the *rule* did
+  (`site-hit`/`adjacent` = rule-hit; `site-missed`/`misdiagnosed` = found-alongside) — keep them
+  distinct and never fold a "SAST precision" over the pass; (c) `scripts/lens_stats.py` now enforces
+  both: per-campaign-class split (reasoning is the only refutation-tested precision), SAST rule
+  precision from the E13 artifact reported separately, `latent-hardening` excluded from every precision
+  denominator. Composes with L54 (density≠aim), L38 (isolate the corpus), and the funnel discipline in
+  `docs/mechanism-effectiveness.md`.
+
+## L56 — For low-severity findings, default to issue + a suggested-fix comment, not a full PR `[PROVEN]` · disclosure-relations · maintainer-stated
+
+- **Evidence:** quick-xml PR #982 (serde recursion-depth fix). Our account posted an honest, humble
+  note (security researcher, LLM-assisted, ~50 concurrent issues, motivation = Rust-infra security)
+  and explicitly *asked the maintainers* what workflow they prefer. Maintainer `dralley`'s reply:
+  "For a low severity issue like this, if you don't have the time required to actually commit to
+  understanding the fix and the PR, it's fine to just report IMO. Perhaps with a suggested plan of
+  action as a followup comment on the issue." Both underlying bugs (#978 serde recursion, #980
+  `resolve_prefix` O(depth²)) were then **fixed by the maintainer's own commits** and closed — a win —
+  while our PR #982 was closed unmerged (superseded). Net: the issues were valued; the *PR* was the
+  friction.
+- **Why:** a PR is a promise to shepherd and defend a fix through review; for a low-severity
+  availability bug that promise costs the maintainer review time and costs us bandwidth we don't have
+  at 50-issues-scale. An issue that states the bug + a concrete suggested fix (as prose or a small
+  diff *in the issue body/comment*) gives the maintainer everything to act on with none of the
+  PR-review overhead, and lets them implement it their way (which they did, better-scoped, e.g. #980's
+  `max_namespace_bindings` cap replacing a per-element limit). This is the constructive, maintainer-
+  stated version of the image-rs pushback ([[image-rs-maintainer-pushback]]): the volume/PR-shape was
+  the irritant, not the findings.
+- **Change:** (a) default artifact for a **low-severity** finding = **issue with a suggested plan of
+  action / fix sketch as a comment**, NOT a full PR; file a PR only when the fix is non-obvious AND we
+  will commit to shepherding it, or the maintainer asks for one. (b) When disclosure volume is high,
+  say so plainly and *ask the maintainer their preference* — the honest ask itself de-escalates (it
+  did here). (c) Medium+/security-relevant or a one-line obviously-correct fix still merit a PR. This
+  sharpens P1.6 (`disclose` stage): the stage should pick issue-vs-PR by severity, defaulting low-sev
+  to issue-only. Composes with L34/L35 (maintainer comments are data, verify silent fixes) and L13
+  (adversarial maintainer-eye pre-disclosure review).
+
+## Suggested next actions
+
+The original cheap honesty gates are implemented for the Rust baseline. The
+authoritative current order now lives in [`IMPROVEMENTS.md`](IMPROVEMENTS.md):
+live W2b verification, credential separation (W3), first-class variant-scan
+(W2), then the protocol-logic lens/oracle/evaluation work (W9–W12), and the
+h2/hyper-arc refresh (W13–W19), and the finder-mechanism block (W20–W28: dimensional lenses,
+project-type emphasis packs, SAST-as-engine — see L50/L51).
