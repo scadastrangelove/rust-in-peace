@@ -25,15 +25,16 @@ Reporter of record: Sergey Gordeychik ([@scadastrangelove](https://github.com/sc
 
 ## Summary
 
-_As of 2026-07-31._
+_As of 2026-08-02._
 
 | | |
 |---|---:|
 | Reports filed | 57 |
-| Resolved (fixed / merged) | 20 |
+| Resolved (fixed / merged) | 21 |
 | Open — awaiting vendor action | 19 |
 | Closed — disputed, not a vulnerability, or declined | 7 |
-| Private advisories pending vendor publication | 8 |
+| Private advisories pending vendor publication | 7 |
+| — of which published as a public advisory | 1 (gitoxide, the campaign's first) |
 
 ## Public disclosures
 
@@ -47,6 +48,7 @@ Findings sent as (or since converted to) a public issue, pull request, or vendor
 | Deno | 2026-07-26 | [PR #36327](https://github.com/denoland/deno/pull/36327) | High | Resolved (2026-07-26) | WebSocket-over-HTTP/2 fallback path left HTTP/2 server push enabled, reachable to a process-crashing assertion in the `h2` crate |
 | fdeflate | 2026-07-19 | [#83](https://github.com/image-rs/fdeflate/issues/83) | Low | Closed — severity disputed by vendor; our own reassessment concurred | Huffman-table-rebuild cost scaling on crafted input |
 | gimli | 2026-07-19 | [#898](https://github.com/gimli-rs/gimli/issues/898) | Low-Medium | Open | Quadratic-time attribute parsing via zero-byte DWARF forms |
+| gitoxide | 2026-07-22 | [GHSA-pmm9-4h7q-24c8](https://github.com/GitoxideLabs/gitoxide/security/advisories/GHSA-pmm9-4h7q-24c8) | Medium | **Resolved (2026-08-02) — published as a public advisory**, CVSS 5.3 | `checkout()` follows an existing terminal symlink on Windows during non-exclusive (incremental) materialization, writing outside the intended worktree |
 | h2 | 2026-07-26 | [PR #925](https://github.com/hyperium/h2/pull/925) | Low | Open | HTTP/2 trailer emission doesn't filter connection-specific header fields the same code rejects on receive (RFC 9113 §8.2.2) |
 | httparse | 2026-07-19 | [#222](https://github.com/seanmonstar/httparse/issues/222) / [PR #223](https://github.com/seanmonstar/httparse/pull/223) | Low-Medium | Open | A whitespace-only header line silently truncates the entire header block, under an opt-in leniency flag |
 | image | 2026-07-19 | [#3076](https://github.com/image-rs/image/issues/3076) | High | Open | AVIF decode proceeds before configured memory limits are enforced |
@@ -101,7 +103,6 @@ here by advisory ID and status only — no technical detail is disclosed before 
 | ciborium | 2026-07-19 | [GHSA-5857-62v3-27wr](https://github.com/enarx/ciborium/security/advisories/GHSA-5857-62v3-27wr) | Under vendor review |
 | ciborium | 2026-07-19 | [GHSA-qxw2-g7wc-7h4j](https://github.com/enarx/ciborium/security/advisories/GHSA-qxw2-g7wc-7h4j) | Under vendor review |
 | ciborium | 2026-07-19 | [GHSA-gpv3-7pvc-5937](https://github.com/enarx/ciborium/security/advisories/GHSA-gpv3-7pvc-5937) | Under vendor review |
-| gitoxide | 2026-07-22 | [GHSA-pmm9-4h7q-24c8](https://github.com/GitoxideLabs/gitoxide/security/advisories/GHSA-pmm9-4h7q-24c8) | Accepted by vendor — fix in progress |
 | h2 | 2026-07-26 | [GHSA-q83h-524g-xf6h](https://github.com/hyperium/hyper/security/advisories/GHSA-q83h-524g-xf6h) | Under vendor review |
 | h2 | 2026-07-26 | [GHSA-8r6j-x8wp-qpm3](https://github.com/hyperium/hyper/security/advisories/GHSA-8r6j-x8wp-qpm3) | Under vendor review |
 | quinn-proto | 2026-07-23 | [GHSA-hmxj-32vh-65vr](https://github.com/quinn-rs/quinn/security/advisories/GHSA-hmxj-32vh-65vr) | Accepted by vendor — fix in progress |
@@ -118,4 +119,4 @@ here by advisory ID and status only — no technical detail is disclosed before 
 - A closure marked "disputed" reflects our own re-verification against the target's current source, not
   a claim that the vendor acted in bad faith — vendors regularly and reasonably assess scope and
   priority differently than an external reporter.
-- This list is updated as reports change status. Last updated: 2026-07-27.
+- This list is updated as reports change status. Last updated: 2026-08-02.
