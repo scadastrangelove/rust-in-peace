@@ -53,6 +53,12 @@ echo "=== sast-driven: $NAME @ ${COMMIT:0:12} ==="
 echo "    src=$SRC_DIR"
 echo "    out=$OUT"
 
+# ── deploy-layer preflight (L59): settle the daemon's traps in seconds, not an hour into the build.
+# image-present / export-canary / egress-canary / result-writeback — each with a named remediation.
+SCRIPT_DIR=$(cd "$(dirname "$0")" && pwd)
+"$SCRIPT_DIR/../../scripts/preflight-deploy.sh" "$IMAGE" "$OUT/raw" || {
+  echo "deploy-preflight failed — aborting before the expensive scan (remediation printed above)"; exit 3; }
+
 # ── phase 1: fetch (network ON, nothing executes) ────────────────────────────
 echo "[1/2] cargo fetch (network on, no build)"
 # Work on a COPY: crates that don't commit a Cargo.lock make cargo want to write one, and the clone

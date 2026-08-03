@@ -1215,6 +1215,27 @@ ALLOCATION-PROVENANCE (attacker-length → alloc). h2's independently-shipped #9
   original report and credit its reporter. (Whether to automate this cross-check is scoped in
   IMPROVEMENTS.md W47.)
 
+## L59 — Environment traps are a deploy-layer GATE, not a runtime surprise — canary the daemon before the hour-long build `[PROVEN]` · deploy-hygiene · extends L28
+
+On a hardened box (docker with `userns-remap` + `containerd-snapshotter` + `iptables: false`), building
+the SAST tool image failed THREE different ways, each discovered only after paying for it: (1) no
+container egress — `apt-get` could not resolve `deb.debian.org`, surfaced at build step 5; (2) a
+pathologically slow OPTIONAL engine (dylint's `general` lints) — 60+ minutes on a single step; (3)
+`failed to export layer: host ID 0 cannot be mapped`, at the very end, after every compile had already
+finished. Each is a *property of the daemon*, knowable in seconds: a 3-line `FROM busybox` + `touch
+/root/probe` build settles the export trap; a `docker run <img> curl deb.debian.org` settles egress. The
+export canary in fact returned PASS — proving the earlier failure was the huge dylint layer specifically,
+not a fundamental block. That is exactly what a cheap probe tells you and an hour-long build does not.
+- **Why:** "raw tool output is never a gate" is already doctrine; the same logic applies one layer down.
+  An environment that cannot build+export an image, cannot give a container egress, or leaves root-owned
+  litter the operator cannot delete (L28) will waste the whole run — and the failure surfaces at the most
+  expensive possible moment (export, after all compiles). A ~10-second gate turns an hour-long faceplant
+  into an immediate, named diagnosis with a remediation.
+- **Change:** `scripts/preflight-deploy.sh` runs BEFORE any containerized build/scan (wired into
+  `docker/sast/sast-scan.sh`): image-present (image-is-gone), export-canary (userns/containerd
+  root-ownership trap), egress-canary (iptables/NAT/DNS), result-writeback (L28 root-owned litter). Each
+  failure prints a specific remediation and aborts. Generalizing it to every container mode is W48.
+
 ## Suggested next actions
 
 The original cheap honesty gates are implemented for the Rust baseline. The
