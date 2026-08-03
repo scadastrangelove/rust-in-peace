@@ -1,0 +1,16 @@
+name: winpath-canon-check
+on:
+  push:
+    branches: [ci/winpath-canon-check]
+  workflow_dispatch:
+jobs:
+  check:
+    strategy:
+      matrix:
+        os: [windows-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: run
+        working-directory: ci-experiments/winpath
+        run: cargo run --release
