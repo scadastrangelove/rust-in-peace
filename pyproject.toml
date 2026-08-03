@@ -1,7 +1,7 @@
 [project]
 name = "vuln-pipeline"
 version = "0.3.0"
-description = "Execution-verified vulnerability discovery pipeline for C/C++ targets"
+description = "Execution-verified, Rust-first vulnerability discovery and remediation pipeline"
 requires-python = ">=3.11"
 license = {file = "LICENSE"}
 dependencies = [
@@ -10,6 +10,7 @@ dependencies = [
 
 [project.optional-dependencies]
 dev = [
+    "pre-commit>=3.7",
     "pytest>=8.0",
 ]
 

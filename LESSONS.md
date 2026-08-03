@@ -1171,6 +1171,50 @@ ALLOCATION-PROVENANCE (attacker-length → alloc). h2's independently-shipped #9
   to issue-only. Composes with L34/L35 (maintainer comments are data, verify silent fixes) and L13
   (adversarial maintainer-eye pre-disclosure review).
 
+## L57 — Verify every finding against the LATEST published release, not the analysis snapshot `[PROVEN]` · disclosure-hygiene · sharpens L15
+
+- **Evidence:** find011 — `http` `PathAndQuery` `u16` index-truncation, surfaced by the SAST-driven
+  pass on a corpus snapshot pinned to `http` 1.4.2 (cell `http@2178e175/…/uri::limit-pair`), triaged
+  3-0, and PoC'd end-to-end against real `h2` 0.4.15 (both a remote panic and a path/query desync).
+  Only when the PoC was re-run against the newest published crate did it reclassify: `http` 1.5.0
+  (2026-07-29) had already added the `bytes.len() > MAX_LEN` guard in `scan_path_and_query`
+  (path.rs:478-480) with regression tests, and the PoC returns `InvalidUri(TooLong)`. The bug was real
+  on the snapshot and dead on latest.
+- **Why:** the analysis snapshot is a fixed point in the past; a finding true there can be fixed by the
+  time you verify it. Reporting against the snapshot version would have put a would-be flagship 0-day in
+  front of a maintainer who fixed it weeks ago — the exact low-signal contact that draws pushback
+  ([[image-rs-maintainer-pushback]]). Re-running the PoC against the latest release is a one-command
+  gate that *reclassifies* the finding (0-day → already-fixed) BEFORE any external contact, which is a
+  disclosure-quality win, not a loss.
+- **Change:** the pre-disclosure gate must build+run the PoC against the current published version(s),
+  not only the snapshot; a finding that does not reproduce on latest is marked fixed-upstream and never
+  routed to a maintainer report. This extends L15 (verify against release AND master) from "read the
+  code" to "run the PoC on the shipped artifact." Composes with L58.
+
+## L58 — Trace every "discovery" to its source before disclosing — a real finding can be a public rediscovery `[PROVEN]` · disclosure-hygiene · extends L15/L16/L57
+
+- **Evidence:** find011 again. After L57 showed it was fixed in 1.5.0, tracing the fix (`scan_path_and_query`
+  guard) led to PR [#856](https://github.com/hyperium/http/pull/856), which closed issue
+  [#855](https://github.com/hyperium/http/issues/855) — opened by a third party (`hey-jj`, 2026-07-25),
+  describing the SAME bug with the SAME two impacts we found (DoS panic in the accessors + path/query
+  desync, verbatim "proxy authorization bypass — `path()` sees `/` while forwarding the real path").
+  Our run (2026-08-03) was an independent-but-9-days-late rediscovery of a public, already-fixed report.
+  A CHANGELOG/release-code check alone (L57) would have caught "fixed" but not "already publicly
+  reported with full security analysis"; only tracing the fix to its issue revealed that a new issue
+  would be pure duplicate noise.
+- **Why:** "not in the latest release" and "not already known" are different facts. A silent-fix check
+  stops at the code; the issue tracker and advisory DBs are where you learn a human already filed it.
+  Opening a new issue on top of a closed, fully-analyzed report is exactly the low-SNR move to avoid,
+  and it misattributes credit. Conversely, this does NOT diminish the pipeline result: find011 came
+  through the full SAST→prioritise→finder→triage→PoC chain with no knowledge of #855, so a late
+  rediscovery of a real, security-confirmed bug is honest evidence of recall — just not a disclosure.
+- **Change:** before drafting ANY disclosure artifact, trace the finding to its source: grep the
+  upstream issue tracker (open AND closed), release notes/CHANGELOG, and CVE/RustSec/GHSA for the
+  crate + symbol. If it is already reported/fixed, stop — the finding stands as a recall data-point, not
+  a disclosure. Any residual action is limited to a genuinely-missing advisory, and must reference the
+  original report and credit its reporter. (Whether to automate this cross-check is scoped in
+  IMPROVEMENTS.md W47.)
+
 ## Suggested next actions
 
 The original cheap honesty gates are implemented for the Rust baseline. The

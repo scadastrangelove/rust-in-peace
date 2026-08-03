@@ -12,11 +12,12 @@ payoff is a rule set you can defend with a table.
 | engine | what it contributes | default rules |
 |---|---|---|
 | **OpenGrep** 1.26.0 | pattern + taint | upstream `semgrep-rules` (rust + generic) and the trailofbits pack, cloned at build time |
-| **ast-grep** 0.45.0 | U1 structural **enumeration** | ours — [`rules/astgrep/`](../../rules/astgrep) (5 enumerators; worklists, not alerts) |
+| **ast-grep** 0.45.0 | U1 structural **enumeration** | ours — [`rules/astgrep/`](../../rules/astgrep) (the enumerator + `cls-*` class rules; worklists, not alerts) |
 | **clippy** | Rust-native lints | **every** group: `all pedantic nursery cargo` + a curated slice of `restriction` (never the whole group — upstream warns it is deliberately self-contradictory) |
 | **Dylint** | type-aware, HIR-level | trailofbits `examples/general`, **pre-built into the image** (`cargo dylint --git` needs network; we run offline) |
 | **cargo-audit** | RustSec advisories | advisory-db baked in, `--no-fetch` |
 | **cargo-geiger** | unsafe-surface inventory (U1) | n/a — an inventory, not a finder |
+| **CodeQL** *(BYOL, opt-in)* | dataflow / taint queries | ours — [`rules/codeql/rust/`](../../rules/codeql/rust) (MIT queries). The proprietary CLI is **never** in the image; mount it via `SAST_CODEQL_CLI` (skill: `--byol codeql`) and it runs as a 7th engine. Off unless `codeql` is in `SAST_ENGINES`. |
 
 Every hit is tagged `engine · rule_id · clippy group · class`. The lint→group table is catalogued at
 build time (`lint_catalog.py`) precisely so pruning can be per **group**, not per individual lint.
@@ -67,11 +68,29 @@ two runs are only comparable when it matches.
 ## Build
 
 ```bash
-docker build -t vuln-pipeline-sast:v1 .
+./build.sh            # base + script overlay, then VERIFY every engine, then write engine-manifest.json
+./build.sh --strict   # same, but a missing measurement engine is a hard failure
 ```
 
+Use the script, not a bare `docker build`. Four of the six engines are installed with
+`|| echo "… BUILD FAILED" >> /opt/sast/BUILD-FAILURES.txt` (see the Dockerfile: cargo-audit,
+cargo-geiger, cargo-dylint, and the dylint/general prebuild), so a plain build **reports success with
+those engines absent** and the only trace is a file nothing reads.
+
+That is not a hypothetical failure mode. Every archived run in `results/` turns out to have fired only
+the five `rip-e00*` ast-grep enumerators — no `cls-*` rule ran at all — and conclusions drawn from
+those runs were attributed to the method rather than to a five-rule pack. `build.sh` closes that hole:
+it executes each engine inside the finished image (presence on `PATH` is not evidence — a dylint
+driver that cannot load and a clippy without its SARIF bridge both pass a `which` check and then emit
+an empty artifact, which reads as a clean result), prints what the Dockerfile swallowed, and pins the
+result in `engine-manifest.json`.
+
+`--strict` exists for measurement runs specifically: comparing a run to an older one is only sound if
+both had the same engines, so "we changed the rules" is never confused with "we dropped three
+engines".
+
 **Iterating on the scripts:** do NOT rebuild the base for a shell fix — the tool layer costs ~40
-minutes of cargo installs. Use the overlay:
+minutes of cargo installs. Use the overlay (`./build.sh --overlay-only`, or directly):
 
 ```bash
 docker build -f Dockerfile.scripts -t vuln-pipeline-sast:v1.3 .

@@ -99,7 +99,7 @@
 #
 #   KEPT, CHARACTERIZED — `.ok()` "immediately reconstructed" is common and is NOT a dead-end swallow:
 #     of 16 read, 5 are `.ok()` chained straight into `?`, `.and_then(..)?`, or a `match` that rebuilds
-#     a proper `Err` (rustls-ring/src/ticketer.rs's RNG-fill `.ok()?`; object's
+#     a proper `Err` (a crypto library's RNG-fill `.ok()?`; object's
 #     `.ok().read_error(msg)`; ttf-parser's `.ok().and_then(NonZeroU16::new)?`) — the failure still
 #     propagates, only the specific error TYPE is narrowed to `Option`. Left in (a real, if weaker,
 #     instance of the class — the original error's diagnostic detail is still gone), but flagged here
@@ -193,12 +193,12 @@
 #       candidates on attacker-adjacent parsed data (object Mach-O bind fields, fdeflate Huffman
 #       fallback, quinn ack-delay window); ~2 test-duplicate.
 #     RULE 7 dot-ok                (16 read): 5 "immediately reconstructed" (see above, not a
-#       dead-end); 4 clean benign; 4 test/build.rs; 2 real candidates, including hyper's Trailer
-#       header allow-list silently dropping unparseable field names via
-#       `.filter_map(|hv| hv.to_str().ok())` (proto/h1/role.rs:1423) — found independently again
+#       dead-end); 4 clean benign; 4 test/build.rs; 2 real candidates, including an HTTP/1 server's
+#       Trailer-header allow-list silently dropping unparseable field names via
+#       `.filter_map(|hv| hv.to_str().ok())` — found independently again
 #       under RULE 2 at the sibling `to_str()` call one line below, a useful cross-rule confirmation.
-#     RULE 2 if-let-ok-no-else     (12 read): ~5 real candidates (actix-web/ntex cookie-parse-failure
-#       silently downgrades to "no cookies"; image BMP ICC-profile-embed silently skipped; hyper
+#     RULE 2 if-let-ok-no-else     (12 read): ~5 real candidates (a web framework's cookie-parse-failure
+#       silently downgrades to "no cookies"; image BMP ICC-profile-embed silently skipped; the same
 #       Trailer parsing again); ~1 common mutex-poison-ignored idiom; ~2 fast-path/fallthrough (not a
 #       swallow); ~4 test/bench/example.
 #     RULE 6 match-err-trivial     (12 read): ~6 are the test-oracle idiom (see OUT OF SCOPE); ~5 real
@@ -413,12 +413,12 @@ note: |
   erasure happens at the call itself regardless of what the resulting Option is later used for.
   16-sample read: 5/16 are `.ok()` immediately re-thrown into fallibility (`.ok()?`,
   `.ok().and_then(..)?`, or fed into a `match` that reconstructs a proper `Err`, e.g.
-  rustls-ring/src/ticketer.rs's RNG-fill `.ok()?` and object's `.ok().read_error(msg)`) — a real but
+  a crypto library's RNG-fill `.ok()?` and object's `.ok().read_error(msg)`) — a real but
   WEAKER instance (the specific error TYPE/message is lost, but the failure itself still propagates)
   — kept, not excluded (see file header), but documented so a triage pass can dismiss a `?`-chained
-  `.ok()` fast. 2 real candidates found, most notably hyper's Trailer-header allow-list silently
-  dropping any header value that fails `.to_str()` or any name that fails `HeaderName::from_bytes`
-  (proto/h1/role.rs:1423) via back-to-back `.filter_map(|..| ..ok())` — cross-confirmed independently
+  `.ok()` fast. 2 real candidates found, most notably an HTTP/1 server's Trailer-header allow-list
+  silently dropping any header value that fails `.to_str()` or any name that fails
+  `HeaderName::from_bytes` via back-to-back `.filter_map(|..| ..ok())` — cross-confirmed independently
   by RULE 2 firing one line above on the same function.
 rule:
   pattern: $X.ok()

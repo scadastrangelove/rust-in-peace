@@ -68,7 +68,12 @@ RUN python3 /opt/sast/lint_catalog.py /opt/sast/clippy-lints.json || \
 # ── engine 4: cargo-audit (RustSec advisories) + an offline advisory DB ───────────────────────────
 RUN cargo install cargo-audit --locked \
     || echo "cargo-audit: BUILD FAILED" >> /opt/sast/BUILD-FAILURES.txt
-RUN git clone --depth 1 https://github.com/RustSec/advisory-db /root/.cargo/advisory-db \
+# NOT under /root: the analyze phase runs as an arbitrary non-root uid, which cannot even stat
+# `/root`, so the copy in run-all.sh silently no-op'd and cargo-audit then failed with
+# "failed to read directory /usr/local/cargo/advisory-db/crates". Anything the runtime must read
+# lives under /opt/sast, which is world-readable.
+RUN git clone --depth 1 https://github.com/RustSec/advisory-db /opt/sast/advisory-db \
+    && chmod -R a+rX /opt/sast/advisory-db \
     || echo "advisory-db: NOT FETCHED (cargo-audit will need network)" >> /opt/sast/BUILD-FAILURES.txt
 
 # ── engine 5: cargo-geiger (unsafe-surface inventory — U1 material, not a finder) ─────────────────
@@ -86,9 +91,21 @@ RUN set -eux; \
       ( cd /opt/rulepacks/dylint/examples/general \
         && cargo build --release \
         && mkdir -p /opt/sast/dylint-libs \
-        && find target/release -maxdepth 1 -name 'lib*@*' -exec cp {} /opt/sast/dylint-libs/ \; ) \
+        && for d in /opt/rulepacks/dylint/target/examples/release \
+                    /opt/rulepacks/dylint/examples/general/target/release; do \
+             [ -d "$d" ] && find "$d" -maxdepth 1 -name 'lib*@*.so' \
+                              -exec cp {} /opt/sast/dylint-libs/ \; ; \
+           done; \
+        [ -n "$(ls -A /opt/sast/dylint-libs 2>/dev/null)" ] ) \
       || echo "dylint/general: PREBUILD FAILED (optional)" >> /opt/sast/BUILD-FAILURES.txt ; \
     fi
+# The lint libs land in the WORKSPACE target dir (`target/examples/release`), not in
+# `examples/general/target/release` — cargo hoists them to the workspace root. The original `find`
+# looked only in the latter, so `cargo build` reported success, the copy silently found nothing, and
+# the image shipped cargo-dylint with an EMPTY library directory: an engine that runs on every crate
+# and reports nothing, which is indistinguishable from an engine that ran and found nothing. Both
+# paths are searched now, and the `[ -n "$(ls -A …)" ]` turns "copied zero files" into a failure
+# instead of a silent pass.
 
 # ── rule packs ────────────────────────────────────────────────────────────────────────────────────
 #
@@ -123,6 +140,24 @@ RUN if [ "$INCLUDE_SEMGREP_RULES" = "1" ]; then \
 RUN git clone --depth 1 https://github.com/trailofbits/semgrep-rules /opt/rulepacks/trailofbits-semgrep \
     || echo "trailofbits-semgrep: CLONE FAILED" >> /opt/sast/BUILD-FAILURES.txt
 
+# ── writable HOME/cache for an ARBITRARY non-root uid ─────────────────────────────────────────────
+# The analyze phase runs `docker run --user "$(id -u):$(id -g)"` (sast-scan.sh) — a uid that does not
+# exist in /etc/passwd, so HOME resolves to `/`, which is root-owned. Every tool that writes a cache
+# under $HOME then dies. OpenGrep is the loudest: it unpacks its own engine to
+# `$HOME/.cache/opengrep/<version>/opengrep.bin` on first use and exits rc=2 with
+# "failed to open … for writing" — which the runner records as an engine ERROR, so a whole corpus run
+# completes with 0 hits from all 12 opengrep passes and looks like "the tools found nothing".
+#
+# This was fixed once, in the v1.1→v1.4 overlays during bring-up, and never folded back into this
+# base image the way Dockerfile.scripts' own header says it should be. When v1.4 was deleted the fix
+# went with it, and the next rebuild silently regressed to the original defect. Keeping it here is
+# the fold-back.
+#
+# Placed late on purpose: it invalidates only the cheap trailing layers, not the ~40-minute tool tier.
+ENV HOME=/tmp \
+    XDG_CACHE_HOME=/tmp/.cache
+RUN mkdir -p /tmp/.cache /.cache && chmod 1777 /tmp /tmp/.cache /.cache
+
 # ── our runner + normalizer, LAST: they change often, everything above does not ───────────────────
 COPY run-all.sh normalize.py /opt/sast/
 RUN chmod +x /opt/sast/run-all.sh
@@ -148,6 +183,34 @@ RUN set -eux; \
     cat /opt/sast/VERSIONS.txt; \
     echo "--- build failures (empty is good) ---"; \
     cat /opt/sast/BUILD-FAILURES.txt 2>/dev/null || true
+
+# ── LAST: pre-warm and open the caches every root step above just created ────────────────────────
+# Setting HOME=/tmp is necessary but NOT sufficient. Every `opengrep --version` executed during the
+# build (the install check, and the VERSIONS.txt manifest above) runs as ROOT and unpacks the engine
+# into `$HOME/.cache/opengrep/<ver>/` with mode 700. `/tmp/.cache` is sticky (1777), so a non-root
+# uid may create its own entries there but cannot write into that root-owned 700 directory — and the
+# run fails with exactly the original error, one level deeper.
+#
+# So do it last, after every root invocation: warm the cache deliberately (the engine is then already
+# unpacked and a non-root run only needs to READ it) and relax the modes so any uid can use it.
+# `a+rwX` — capital X sets +x on directories only, never on the unpacked payload.
+# NOTE it is not only the engine cache. OpenGrep also opens a log at `$HOME/.opengrep/semgrep.log`
+# before it does any work, so a chmod covering `.cache` alone still dies — one directory further in,
+# with the same Errno 13. Everything the build put under HOME is opened, not an enumerated subset.
+# `/work` is the same defect a third time. run-all.sh copies the read-only `/src` mount into a
+# WRITABLE `/work` (clippy and dylint must compile the crate, which a `:ro` mount cannot support), and
+# creating a directory at `/` is exactly what an arbitrary uid cannot do — so the copy fails, every
+# engine then runs against a path that does not exist, and the crate reports 0 hits from 12 engines.
+# Pre-create it here; the runtime cannot.
+# `/w` is the FETCH phase's staging copy (sast-scan.sh), and it needs the same treatment as `/work`:
+# that phase also runs `--user "$(id -u):$(id -g)"`, so its `cp -a /src /w` failed with the same
+# Permission denied — meaning `cargo fetch` never ran, no Cargo.lock was ever resolved, and the
+# Dylint driver was never warmed. Every downstream symptom (audit "absent", geiger reaching for
+# index.crates.io, dylint rebuilding its driver offline) traced back here.
+RUN opengrep --version >/dev/null 2>&1 || true; \
+    mkdir -p /tmp/.cache /tmp/.opengrep /.cache /work /w; \
+    chmod -R a+rwX /tmp /.cache; chmod 1777 /work /w; \
+    ls -ld /tmp/.cache/opengrep /tmp/.opengrep /work /w 2>/dev/null || true
 
 WORKDIR /src
 CMD ["/opt/sast/run-all.sh"]

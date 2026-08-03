@@ -74,6 +74,12 @@ run() {
   local status="ok"
   [ "$rc" -eq 124 ] && status="timeout"
   [ "$rc" -ne 0 ] && [ "$rc" -ne 124 ] && status="error"
+  # cargo-audit exits 1 to mean "advisories FOUND" — a successful scan with results, not a failure.
+  # Mapping every non-zero rc to error recorded the one engine whose whole purpose is finding
+  # something as broken precisely when it worked. Only treat it as an error when it produced nothing.
+  case "$engine" in
+    audit*) [ "$rc" -eq 1 ] && [ -s "$OUT/raw/$artifact" ] && status="ok" ;;
+  esac
   [ -s "$OUT/raw/$artifact" ] || { [ "$status" = "ok" ] && status="empty"; }
   # TRUNCATION DETECTION. A cargo-based engine that aborts mid-scan still writes a well-formed
   # artifact, and when it runs in a pipe (`cargo clippy | clippy-sarif`) the pipeline's exit code is
@@ -81,7 +87,19 @@ run() {
   # aborted on hyper at an example target and on h2 at `deny(warnings)` under cfg(test), yielding
   # 82 vs 1593 hits that reflected WHEN each abort happened, not the code. A partial scan must never
   # be presented as a clean one.
-  if [ "$status" = "ok" ] && grep -qE "could not compile|build failed|error: aborting" \
+  #
+  # RESOLUTION failures need the same treatment and were NOT covered by the compile-abort patterns
+  # above. Measured on actix-web: clippy exited 0, wrote a well-formed 334-byte SARIF with zero
+  # results, and was recorded **ok** — while its stderr said
+  # `error: no matching package named 'actix-service' found … location searched: crates.io index`.
+  # The offline analyze phase cannot always resolve a workspace graph from the seeded registry, and
+  # when it cannot, cargo never compiles anything, so no compile-abort string is ever printed. The
+  # engine that contributed 84 % of hits on the archived corpus therefore reported success while
+  # producing nothing — the exact "absent engine looks like a clean result" failure this layer is
+  # supposed to make impossible.
+  if [ "$status" = "ok" ] && grep -qE "could not compile|build failed|error: aborting|\
+no matching package named|failed to select a version|couldn.t open crates.io index|\
+Could not resolve host|error: failed to (get|download|resolve)" \
        "$OUT/raw/$engine.stderr" 2>/dev/null; then
     status="partial"
   fi
@@ -109,8 +127,18 @@ fi
 # cargo insists on writing: Cargo.lock for crates that don't commit one, and `target/`. So analyse a
 # copy. The mount stays pristine; `--src /work` tells the normalizer to strip that prefix, so emitted
 # paths remain repo-relative and comparable across runs.
-if [ -d "$SRC_RO" ] && [ ! -d "$SRC" ]; then
-  cp -a "$SRC_RO" "$SRC" 2>/dev/null || { mkdir -p "$SRC"; cp -a "$SRC_RO"/. "$SRC"/; }
+# The test is "is the working copy EMPTY", not "does the directory exist", and the copy takes the
+# CONTENTS form (`/src/.` → `/work/`). Both details matter now that the image pre-creates `/work`:
+#   * `[ ! -d "$SRC" ]` skipped the copy outright once the directory existed, leaving `/work` empty —
+#     every engine then scanned nothing and the crate reported 0 hits from 12 engines with all of them
+#     recorded "ok".
+#   * `cp -a "$SRC_RO" "$SRC"` nests into `/work/src/…` when the destination exists, instead of
+#     placing the crate root at `/work`.
+# `/work` has to be pre-created because the analyze phase runs as an arbitrary non-root uid that
+# cannot mkdir at `/` — so these two must agree, and this is the side that adapts.
+if [ -d "$SRC_RO" ] && [ -z "$(ls -A "$SRC" 2>/dev/null)" ]; then
+  mkdir -p "$SRC"
+  cp -a "$SRC_RO"/. "$SRC"/
   echo "    working copy: $SRC_RO → $SRC ($(du -sh "$SRC" 2>/dev/null | cut -f1))"
 fi
 
@@ -118,12 +146,55 @@ fi
 export CARGO_HOME=${CARGO_HOME:-/tmp/cargo}
 export CARGO_TARGET_DIR=/tmp/target
 mkdir -p "$CARGO_HOME" "$CARGO_TARGET_DIR"
-if [ -d /cargo-ro ]; then
+# If the cargo volume is mounted WRITABLE at $CARGO_HOME there is nothing to seed — the analyze phase
+# then reads exactly what the fetch phase produced. That is the point: the previous design copied
+# `/cargo-ro` into a scratch home with `2>/dev/null || true`, so a partial copy was indistinguishable
+# from a complete one. Measured on actix-web: `actix-service` was present in the volume (index, cache
+# AND lock, 407 packages) yet offline clippy still reported "no matching package named actix-service
+# found … location searched: crates.io index" — the copy, not the fetch, was the lossy step.
+# Writing to this volume is safe: it is our own per-crate scratch, never the operator's source clone.
+if [ -d /cargo-ro ] && [ "$CARGO_HOME" != "/cargo-ro" ]; then
   cp -a /cargo-ro/. "$CARGO_HOME"/ 2>/dev/null || true
   echo "    cargo home seeded from /cargo-ro ($(du -sh "$CARGO_HOME" 2>/dev/null | cut -f1))"
+elif [ -d "$CARGO_HOME/registry" ]; then
+  echo "    cargo home mounted writable at $CARGO_HOME ($(du -sh "$CARGO_HOME" 2>/dev/null | cut -f1), no copy)"
 fi
-# The advisory DB was baked into the image at /root/.cargo/advisory-db.
-[ -d /root/.cargo/advisory-db ] && cp -a /root/.cargo/advisory-db "$CARGO_HOME"/ 2>/dev/null || true
+# The advisory DB is baked into the image at /opt/sast/advisory-db (world-readable — it used to sit
+# under /root, which the non-root analyze uid cannot even stat, so this copy quietly did nothing and
+# cargo-audit failed on a missing database).
+[ -d /opt/sast/advisory-db ] && cp -a /opt/sast/advisory-db "$CARGO_HOME"/ 2>/dev/null || true
+
+# ── resolved dependency graph, offline ───────────────────────────────────────────────────────────
+# Two engines need the GRAPH, not just the sources, and most library crates do not commit a lock:
+#   * cargo-audit reads `Cargo.lock` directly and was recorded "absent — no Cargo.lock" on every such
+#     crate;
+#   * cargo-geiger resolves the graph itself, so without a lock it reaches for the registry index and
+#     dies against `--network none` with "Could not resolve host: index.crates.io" (rc=101).
+# Both are avoidable here: the fetch phase already seeded the registry into $CARGO_HOME read-only, so
+# the lock can be produced offline. Failure stays soft — the two engines then record their own reason
+# rather than the whole run dying over an optional graph.
+export CARGO_NET_OFFLINE=true
+# Prefer the fetch phase's lock even when the crate ships one: a committed lock that lags its
+# Cargo.toml forces cargo to re-resolve, and re-resolving offline against a seeded registry is what
+# emptied clippy on workspace crates. The fetch phase refreshed it with the network up, so it is
+# resolvable by construction here.
+if [ -f "$CARGO_HOME/Cargo.lock.generated" ] && [ -f "$SRC/Cargo.toml" ]; then
+  cp -f "$CARGO_HOME/Cargo.lock.generated" "$SRC/Cargo.lock"
+  echo "    Cargo.lock taken from the fetch phase (resolvable offline)"
+fi
+if [ -f "$SRC/Cargo.toml" ] && [ ! -f "$SRC/Cargo.lock" ]; then
+  # Prefer the lock the FETCH phase resolved with the network up and parked in the cargo volume.
+  # Generating one here is the fallback and usually fails: the seeded `$CARGO_HOME` is a download
+  # cache, not a registry index, so offline resolution has nothing to resolve against.
+  if [ -f "$CARGO_HOME/Cargo.lock.generated" ]; then
+    cp -f "$CARGO_HOME/Cargo.lock.generated" "$SRC/Cargo.lock"
+    echo "    Cargo.lock restored from the fetch phase (for audit / geiger)"
+  elif ( cd "$SRC" && cargo generate-lockfile --offline >/dev/null 2>&1 ); then
+    echo "    generated Cargo.lock offline (for audit / geiger)"
+  else
+    echo "    ⚠ no Cargo.lock and none resolvable offline — audit and geiger will be limited"
+  fi
+fi
 
 # ── 1. OpenGrep — upstream default rule packs, out of the box ─────────────────────────────────────
 if want opengrep && command -v opengrep >/dev/null; then
@@ -235,11 +306,47 @@ fi
 
 # ── 6. cargo-geiger — unsafe-surface inventory (U1 material). Slow: opt-in. ───────────────────────
 if want geiger && command -v cargo-geiger >/dev/null; then
+  # `--workspace` first: a workspace root is often a VIRTUAL manifest (no root package), and geiger
+  # refuses it with "requires running against an actual package in this workspace" — measured on
+  # actix-web. The fallback keeps the plain form for single-crate targets where `--workspace` is
+  # unnecessary.
   run_fb "geiger" "geiger.json" \
-    "cd '$SRC' && cargo geiger --offline --output-format Json > '$OUT/raw/geiger.json'" \
-    "cd '$SRC' && cargo geiger --output-format Json --offline --all-features > '$OUT/raw/geiger.json'"
+    "cd '$SRC' && cargo geiger --offline --workspace --output-format Json > '$OUT/raw/geiger.json'" \
+    "cd '$SRC' && cargo geiger --offline --output-format Json > '$OUT/raw/geiger.json'"
 else
   record "geiger" "absent" 0 0 "" "cargo-geiger not present or engine deselected"
+fi
+
+# ── 7. CodeQL — BYOL (bring-your-own-licence): the CLI is MOUNTED, never baked ─────────────────────
+# CodeQL's CLI ships under a proprietary licence that forbids redistribution, so the image never
+# contains it (our queries in $RULES/codeql are MIT and DO ship). It runs only when the operator
+# mounts a Rust-capable CodeQL CLI (sast-scan.sh --byol codeql → -v <cli>:/opt/codeql:ro) AND selects
+# the engine. Opt-in and absent by default: `want codeql` is false unless SAST_ENGINES lists it, so a
+# run without a licence never blocks and never looks clean.
+CODEQL_CLI=${CODEQL_CLI:-/opt/codeql/codeql}
+CODEQL_QUERIES=${CODEQL_QUERIES:-$RULES/codeql/rust}
+# --build-mode=none analyses source without a compile — the right default for the offline analyze
+# phase; override CODEQL_CREATE_FLAGS if the operator's CLI/extractor needs a traced build.
+CODEQL_CREATE_FLAGS=${CODEQL_CREATE_FLAGS:-"--build-mode=none"}
+# Our qlpack depends on `codeql/rust-all`; the operator's CLI must resolve it (bundled dist packs, or
+# a prior `codeql pack download`). If it lives beside the mounted CLI, point CODEQL_ADDITIONAL_PACKS
+# at it (commonly /opt/codeql/qlpacks) so analyze can find it offline.
+CODEQL_PACKS_ARG=""
+[ -n "${CODEQL_ADDITIONAL_PACKS:-}" ] && CODEQL_PACKS_ARG="--additional-packs='$CODEQL_ADDITIONAL_PACKS'"
+if want codeql; then
+  if [ -x "$CODEQL_CLI" ] && [ -f "$SRC/Cargo.toml" ] && [ -d "$CODEQL_QUERIES" ]; then
+    CODEQL_DB=/tmp/codeql-db
+    rm -rf "$CODEQL_DB"
+    run_fb "codeql" "codeql.sarif" \
+      "'$CODEQL_CLI' database create '$CODEQL_DB' --language=rust --source-root='$SRC' --overwrite --threads=$JOBS $CODEQL_CREATE_FLAGS >/dev/null 2>&1 && '$CODEQL_CLI' database analyze '$CODEQL_DB' '$CODEQL_QUERIES' --format=sarifv2.1.0 --output='$OUT/raw/codeql.sarif' --threads=$JOBS $CODEQL_PACKS_ARG" \
+      ""
+  elif [ ! -x "$CODEQL_CLI" ]; then
+    record "codeql" "absent" 0 0 "" "no CodeQL CLI at $CODEQL_CLI — BYOL: set SAST_CODEQL_CLI (skill: --byol codeql)"
+  elif [ ! -d "$CODEQL_QUERIES" ]; then
+    record "codeql" "absent" 0 0 "" "no query pack at $CODEQL_QUERIES"
+  else
+    record "codeql" "absent" 0 0 "" "no Cargo.toml at $SRC"
+  fi
 fi
 
 # ── normalize: raw → hits.jsonl → cells.jsonl → summary.json ──────────────────────────────────────

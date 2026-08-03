@@ -148,13 +148,17 @@ work. Full details:
 ## Contents
 
 - **Claude Code skills**: `/quickstart`, `/threat-model`, `/vuln-scan`,
-  `/variant-scan`, `/sast-driven`, `/triage`, `/patch`, `/customize`: interactive
+  `/variant-scan`, `/sast-driven`, `/sast-prioritise`, `/triage`, `/patch`,
+  `/customize`: interactive
   scoping, scanning, triage, and patching. `/variant-scan` runs the three
   seed-diverse find passes (blind ∪ threat-model-first ∪ CVE/history-seeded) + a
   3-skeptic adversarial verify — the recall engine the real-OSS campaigns used.
   `/sast-driven` is the deliberately **isolated fourth mode**: it runs every
-  static-analysis engine's default rules in a container, clusters the output into
-  *cells*, judges each for reachability, and only then lets a finder read code —
+  static-analysis engine's default rules in a container (six baked in, plus CodeQL
+  as an opt-in BYOL 7th — see [`docs/sast-layer.md`](docs/sast-layer.md) §10 and
+  [`docker/sast/README.md`](docker/sast/README.md)), clusters the output into
+  *cells*, judges each for reachability (`/sast-prioritise`), and only then lets a
+  finder read code —
   kept separate so "what did the tools find that reasoning didn't?" stays
   measurable. Open this repo
   in Claude Code and run `/quickstart` to get oriented.

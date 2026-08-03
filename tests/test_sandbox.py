@@ -64,6 +64,15 @@ def test_container_env_threads_proxy(monkeypatch):
 
 def test_container_env_passes_auth_unchanged_without_proxy(monkeypatch):
     monkeypatch.delenv(sandbox.PROXY_ENV, raising=False)
+    for var in (
+        "HTTPS_PROXY",
+        "HTTP_PROXY",
+        "NO_PROXY",
+        "https_proxy",
+        "http_proxy",
+        "no_proxy",
+    ):
+        monkeypatch.delenv(var, raising=False)
     e = sandbox.container_env({"CLAUDE_CODE_OAUTH_TOKEN": "tok"})
     assert e == {"CLAUDE_CODE_OAUTH_TOKEN": "tok"}
 

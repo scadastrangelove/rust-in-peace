@@ -30,10 +30,46 @@ from pathlib import Path
 
 # ── tier-1 structural filter ─────────────────────────────────────────────────
 # Paths whose findings are not attacker-reachable by construction (fp-rules R5, mechanized).
-# Agent-budget target. Cells, not hits, cost money: ~20 is what one triage pass can absorb. This is
-# a CLUSTERING target, never a truncation — exceeding it coarsens the module key (merging siblings),
-# it never drops a cell.
-MAX_CELLS = 20
+#
+# RECALL-FIRST (2026-08-01). This was 20, chosen as "what one triage pass can absorb" — i.e. an
+# AGENT-BUDGET number controlling a CLUSTERING knob. That conflation costs recall two ways:
+#
+#   1. Coarsening merges siblings, and a merged cell gets ONE verdict. Measured harm (bringup §5.3):
+#      h2's `unsafe` cell merged `hpack/header.rs:283` (decode path, the only real seed) with two
+#      `table.rs` hits carrying no `unsafe` at all on the SEND path — "same class name, disjoint
+#      trust boundary". One judge refuting the wrong half discards the other half unread. E9 found
+#      the same shape independently ("serialize-side merged with parse-side").
+#   2. Budget is now managed where it belongs: cells are RANKED (rarest-rule-first) and spent
+#      top-down, with the unread tail LOGGED, not merged away. Ordering is not truncation.
+#
+# So the cap is raised far above the point where coarsening normally triggers, and the cell key
+# additionally splits on data-path direction (see data_path_of). If a run legitimately produces more
+# cells than the agent budget, that is a RANKING problem, not a reason to fuse trust boundaries.
+#
+# The number is MEASURED, not guessed — cells at each module depth over the 7 archived runs
+# (primary hits only, 2026-08-01):
+#
+#     crate       prim   d1    d2    d3   file(d9)   files
+#     h2           657    27    51    93     118       53
+#     httparse     142     7    15    21      21       10
+#     hyper         64    13    24    32      34       28
+#     lopdf        812    45   122   138     138       66
+#     object       686    18    37    82     176       77
+#     quick-xml    377     7    41    66      66       25
+#     rustls       846    38    46   150     228      114
+#     TOTAL             155   336   582     781
+#
+# Depth 2 is the natural Rust module unit (`src/hpack`, `src/proto/streams`) and the granularity at
+# which trust boundaries actually live; 150 keeps every one of these crates at depth 2-3 instead of
+# collapsing to `src` (depth 1), where a single cell like `src::panic-surface` would hold 78 sites
+# spanning three unrelated subsystems and receive ONE verdict.
+#
+# NOTE the tradeoff this number does NOT resolve: cells carry every site, so a COARSE cell still
+# shows the agent all hits in one read — coarsening loses verdict independence, not site coverage.
+# Finer cells cost proportionally more agent calls, and any cell left unread is coverage lost
+# outright. That is why the complementary fix is a PER-SITE-GROUP verdict (see SKILL.md): a coarse
+# cell must never be refutable wholesale.
+MAX_CELLS = 150
 
 # ── EXEMPLARS: a cell hands over ALL of its sites ────────────────────────────────────────────────
 # This used to be capped at **8**, and the 8 had no justification — measured in E9 and corrected:
@@ -123,6 +159,51 @@ def cfg_test_lines(src_root: str, rel: str) -> set[int]:
         i += 1
     _cfg_test_cache[rel] = lines_out
     return lines_out
+
+# ── enclosing function / impl, for the data-path split ───────────────────────────────────────────
+# A hit's trust boundary is a property of the code it sits in, not of its filename. Cheap resolver:
+# index every `fn` / `impl` header in the file, then bind a hit line to the nearest preceding one.
+# Fail-open in every direction — an unreadable file or an unrecognised header yields "", which keeps
+# the old (path-only) behaviour, so this can only ever SPLIT a cell, never merge two.
+FN_DECL = re.compile(
+    r"^\s*(?:pub(?:\([^)]*\))?\s+)?(?:default\s+)?(?:const\s+)?(?:async\s+)?(?:unsafe\s+)?"
+    r"(?:extern\s+\"[^\"]*\"\s+)?fn\s+(\w+)")
+IMPL_DECL = re.compile(r"^\s*(?:unsafe\s+)?impl(?:\s*<[^>]*>)?\s+(?:([\w:]+)\s+for\s+)?([\w:<>]+)")
+_fnidx_cache: dict[str, list[tuple[int, str]]] = {}
+
+
+def fn_index(src_root: str, rel: str) -> list[tuple[int, str]]:
+    """[(line, 'Impl::fn'), …] ascending, 1-based."""
+    if rel in _fnidx_cache:
+        return _fnidx_cache[rel]
+    out: list[tuple[int, str]] = []
+    try:
+        text = (Path(src_root) / rel).read_text(errors="replace").splitlines()
+    except Exception:                                       # noqa: BLE001 — unreadable: no claim
+        _fnidx_cache[rel] = out
+        return out
+    cur_impl = ""
+    for n, ln in enumerate(text, 1):
+        mi = IMPL_DECL.match(ln)
+        if mi:
+            cur_impl = mi.group(1) or mi.group(2) or ""
+        mf = FN_DECL.match(ln)
+        if mf:
+            out.append((n, f"{cur_impl}::{mf.group(1)}" if cur_impl else mf.group(1)))
+    _fnidx_cache[rel] = out
+    return out
+
+
+def enclosing_context(src_root: str, rel: str, line: int) -> str:
+    idx = fn_index(src_root, rel)
+    name = ""
+    for n, nm in idx:
+        if n <= line:
+            name = nm
+        else:
+            break
+    return name
+
 
 # ── unpublished workspace members ────────────────────────────────────────────────────────────────
 # The `dev_tooling` DROP_PATTERN above is a hardcoded guess (`ci-bench`, `xtask`) and its own comment
@@ -296,6 +377,14 @@ def parse_geiger(path: Path, engine: str, src: str) -> list[dict]:
 
 
 ARTIFACTS = [
+    # CodeQL (L1, 2026-08-01). The class × ENGINE grid says no engine dominates and four classes
+    # INVERT between ast-grep and CodeQL — mutual recursion A→B→A (ast-grep N / CodeQL R), counter
+    # width & type disambiguation (N / R), guard DOMINANCE vs mere presence (E / R), allocation via
+    # helper/field dataflow (E / R). E13 ran opengrep+astgrep+clippy+audit+dylint+geiger and NO
+    # CodeQL, so those four classes were structurally unreachable in the run that produced 24 finds.
+    # Adding the engine is the cheapest recall gain available: no rule authoring, and the queries and
+    # databases already exist.
+    ("codeql.sarif", "codeql", parse_sarif),
     ("clippy.sarif", "clippy", parse_sarif),
     ("dylint.json", "dylint", parse_cargo_json),
     ("astgrep.json", "astgrep", parse_astgrep),
@@ -399,13 +488,62 @@ def main() -> int:
     # absorb. So coarsen the module key (drop trailing path components) until the cell count fits,
     # and record the depth used. Coarsening merges siblings; it never drops anything.
     def module_of(path: str, depth: int) -> str:
-        parts = Path(path).parent.parts
+        # Depth counts path components INCLUDING the file, so the finest granularity is one cell per
+        # (class × file) rather than per (class × directory). Directory-level was the granularity in
+        # which h2's §5.3 fusion happened: `hpack/header.rs` (decode) and `hpack/table.rs` (send) are
+        # siblings, so no directory key can separate them, and the direction is not in either name.
+        # File-level cannot fuse two files by construction; coarser levels still merge siblings when
+        # the cap forces it, and that is now recorded in module_depth.
+        parts = Path(path).parts
         return str(Path(*parts[:depth])) if parts[:depth] else "."
+
+    # ── data-path direction: the trust boundary the coarsened module key cannot see ──────────────
+    # Measured defect (bringup §5.3): one cell merged a DECODE-path site with SEND-path sites under
+    # the same class+module key — "same class name, disjoint trust boundary" — and a single verdict
+    # then covers both. E9 independently reported "serialize-side merged with parse-side" as one of
+    # its three upstream defects. Direction is the cheapest discriminator that separates them: on a
+    # parser crate the attacker-facing half is the read/decode half, and mixing it with the emit half
+    # is what makes a cell unjudgeable.
+    #
+    # Deliberately coarse and fail-open: anything that does not clearly say read or write becomes
+    # "" (unclassified) and keeps its old behaviour, so this can only SPLIT cells, never merge them.
+    # Boundary class includes ':' — enclosing contexts arrive as `Impl::fn` (`Recv::recv_headers`,
+    # `Encoder::update_max_size`), and a boundary of just [/_.] silently failed to match every one
+    # of them. Caught by testing the resolver against real h2 source rather than trusting the regex.
+    _READ = re.compile(r"(^|[/_:])(de|dec|decode|decoder|decoding|read|reader|parse|parser|parsing|"
+                       r"recv|receive|input|inflate|decompress|demux|demuxer|scan|scanner|lex|lexer)"
+                       r"([/_.:]|$)")
+    _WRITE = re.compile(r"(^|[/_:])(en|enc|encode|encoder|encoding|write|writer|ser|serialize|"
+                        r"serializer|send|emit|output|deflate|compress|mux|muxer|build|builder)"
+                        r"([/_.:]|$)")
+
+    def _dir_of_text(s: str) -> str:
+        s = s.lower()
+        r, w = bool(_READ.search(s)), bool(_WRITE.search(s))
+        if r and not w:
+            return "read"
+        if w and not r:
+            return "write"
+        return ""
+
+    def data_path_of(path: str, line: int | None = None) -> str:
+        # The ENCLOSING FUNCTION first, the path second. Measured reason: in the h2 §5.3 case the
+        # direction was not in the path at all — `hpack/header.rs` (decode) and `hpack/table.rs`
+        # (send) are both direction-neutral as filenames, which is exactly why they fused. The
+        # decode/emit split lives in the function the hit sits in (`decode*` vs `encode*`/`put_*`),
+        # so resolve that first and fall back to the path only when the code context says nothing.
+        if line:
+            ctx = enclosing_context(args.src, path, line)
+            d = _dir_of_text(ctx)
+            if d:
+                return d
+        return _dir_of_text(path)
 
     primaries = [h for h in deduped if h["role"] == "primary"]
     depth = 9
     for d in range(9, 0, -1):
-        if len({(h["class"], module_of(h["file"], d)) for h in primaries}) <= MAX_CELLS:
+        if len({(h["class"], module_of(h["file"], d), data_path_of(h["file"], h.get("line")))
+                for h in primaries}) <= MAX_CELLS:
             depth = d
             break
         depth = d
@@ -425,10 +563,12 @@ def main() -> int:
         if h["role"] == "enumerator":
             worklist[module][h["rule_id"]] += 1
             continue
-        key = (h["class"], module)
+        direction = data_path_of(h["file"], h.get("line"))
+        key = (h["class"], module, direction)
+        _dsuffix = f"::{direction}" if direction else ""
         cell = cells.setdefault(key, {
-            "cell_id": f"{args.crate}@{args.commit[:8]}/{module}::{h['class']}",
-            "class": h["class"], "module": module, "crate": args.crate,
+            "cell_id": f"{args.crate}@{args.commit[:8]}/{module}::{h['class']}{_dsuffix}",
+            "class": h["class"], "module": module, "data_path": direction, "crate": args.crate,
             "hits": 0, "engines": Counter(), "rules": Counter(),
             "sites": defaultdict(list), "exemplars": [],
             "filters": {"structural": "kept", "capability": "unevaluated",
@@ -462,6 +602,152 @@ def main() -> int:
     # is still a real artifact for the mirror-walk. Report the count so it is not silently lost.
     orphan_worklist_modules = sorted(set(worklist) - {c["module"] for c in cell_list})
 
+    # ── coverage-gap cells: the files NO rule pointed at ─────────────────────────────────────────
+    # Measured 2026-08-01 over the 7 archived runs: only **262 of 419** shipped .rs files (63 %) carry
+    # a single primary hit, and **25 % of shipped LOC (58,513 of 236,389)** is untouched. Code that no
+    # rule points at is code no reader ever opens, so that 25 % is a pure recall hole — and it is not
+    # empty space: in one corpus crate the two largest blind files (3.2k and 2.1k LOC) turned out to
+    # hold both halves of a defect confirmed later by a reader — the guard in one, the sink in the
+    # other. Neither file had a single rule hit.
+    #
+    # Why they are blind is NOT a sink-vocabulary gap — `reserve`/`with_capacity`/`resize` are all in
+    # cls-alloc already. It is the SOURCE side: tier 2 requires the size to come from a parse call
+    # (`read_u32`, `from_be_bytes`, …) in the same expression, and those two files contain **zero**
+    # such calls. Their sizes come from struct fields and `.len()` — i.e. parse → field → (elsewhere)
+    # → sink, which no single-expression pattern can express. Widening the rule to match would drop
+    # its precision to nil; the recall-first answer is to stop requiring a rule to be right and just
+    # put a reader in front of the file, which is the layer's actual job ("narrow scope, not aim").
+    #
+    # So: one cell per blind file that contains at least one sink-shaped construct, carrying those
+    # lines as its sites. These are explicitly LOW-confidence (`scanner_confidence: 0.0`) and rank
+    # last by construction; they exist to make coverage complete, not to make a claim.
+    GAP_SINKS = {
+        "alloc":      re.compile(r"\b(?:with_capacity|reserve_exact|reserve|resize_with|resize|set_len)\s*\(|vec!\s*\["),
+        "index":      re.compile(r"\[[A-Za-z_]\w*(?:\s*[-+*]\s*[\w.]+)?\s*(?:as\s+\w+\s*)?\]"),
+        "arith_sub":  re.compile(r"[\w)\]]\s*-\s*[\w(]"),
+        "cast":       re.compile(r"\bas\s+(?:usize|u8|u16|u32|u64|i8|i16|i32|i64)\b"),
+        "unwrap":     re.compile(r"\.(?:unwrap|expect)\s*\("),
+        "unsafe":     re.compile(r"\bunsafe\s*\{|get_unchecked|from_utf8_unchecked"),
+    }
+    hit_files = {h["file"] for h in deduped if h["role"] == "primary"}
+    gap_cells: list[dict] = []
+    for p in sorted(Path(args.src).rglob("*.rs")):
+        relp = str(p.relative_to(args.src))
+        if relp in hit_files:
+            continue
+        if next((why for why, pat in DROP_PATTERNS if pat.search(relp)), None):
+            continue                                            # tests/benches/examples/generated
+        if any(relp == d or relp.startswith(d + "/") for d in unpublished):
+            continue                                            # publish = false workspace member
+        try:
+            text = p.read_text(errors="replace")
+        except Exception:                                       # noqa: BLE001 — unreadable: no claim
+            continue
+        sites: dict[str, list[str]] = {}
+        for n, line_txt in enumerate(text.splitlines(), 1):
+            if n in cfg_test_lines(args.src, relp):
+                continue
+            # COMMENTS AND DOC EXAMPLES ARE NOT SINKS. Caught by the prioritisation stage on
+            # quick-xml `src/writer/async_tokio.rs`: all 24 "sink-shaped" lines were `///` doc
+            # examples and `#[cfg(test)]` code — 15 of them `str::from_utf8(&buf).unwrap()` inside
+            # rustdoc snippets. The cell scored 0.75 and an agent call went on a file with no sink in
+            # it at all. `cfg_test_lines` already handles the test block; rustdoc examples are the
+            # other half, and they are the more misleading one because they LOOK like shipped code.
+            stripped = line_txt.lstrip()
+            if stripped.startswith(("///", "//!", "//")):
+                continue
+            # ATTRIBUTES ARE NOT INDEXING. `#[inline]`, `#[derive(...)]`, `#[cfg(...)]` all match the
+            # `index` pattern on their brackets. Measured on actix-web `response/responder.rs`, where
+            # three of the five cited sites were `#[inline]` lines and the rest were markdown link
+            # brackets and `/// - ` bullets inside the doc block — a 367-line file of trait impls that
+            # scored the maximum prior and cost an agent call to establish it contains no logic at all.
+            if stripped.startswith("#["):
+                continue
+            for kind, rx in GAP_SINKS.items():
+                if rx.search(line_txt):
+                    sites.setdefault(f"coverage-gap:{kind}", []).append(f"{relp}:{n}")
+        if not sites:
+            continue                                            # genuinely nothing sink-shaped here
+        by_rarity = sorted(sites.items(), key=lambda kv: (len(kv[1]), kv[0]))
+        gap_cells.append({
+            "cell_id": f"{args.crate}@{args.commit[:8]}/{relp}::coverage-gap",
+            "class": "coverage-gap", "module": relp,
+            "data_path": data_path_of(relp), "crate": args.crate,
+            "hits": sum(len(v) for v in sites.values()),
+            "engines": {"coverage-gap": 1},
+            "rules": {r: len(v) for r, v in by_rarity},
+            "sites": {r: v for r, v in by_rarity},
+            "exemplars": [s for _, ss in by_rarity for s in ss],
+            "loc": text.count("\n") + 1,
+            "filters": {"structural": "kept", "capability": "unevaluated",
+                        "reachability": "unjudged", "where_checked": None},
+            "context_corroborating": {}, "u1_worklist": {},
+            "note": "NO rule fired anywhere in this file. Sites are sink-SHAPED lines found by a "
+                    "plain scan, not a rule claim — read the file, do not triage the list.",
+        })
+    # Ranking. LOC alone is the wrong signal, measured: lopdf's `src/encodings/glyphnames.rs` (3,804
+    # LOC) ranked second on LOC while being a pure DATA TABLE — 3,281 of its 3,283 "sites" are the
+    # `index` pattern firing inside a glyph-table macro. Rank instead on the sink kinds that imply
+    # LOGIC (alloc / unsafe / unwrap); `index`, `cast` and `arith_sub` stay in the evidence but do not
+    # rank, because they fire on essentially any Rust file. Data tables sink to the bottom on their
+    # own without a filter deciding they are uninteresting (L6: rank, never cut).
+    def _logic_weight(c: dict) -> int:
+        return sum(len(v) for k, v in c["sites"].items()
+                   if k.rsplit(":", 1)[-1] in ("alloc", "unsafe", "unwrap"))
+
+    gap_cells.sort(key=lambda c: (-_logic_weight(c), -c.get("loc", 0)))
+    cell_list.extend(gap_cells)
+
+    # ── limit-pair cells: the mirror walk, precomputed ───────────────────────────────────────────
+    # Limit-bypass is the single most common mechanism behind our disclosed findings (5 clusters
+    # across 5 crates: object, miniz_oxide, ciborium, fdeflate, image) and NO single-site rule can
+    # express it — "a cap exists; some input shape reaches the path that ignores it. No individual
+    # line is wrong." But BOTH halves are enumerable, and the comparison between them is exactly the
+    # mirror walk. So enumerate the halves and hand over the ASYMMETRY as the unit of work.
+    #
+    # Measured on object with the current pack (2026-08-01): 287 declaration sites against 13
+    # enforcement sites, and the asymmetry is concentrated, not uniform — `src/macho.rs` 55 declared
+    # / 0 enforced, `src/write/elf` 54 / 5, `src/pe.rs` 39 / 0. A module that declares dozens of caps
+    # and enforces none is a question worth an agent; a 1:1 module is not.
+    LIMIT_DECL = ("limit-field", "limit-fn", "limit-init", "limit-const", "limit-magic")
+    pair: dict[str, dict[str, list[str]]] = defaultdict(lambda: defaultdict(list))
+    for h in deduped:
+        rid = h.get("rule_id", "")
+        if "limit-" not in rid:
+            continue
+        site = f"{h['file']}:{h.get('line')}"
+        mod = module_of(h["file"], min(module_depth + 1, 3))
+        if any(k in rid for k in LIMIT_DECL):
+            pair[mod]["declared"].append(site)
+        elif "limit-guard" in rid:
+            pair[mod]["enforced"].append(site)
+        elif "limit-optout" in rid:
+            pair[mod]["opted-out"].append(site)
+    limit_cells = []
+    for mod, groups in pair.items():
+        ndecl, nenf = len(groups.get("declared", [])), len(groups.get("enforced", []))
+        if not ndecl:
+            continue                                            # no cap declared here: nothing to mirror
+        limit_cells.append({
+            "cell_id": f"{args.crate}@{args.commit[:8]}/{mod}::limit-pair",
+            "class": "limit-pair", "module": mod, "data_path": "", "crate": args.crate,
+            "hits": sum(len(v) for v in groups.values()),
+            "engines": {"astgrep": 1},
+            "rules": {k: len(v) for k, v in groups.items()},
+            "sites": {k: v for k, v in groups.items()},
+            "exemplars": [s for v in groups.values() for s in v],
+            "declared": ndecl, "enforced": nenf, "gap": ndecl - nenf,
+            "filters": {"structural": "kept", "capability": "unevaluated",
+                        "reachability": "unjudged", "where_checked": None},
+            "context_corroborating": {}, "u1_worklist": {},
+            "note": f"{ndecl} cap DECLARATIONS vs {nenf} ENFORCEMENT sites in this module. The unit "
+                    "of work is the COMPARISON, not either list: for each declared cap, find the "
+                    "path that reaches the guarded operation without consulting it. A declared-but-"
+                    "never-enforced cap is the limit-bypass shape; an enforced one is control.",
+        })
+    limit_cells.sort(key=lambda c: -c["gap"])
+    cell_list.extend(limit_cells)
+
     # ── LOC, for hits/kloc ──────────────────────────────────────────────────
     loc = 0
     for p in Path(args.src).rglob("*.rs"):
@@ -474,8 +760,30 @@ def main() -> int:
             pass
 
     by_rule = Counter(h["rule_id"] for h in deduped)
+    # ── which clippy rung actually produced the artifact ─────────────────────────────────────────
+    # `run_fb` tries `--all-features` first and falls back to the default feature set. Both write the
+    # SAME artifact, so the hits are complete either way — but the two rungs scan DIFFERENT code:
+    # feature-gated modules only exist in the all-features build. Measured over the 25-crate corpus:
+    # 15 crates scanned at all-features, 10 at default, because `--all-features` pulls in native
+    # build-script dependencies that cannot build offline (`dav1d-sys`, `aws-lc-fips-sys`) or feature
+    # combinations that do not compile. That is a real inhomogeneity in the corpus and it was only
+    # inferable by cross-reading engine statuses; record it as a first-class field instead.
+    feature_mode = "unknown"
+    try:
+        eng = [json.loads(l) for l in (Path(args.out) / "engines.jsonl").read_text().splitlines() if l.strip()]
+        st = {e["engine"]: e["status"] for e in eng}
+        if st.get("clippy") == "ok":
+            feature_mode = "all-features"
+        elif st.get("clippy-fb") == "ok":
+            feature_mode = "default-features"
+        elif "clippy" in st:
+            feature_mode = "clippy-produced-nothing"
+    except Exception:                                           # noqa: BLE001 — absent log: no claim
+        pass
+
     summary = {
         "crate": args.crate, "commit": args.commit,
+        "clippy_feature_mode": feature_mode,
         "loc_non_test": loc,
         "raw_hits": len(hits),
         "kept_hits": len(deduped),

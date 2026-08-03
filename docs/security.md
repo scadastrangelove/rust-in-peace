@@ -96,3 +96,25 @@ id and instructs the agent to treat it as only data (not instructions). However,
 these measures are a mitigation, not a guarantee. Review every generated diff
 before upstreaming. See [patching.md](patching.md#reviewing-generated-patches) 
 for what to look for.
+
+## Private findings and disclosure artifacts
+
+Live findings are not ordinary repository documentation. Keep disclosure
+packages and uncoordinated cases under `private-escrow/` (or another encrypted,
+access-controlled store outside this checkout), never beside tracked source.
+The root `.gitignore` blocks `/*-disclosure/`, `DISCLOSURES.md`, the private
+escrow directories, and the current private Rust campaign. A local pre-commit
+hook plus CI run `scripts/check_repo_hygiene.py`, which also rejects those paths
+if someone bypasses ignore rules with `git add -f`.
+
+Install the local hooks after the development dependencies:
+
+```bash
+python -m pip install -e ".[dev]"
+pre-commit install
+```
+
+The ignore/denylist is containment, not encryption. Do not place API tokens,
+third-party secrets, or a live report in the checkout merely because Git will
+ignore it; use an access-controlled escrow for material whose disclosure would
+harm users.

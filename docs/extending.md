@@ -6,7 +6,17 @@ This doc is the *methodology* on top of it: the ordered gates a new-technology
 port must clear, the one place where a hard target forces a change to the shared
 core, and a worked application to Android (`android-app`).
 
-It is written from the cpp → rust experience, generalized.
+It is written from the cpp → rust experience, generalized. The supported
+release baseline is Rust (with the retained C/C++ base); Android is an
+**experimental research application**. Its witness and fixture tooling are
+useful, but its generic grade/aggregate/reattack/patch lifecycle is not yet a
+production claim.
+
+> Orthogonal to profile ports: the **SAST-driven find mode** is a cross-cutting find lens (run every
+> static engine's default rules, cluster into cells, triage) rather than a new-technology port. If you
+> are extending *that* — adding an engine, a rule pack, or the CodeQL BYOL path — see
+> [`docs/sast-layer.md`](sast-layer.md) and [`docker/sast/README.md`](../docker/sast/README.md), not
+> this document.
 
 ## The invariant — and where it stops holding
 

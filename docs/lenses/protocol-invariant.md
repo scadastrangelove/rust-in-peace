@@ -8,7 +8,8 @@ Drop either block in verbatim as a subagent's review brief; each returns candida
 `F-NNN` shape (file:line + title + evidence + why-real).
 
 Both are **grounded**, not hypothetical — the invariant-symmetry examples below are real rustls
-findings filed 2026-07-23 (GHSA-j99h-2h74-pcqx, GHSA-4xwv-fw6q-5gvr).
+findings, fixed in the public [rustls PR #3173](https://github.com/rustls/rustls/pull/3173) (GHSA IDs
+were assigned but the vendor did not publish the advisory pages).
 
 ---
 

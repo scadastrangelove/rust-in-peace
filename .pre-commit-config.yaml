@@ -1,0 +1,14 @@
+repos:
+  - repo: local
+    hooks:
+      - id: repository-hygiene
+        name: repository hygiene
+        entry: python scripts/check_repo_hygiene.py
+        language: system
+        pass_filenames: false
+
+      - id: markdown-links
+        name: Markdown local links
+        entry: python scripts/check_markdown_links.py
+        language: system
+        pass_filenames: false

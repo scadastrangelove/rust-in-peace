@@ -407,8 +407,9 @@ The layer must work in **both** of this repo's execution modes:
   as a stage between `recon` and `find`.
 
 **Built 2026-07-28** (v1): `docker/sast/` (image + two-phase runner + batch driver),
-`.claude/skills/sast-driven/` (+ `.agents` twin), `rules/astgrep/` (5 U1 enumerators),
-`corpus/pins.jsonl`. See [`docker/sast/README.md`](../docker/sast/README.md).
+`.claude/skills/sast-driven/` (+ `.agents` twin), `rules/astgrep/` (the U1 enumerator + `cls-*` class
+rules), `corpus/pins.jsonl`. See [`docker/sast/README.md`](../docker/sast/README.md). CodeQL BYOL
+wiring added 2026-08-03 — see §10.0.
 
 ```bash
 # skill mode — the isolated 4th mode
@@ -613,6 +614,28 @@ require a commercial license. So:
 
 The same contract shape applies to any future proprietary engine. Nothing in the pipeline may
 *require* it.
+
+### 10.0 Implemented interface (wired 2026-08-03)
+
+The contract above is the design; here is what is actually built today, so a reader runs the working
+path rather than the aspirational one:
+
+- **Activation is by mount, at the `sast-scan.sh` / `/sast-driven` level** — not a `vuln-pipeline sast`
+  subcommand (that subcommand and the `sast.byol.codeql.attested` config key remain design; the CLI
+  entry point is `docker/sast/sast-scan.sh` + the skill). Set `SAST_CODEQL_CLI` to a Rust-capable
+  CodeQL distribution on the box (the skill exposes this as `--byol codeql`). `sast-scan.sh` then
+  bind-mounts it read-only at `/opt/codeql`, appends `codeql` to `SAST_ENGINES`, and `run-all.sh`
+  runs `codeql database create --language=rust --build-mode=none` + `database analyze` over
+  `rules/codeql/rust`, writing `codeql.sarif` into `raw/` where `normalize.py` already ingests it
+  (`ARTIFACTS`). **Supplying the mount IS the attestation-by-action** the contract's item 2 asks for;
+  the operator asserts the right to analyse this target by providing the CLI.
+- **Knobs**: `CODEQL_CREATE_FLAGS` (default `--build-mode=none`), `CODEQL_QUERIES` (default
+  `/rules/codeql/rust`), `CODEQL_ADDITIONAL_PACKS` (point at the dist's `qlpacks` if `codeql/rust-all`
+  is not otherwise resolvable offline).
+- **Off by default**: absent `SAST_CODEQL_CLI` / `codeql` in `SAST_ENGINES`, the block does not run
+  and — being opt-in BYOL — does not record a spurious `absent` for a non-selected engine.
+- **Not yet exercised in-repo**: there is no CodeQL CLI in CI, so this path is wired but unvalidated
+  end-to-end here; the first real BYOL run is its acceptance test.
 
 ### 10.1 Measured 2026-07-28 — CodeQL is a *second* generator, not a better one
 
