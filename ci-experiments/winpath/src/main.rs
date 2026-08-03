@@ -1,41 +1,47 @@
-// Platform path-canonicalization check: does an exact "==\"..\"" component filter miss a
-// trailing-dot/space component ("..  "/".. "), and does std::fs::File::create then escape the
-// base directory? (Windows Win32 path normalization strips trailing dots/spaces per component,
-// turning ".. " into ".." at CreateFileW; POSIX does not.) Generic — asserts via stdout markers.
+// v2: thorough Windows path-canonicalization probe. For each payload, canonicalize the parent,
+// create_dir_all the parent (as a file-receiver does), then File::create, printing every error.
+// A file landing directly in `root/` (sibling of base) = escape out of base.
 use std::fs;
+use std::path::Path;
 
-// The common-but-insufficient guard: reject only a component that EXACTLY equals "..".
-fn guard_catches(name: &str) -> bool {
-    name.split(|c| c == '/' || c == '\\').any(|s| s == "..")
+fn probe(label: &str, base: &Path, rel: &str) {
+    let joined = base.join(rel);
+    println!("--- {} rel={:?} joined={:?}", label, rel, joined);
+    if let Some(parent) = joined.parent() {
+        match fs::canonicalize(parent) {
+            Ok(c) => println!("    canonicalize(parent)={:?}", c),
+            Err(e) => println!("    canonicalize(parent) ERR={}", e.kind()),
+        }
+        match fs::create_dir_all(parent) {
+            Ok(_) => println!("    create_dir_all(parent)=OK"),
+            Err(e) => println!("    create_dir_all(parent) ERR={}", e.kind()),
+        }
+    }
+    match fs::File::create(&joined) {
+        Ok(_) => println!("    File::create=OK -> {:?}", joined),
+        Err(e) => println!("    File::create ERR={}", e.kind()),
+    }
 }
 
 fn main() {
-    let payload = ".. \\CANARY_ESCAPED.txt"; // dot-dot-SPACE then separator (Windows) 
-    let payload_posix = ".. /CANARY_ESCAPED.txt";
-    let name = if cfg!(windows) { payload } else { payload_posix };
-
-    let caught = guard_catches(name);
-
-    let root = std::env::temp_dir().join("winpath_canon_poc_9f3a");
+    let root = std::env::temp_dir().join("winpath_v2_7c2");
     let _ = fs::remove_dir_all(&root);
     let base = root.join("base");
     fs::create_dir_all(&base).unwrap();
+    println!("OS={} root={:?}", std::env::consts::OS, root);
 
-    // Exactly what a file-receiver does: join the peer-supplied relative name onto the base,
-    // then create the file by PATH (no \\?\ verbatim prefix, no O_NOFOLLOW).
-    let joined = base.join(name);
-    let create_res = fs::File::create(&joined);
+    // trailing-space/dot component variants (all use '/' which is a separator on both OSes)
+    probe("dotdot_space",  &base, ".. /esc_space.txt");
+    probe("dotdot_dot",    &base, ".. ./esc_dot.txt");
+    probe("plain_dotdot",  &base, "../esc_plain.txt");
+    probe("double_space",  &base, ".. /.. /esc_double.txt");
 
-    // Escape target = sibling of `base` (i.e. root/CANARY_ESCAPED.txt), OUTSIDE base.
-    let escaped_target = root.join("CANARY_ESCAPED.txt");
-    let did_escape = escaped_target.exists();
+    // also: does canonicalize/create of the bare parent escape?
+    match fs::create_dir_all(base.join(".. /injected_dir")) {
+        Ok(_) => println!("bare: create_dir_all(base/'.. '/injected_dir)=OK"),
+        Err(e) => println!("bare: create_dir_all ERR={}", e.kind()),
+    }
 
-    println!("OS={}", std::env::consts::OS);
-    println!("GUARD_CATCHES_DOTDOTSPACE={}", caught);
-    println!("CREATE_OK={}", create_res.is_ok());
-    println!("FILE_ESCAPED_BASE={}", did_escape);
-    println!(
-        "RESULT={}",
-        if !caught && did_escape { "CONFIRMED_TRAVERSAL" } else { "NOT_CONFIRMED" }
-    );
+    println!("=== root listing (entries here that are NOT 'base' = ESCAPED) ===");
+    for e in fs::read_dir(&root).unwrap() { println!("  {:?}", e.unwrap().file_name()); }
 }
