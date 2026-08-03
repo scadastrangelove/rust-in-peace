@@ -3,7 +3,7 @@
 """Target configuration loader.
 
 A target is a directory under targets/ containing:
-  - Dockerfile   (builds ASAN-instrumented binary)
+  - Dockerfile   (builds the profile's detector image)
   - config.yaml  (metadata the pipeline needs)
   - any other build-context files the Dockerfile COPYs
 
@@ -43,6 +43,7 @@ class TargetConfig:
     commit: str
     binary_path: str      # path inside the built container
     source_root: str      # path inside the built container
+    provenance_label: str | None = None  # human-readable snapshot/fork context; never passed to git
     focus_areas: list[str] = field(default_factory=list)
     known_bugs: list[str] = field(default_factory=list)
     attack_surface: str | None = None
@@ -87,6 +88,7 @@ class TargetConfig:
             commit=_safe_git_ref(str(cfg["commit"]), target_dir),
             binary_path=cfg["binary_path"],
             source_root=cfg["source_root"],
+            provenance_label=cfg.get("provenance_label"),
             focus_areas=cfg.get("focus_areas") or [],
             known_bugs=cfg.get("known_bugs") or [],
             attack_surface=cfg.get("attack_surface"),

@@ -7,9 +7,10 @@ from pathlib import Path
 
 import pytest
 
-from harness.config import _safe_git_ref
+from harness.config import TargetConfig, _safe_git_ref
 
 D = Path("/tmp/some-target")
+ROOT = Path(__file__).resolve().parents[1]
 
 
 def test_accepts_hash_and_tag():
@@ -32,3 +33,17 @@ def test_accepts_hash_and_tag():
 def test_rejects_injection_shaped_refs(bad):
     with pytest.raises(ValueError):
         _safe_git_ref(bad, D)
+
+
+def test_all_shipped_target_configs_load():
+    """A hardening guard must not make a checked-in target unloadable."""
+    configs = sorted((ROOT / "targets").glob("*/config.yaml"))
+    assert configs, "no shipped target configs found"
+    loaded = [TargetConfig.load(config.parent) for config in configs]
+    assert [target.name for target in loaded] == [config.parent.name for config in configs]
+
+
+def test_provenance_label_is_separate_from_machine_git_ref():
+    target = TargetConfig.load(ROOT / "targets" / "dvra3-parser")
+    assert target.commit == "d9228e51d19756330d189d19d0934946d630b7ae"
+    assert target.provenance_label and "benchmark" in target.provenance_label

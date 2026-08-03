@@ -81,6 +81,65 @@ def _resolve_target_dir(target: str) -> Path:
     )
 
 
+def _rust_crash_track_route(
+    target: TargetConfig,
+) -> tuple["caps.CapabilityInventory | None", str | None]:
+    """Return the Rust byte-crash routing inventory and an optional skip reason.
+
+    P0.4 is deliberately enforced only for ``profile: rust``.  The Android
+    witness pipeline is still an experimental research branch whose generic
+    orchestration is not part of the Rust release baseline; applying a
+    byte-crash decision to its witness-based ``run`` path would be the wrong
+    abstraction.
+
+    No inventory means backward-compatible ``run``.  A present inventory is a
+    machine routing decision: logic-only Rust targets skip the autonomous
+    byte-mutation track before auth, image builds, or agent dispatch.
+    """
+    inventory = caps.load_optional(target.capabilities_path)
+    if target.profile != "rust" or inventory is None:
+        return inventory, None
+    return inventory, inventory.crash_track_skip_reason()
+
+
+def _write_routing_skip(
+    target: TargetConfig,
+    inventory: "caps.CapabilityInventory",
+    reason: str,
+    *,
+    results_dir: str | Path,
+    resume: Path | None,
+) -> Path:
+    """Persist an evidenced Rust crash-track skip and return its batch root."""
+    if resume is not None:
+        root = Path(resume)
+        if not root.is_dir():
+            raise FileNotFoundError(f"--resume dir {root} does not exist")
+    else:
+        timestamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+        root = Path(results_dir) / target.name / timestamp
+        root.mkdir(parents=True, exist_ok=True)
+
+    record = {
+        "schema_version": 1,
+        "recorded_at": datetime.now(timezone.utc).isoformat(),
+        "target": target.name,
+        "profile": target.profile,
+        "stage": "byte_crash_track",
+        "decision": "skip",
+        "reason": reason,
+        "capabilities_path": target.capabilities_path,
+        "active_capabilities": inventory.active_capabilities(),
+        "evidenced_capability_skips": [
+            {"capability": capability, "evidence": evidence}
+            for capability, evidence in inventory.skips()
+        ],
+        "next_stage": "curated_static",
+    }
+    (root / "routing.json").write_text(json.dumps(record, indent=2) + "\n")
+    return root
+
+
 def _terminate_subprocesses() -> None:
     """SIGKILL all direct children. The SDK's claude subprocess (Node) does not
     die when we do — it gets orphaned to init and keeps executing Bash tool
@@ -1010,6 +1069,39 @@ def _cmd_run(args) -> int:
     global _current_target_name
     _current_target_name = target.name
 
+    # P0.4/L4 — route the Rust byte-crash track before paying for auth, Docker,
+    # or agents. A logic-only capability inventory is an evidenced successful
+    # skip, not an empty/failed scan; the interactive curated-static stage is
+    # the correct next tool until variant-scan becomes a first-class CLI stage.
+    try:
+        inventory, crash_track_skip = _rust_crash_track_route(target)
+    except Exception as e:
+        print(f"error: capabilities: {e}", file=sys.stderr)
+        return 1
+    if crash_track_skip is not None:
+        assert inventory is not None
+        try:
+            routing_root = _write_routing_skip(
+                target,
+                inventory,
+                crash_track_skip,
+                results_dir=args.results_dir,
+                resume=args.resume,
+            )
+        except Exception as e:
+            print(f"error: {e}", file=sys.stderr)
+            return 1
+        print(f"Target: {target.name}")
+        print("  profile:      rust")
+        print("  crash_track:  SKIPPED")
+        print(f"  reason:       {crash_track_skip}")
+        print(f"  routing_log:  {routing_root / 'routing.json'}")
+        print(
+            "  next:         curated static review "
+            "(`/vuln-scan` or `/variant-scan`), not byte-mutation"
+        )
+        return 0
+
     agent_env = _resolve_auth_env()
     if agent_env is None:
         print(NO_AUTH_MSG, file=sys.stderr)
@@ -1027,8 +1119,7 @@ def _cmd_run(args) -> int:
     # the measured elbow of 5. cpp keeps its historical single run.
     if args.runs is None:
         if target.profile == "rust":
-            _inv = caps.load_optional(target.capabilities_path)
-            args.runs = _inv.vote_budget() if _inv else caps.DEFAULT_VOTE_BUDGET
+            args.runs = inventory.vote_budget() if inventory else caps.DEFAULT_VOTE_BUDGET
         else:
             args.runs = 1
 

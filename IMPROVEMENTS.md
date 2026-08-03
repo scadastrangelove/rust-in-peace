@@ -891,3 +891,15 @@ basis alone), and `normalize.py` now drops hits inside in-file `#[cfg(test)] mod
   reads it. **Done-when:** no ledger row carries an unverified `direct-hit`; the SAST section of
   `lens_stats.py` is driven by real provenance, and `docs/mechanism-effectiveness.md`'s numbers
   regenerate from the ledger + `E13-result.json` without hand-editing.
+- **W47 — evaluate a "prior-art cross-check" gate before disclosure — is it worth building?** `[L57][L58][disclosure]`.
+  Motivation: find011 (`http` `PathAndQuery` u16 truncation) was a genuine SAST finding, PoC-confirmed,
+  but already **fixed** (`http` 1.5.0) and **publicly reported** (hyperium/http#855) before our run — the
+  manual gate caught it, but only after a full PoC spend. The question is whether to AUTOMATE the check,
+  not whether to do it (L57/L58 already mandate doing it manually). Two rungs to price: (a) cheap — a
+  `disclose`-stage checklist/prompt that refuses to emit an artifact until the analyst records the
+  latest-release PoC result **and** an issue-tracker + CVE/RustSec/GHSA/OSV search for crate+symbol;
+  (b) expensive — automated queries (crates.io latest version, GitHub issue/PR search, RustSec
+  advisory-db, OSV) keyed on crate+symbol, run in the pipeline. **Done-when:** a one-page measurement —
+  replay the existing findings/ledger corpus and count how many findings the cross-check would have
+  reclassified as fixed-upstream or already-reported (the base rate of rediscovery) — plus a recorded
+  go/no-go: build (b) only if that rate is high enough to pay for the query plumbing; otherwise ship (a).

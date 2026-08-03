@@ -102,6 +102,7 @@ Don't answer from general knowledge when the repo has a specific answer.
 | If the question is about…       | Read first                              | Then offer |
 |---------------------------------|-----------------------------------------|------------|
 | running the pipeline             | `docs/pipeline.md`, README Step 2        | the `recon` / `run` command |
+| SAST / running the scanners / rule packs / CodeQL | `docs/sast-layer.md`, `docker/sast/README.md` | `/sast-driven <crate>`, then `/sast-prioritise` |
 | too many findings, triage       | `docs/triage.md`                        | `/triage <path>` |
 | the rust profile, rust-canary   | `profiles/rust/README.md`               | run `rust-canary` |
 | the android-app profile, APK, decompiled DEX, MASVS/MASTG | `profiles/android-app/README.md`, `docs/profiles/android/DECISIONS.md` | run `android-canary`; `/vuln-scan <decompiled> --extra profiles/android-app/scan-extras.txt`, `/triage … --fp-rules profiles/android-app/fp-rules.txt` |
@@ -114,10 +115,10 @@ Don't answer from general knowledge when the repo has a specific answer.
 | duplicates, dedup               | `docs/troubleshooting.md#duplicate-findings` | `known_bugs:` hint |
 | CLI flags, "what does --X do"   | `harness/cli.py` (grep the argparse)    | exact flag + example |
 | which model, subagent pinning   | `docs/troubleshooting.md`: Subagents    | the `export` line |
-| best practices, prompting       | `docs/best-practices.md`, `docs/prompting.md` | cite the principle |
+| best practices, prompting       | `docs/security.md`, `docs/pipeline.md` | cite the principle |
 | "how do I start"                | README Step 1                           | offer Guided first run |
 | patching, fix, diff, re-attack  | `docs/patching.md`, README Step 4       | `/patch <input>` |
-| binary, pentest, other domains  | `docs/other-use-cases.md`               | cite section |
+| binary, pentest, other domains  | `docs/customizing.md`, `docs/extending.md` | cite section |
 | anything else                   | README Table of contents                | best-match doc |
 
 ### Answer format

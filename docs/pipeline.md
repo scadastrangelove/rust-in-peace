@@ -9,11 +9,18 @@ CLI flags.
 > ⚠️ **The pipeline spawns autonomous agents and executes target code.** 
 > The pipeline runs each agent inside a gVisor container with egress restricted 
 > to the Claude API. Agent-spawning subcommands refuse to start outside it unless 
-> explicitly overridden. For more information, see [docs/security.md](docs/security.md)
-> and [docs/agent-sandbox.md](docs/agent-sandbox.md).
+> explicitly overridden. For more information, see [security.md](security.md)
+> and [agent-sandbox.md](agent-sandbox.md).
 
 > This document covers how the reference pipeline works. For the general
 > best practices it implements, see the [blog post](https://claude.com/blog/using-llms-to-secure-source-code).
+
+> **SAST-driven find mode.** Alongside the blind / threat-model / CVE-seeded find passes, a fourth,
+> deliberately isolated mode runs every static-analysis engine's default rules in a container (six
+> baked in, plus CodeQL as an opt-in BYOL 7th), clusters the output into *cells*, and hands them to
+> `/triage`. It is documented separately: [`docs/sast-layer.md`](sast-layer.md) (design + the CodeQL
+> BYOL contract), [`docker/sast/README.md`](../docker/sast/README.md) (the image + runner), and the
+> `/sast-driven` + `/sast-prioritise` skills.
 
 ## Install and first run
 

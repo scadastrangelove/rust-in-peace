@@ -47,6 +47,25 @@ import re
 
 # ── explicit overrides, checked FIRST. Every entry needs a reason in the docstring above. ──────────
 OVERRIDES: dict[str, tuple[str, str]] = {
+    # ── CodeQL (host phase), classified from a measured run over 6 corpus databases, 2026-08-01 ──
+    # Unknown ids default to ("primary", "unclassified"), so every CodeQL rule opened cells on first
+    # contact. Measured volume across image-png / lopdf / miniz_oxide / msgpack-rust / object /
+    # quick-xml: type-disambiguation 996, alloc-macro-opaque 107, recursion-cycle 54,
+    # pop-no-dominating-guard 13, alloc-sized-by-parsed-length 7.
+    #
+    # `type-disambiguation` alone is 66 % of CodeQL's output — ~166 hits per crate, which by E7c's
+    # own density/discrimination relation (32.5 hits/crate → 0.5 %) is squarely enumerator territory.
+    # It is also the exact CodeQL counterpart of `rip-e003-numeric-cast` (counter width / numeric
+    # casts), which is already an enumerator by prefix. Same shape, same role — otherwise it drowns
+    # the cells it lands in and buys the volume without the signal.
+    "rip/rust/type-disambiguation":        ("enumerator", "u1-worklist"),
+    # The three classes CodeQL is R for and ast-grep is not (no CFG, no call graph, opaque macros).
+    # These are exactly why the engine is worth a separate phase, so they open cells.
+    "rip/rust/pop-no-dominating-guard":    ("primary", "index-surface"),
+    "rip/rust/recursion-cycle":            ("primary", "resource"),
+    "rip/rust/alloc-macro-opaque":         ("primary", "resource"),
+    "rip/rust/alloc-sized-by-parsed-length": ("primary", "resource"),
+
     "clippy::missing_panics_doc":       ("primary", "panic-surface"),
     "clippy::missing_safety_doc":       ("primary", "unsafe"),
     "clippy::undocumented_unsafe_blocks": ("primary", "unsafe"),

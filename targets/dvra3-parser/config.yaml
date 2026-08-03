@@ -1,7 +1,8 @@
 profile: rust
 image_tag: vuln-pipeline-dvra3-parser:latest
 github_url: "https://github.com/scadastrangelove/damn-vulnerable-rust-app"   # DVRA dvra-3 crates/parser (Apache-2.0), vendored standalone; oracle held out
-commit: "dvra-3 (benchmark)"
+commit: "d9228e51d19756330d189d19d0934946d630b7ae"
+provenance_label: "dvra-3 benchmark parser, vendored from upstream main with the oracle held out"
 binary_path: /work/riptarget
 source_root: /work/parser
 reattack_harness: /work/run_detectors.sh

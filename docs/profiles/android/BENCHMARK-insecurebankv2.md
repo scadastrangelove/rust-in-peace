@@ -1,5 +1,9 @@
 # Benchmark — InsecureBankv2 (real-app run)
 
+> Research result, not release qualification. This benchmark exercises the
+> Android-specific static/intelligence tooling on one deliberately vulnerable
+> app; it does not prove the generic pipeline's strength-aware lifecycle.
+
 First run of the `android-app` profile against a real deliberately-vulnerable
 app, to measure recall outside the synthetic canary. Heavy steps (APK decompile)
 ran on the build box; the analysis is the profile's own tools + an agentic MASTG

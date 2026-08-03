@@ -131,10 +131,12 @@ as a disruptive core rename: the witness is carried *inside* the existing
 with a machine-parseable `WITNESS:` header the detector reads back. `native_crash`
 writes no header (absence ⇒ strength 4), so cpp/rust artifacts, grade, dedup, and
 scorecard are **bit-identical** before and after. The union-of-N layer's existing
-`is_confirmed` (passed grade / ≥2 votes) and `is_contested` (found statically,
-not settled → dynamic-confirm queue) already encode observed-vs-argued; strength
-makes it explicit and tier-labeled. (A full core rename remains a future option if
-we want witness typing in the shared dataclasses; not needed for the MVP.)
+`is_confirmed` rule does **not** yet consume witness strength: a passed generic
+grade can therefore over-promote a strength-1 argument. Until a shared
+disposition is wired through grade, aggregate, and reattack, Android remains an
+experimental branch and its target-specific promotion/fixture results are the
+authoritative evidence. A future typed witness in the shared artifacts remains
+an option.
 
 **Realized in code.** `harness/witness.py` (kinds, `strength_of`, `SEVERITIES`,
 `STATIC_TERMINAL_CLASSES`, `default_disposition`, the `WITNESS:` header parse);

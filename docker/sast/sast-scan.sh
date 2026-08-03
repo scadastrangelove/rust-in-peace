@@ -69,7 +69,34 @@ docker run --rm \
   -e CARGO_HOME=/cargo \
   "$IMAGE" \
   sh -c '
-    cp -a /src /w && cd /w && (cargo fetch --locked || cargo fetch) 2>&1 | tail -5
+    # NOT an `&&` chain, and NOT `cp -a`. `/w` is pre-created in the image (an arbitrary uid cannot
+    # mkdir at `/`), so `cp -a` tries to preserve timestamps on a directory it does not own and exits
+    # non-zero — which silently skipped `cargo fetch` while the copy itself had actually succeeded.
+    # `cp -R` copies the contents and makes no claim on the attributes of the destination itself.
+    mkdir -p /w; cp -R /src/. /w/ 2>/dev/null || true
+    cd /w
+    # Warm the graph the ANALYZE phase will have to resolve OFFLINE, with the same feature set it
+    # will use. Measured on actix-web: clippy runs `--all-features`, the committed Cargo.lock lags
+    # its Cargo.toml, and `cargo fetch` alone resolves only the default features — so offline clippy
+    # re-resolved, could not find `actix-service` in the seeded index, wrote an empty SARIF and
+    # (pipe exit code) reported success. clippy is 84 % of the archived hit volume, so this silently
+    # emptied the dominant engine on every workspace crate.
+    #   * `generate-lockfile` refreshes the lock while the network is up. It may move dep versions
+    #     off what the crate committed; that is acceptable here — the engines lint the source of the
+    #     crate itself, and an unresolvable graph costs the whole engine.
+    #   * `metadata --all-features` forces the index cache to cover optional/feature-gated packages.
+    cargo generate-lockfile 2>&1 | tail -2
+    (cargo fetch --locked || cargo fetch) 2>&1 | tail -5
+    cargo metadata --all-features --format-version 1 >/dev/null 2>&1 \
+      || echo "metadata --all-features failed (offline clippy may re-resolve)"
+    # `cargo fetch` RESOLVES the graph and writes Cargo.lock — but into this throwaway copy, which
+    # dies with the container. Library crates mostly do not commit a lock, so the analyze phase then
+    # had none, and two engines lost on it: cargo-audit reads the lock directly (recorded "absent"),
+    # and cargo-geiger resolves the graph itself, so it reached for the registry index and died
+    # against `--network none` (rc=101, "Could not resolve host: index.crates.io"). Regenerating it
+    # offline later does not work — the seeded registry is a download cache, not a usable index.
+    # So keep the lock produced HERE, where the network exists, in the volume that survives.
+    [ -f /w/Cargo.lock ] && cp -f /w/Cargo.lock /cargo/Cargo.lock.generated 2>/dev/null || true
     # Warm the Dylint DRIVER here too. Dylint compiles a driver per toolchain on first use, which
     # needs network — and the analyze phase has none. Park it in the mounted cargo volume via
     # DYLINT_DRIVER_PATH so it survives into the offline phase. Still no target build script runs:
@@ -94,19 +121,40 @@ else
   echo "        build scripts under the default runtime. Recorded as sandbox=docker-default."
 fi
 
+# ── CodeQL (BYOL): mount a host CodeQL CLI distribution if the operator provides one ──────────────
+# CodeQL's CLI is proprietary and unredistributable, so it is NEVER in the image. Point
+# SAST_CODEQL_CLI at a host CodeQL distribution (the dir holding the `codeql` binary, or the binary
+# itself) — the `sast-driven` skill's `--byol codeql` flag sets this — and it is mounted read-only at
+# /opt/codeql for the analyze phase, with the engine auto-selected. Our Rust queries ship in the
+# already-mounted /rules/codeql/rust; no extra mount is needed for them. Absent by default.
+ENGINES_SEL="${SAST_ENGINES:-opengrep,astgrep,clippy,audit,dylint,geiger}"
+CODEQL_ARGS=""
+if [ -n "${SAST_CODEQL_CLI:-}" ]; then
+  if [ -d "$SAST_CODEQL_CLI" ]; then CLI_DIR="$SAST_CODEQL_CLI"; else CLI_DIR="$(dirname "$SAST_CODEQL_CLI")"; fi
+  if [ -x "$CLI_DIR/codeql" ]; then
+    CODEQL_ARGS="-v $CLI_DIR:/opt/codeql:ro -e CODEQL_CLI=/opt/codeql/codeql"
+    [ -n "${CODEQL_CREATE_FLAGS:-}" ] && CODEQL_ARGS="$CODEQL_ARGS -e CODEQL_CREATE_FLAGS=${CODEQL_CREATE_FLAGS}"
+    case ",$ENGINES_SEL," in *,codeql,*) : ;; *) ENGINES_SEL="$ENGINES_SEL,codeql" ;; esac
+    echo "      CodeQL BYOL: $CLI_DIR → /opt/codeql (engine enabled; engines=$ENGINES_SEL)"
+  else
+    echo "      ⚠ SAST_CODEQL_CLI set but no executable 'codeql' at $CLI_DIR — CodeQL skipped"
+  fi
+fi
+
 # ── phase 2: analyze (network OFF — this is where target code executes) ──────
 echo "[2/2] analyze (network none, sandbox=$SANDBOX)"
-docker run --rm $RUNTIME_ARGS \
+docker run --rm $RUNTIME_ARGS $CODEQL_ARGS \
   --user "$(id -u):$(id -g)" \
   --network none \
   --memory "${SAST_MEMORY:-8g}" \
   --cpus "${SAST_CPUS:-6}" \
   -v "$SRC_DIR:/src:ro" \
-  -v "$CARGO_RO:/cargo-ro:ro" \
+  -v "$CARGO_RO:/cargo" \
   -v "$OUT:/out" \
   -v "${SAST_RULES:-$HOME/rip-sast/rules}:/rules:ro" \
+  -e CARGO_HOME=/cargo \
   -e SAST_CRATE="$NAME" -e SAST_COMMIT="$COMMIT" \
-  -e SAST_ENGINES="${SAST_ENGINES:-opengrep,astgrep,clippy,audit,dylint,geiger}" \
+  -e SAST_ENGINES="$ENGINES_SEL" \
   -e SAST_TIMEOUT="${SAST_TIMEOUT:-1800}" \
   -e SAST_JOBS="${SAST_JOBS:-6}" \
   "$IMAGE" 2>&1 | tee "$OUT/run.log"

@@ -13,7 +13,11 @@ pieces whose behavior differs and reusing the rest.
 
 Each stage does:  `profile = get_profile(target.profile)` then
 `profile.build_find_prompt(...)` / `profile.detector.top_frame(...)` / etc.
-The default is `cpp`, so existing targets keep working with no config change.
+This fork defaults to `rust`; retained C/C++ targets pin `profile: cpp`.
+
+`android-app` is registered as an experimental research profile. Its witness
+model and target-specific tooling are useful, but its generic grade/aggregate/
+reattack lifecycle is not part of the Rust release baseline yet.
 """
 from __future__ import annotations
 
