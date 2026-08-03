@@ -48,6 +48,16 @@ STAMP=$(date -u +%Y%m%dT%H%M%SZ)
 OUT="$OUT_ROOT/$NAME/$STAMP"
 CARGO_RO="$WORK/cargo/$NAME"
 mkdir -p "$OUT/raw" "$CARGO_RO"
+# userns-remap defence (L59, and the exact wall preflight-deploy.sh's writeback canary flags).
+# Under a daemon with `userns-remap`, a container started with `--user $(id -u)` does NOT run as this
+# user — its uid is shifted into the SUBORDINATE range (e.g. host 300000+uid), so it cannot write into
+# these host-user-owned bind mounts. Every engine then fails "/out/...: Permission denied", cargo fetch
+# silently caches nothing, and normalize aborts — an hour of scan producing zero artifacts. 0777
+# (no sticky bit) lets whichever uid the container maps to write, and still lets THIS user delete the
+# tree afterwards. On a normal daemon `--user` already IS this user, so the mode change is inert.
+# (Nested cargo-cache subdirs the container creates may still be remap-owned; on a userns box their
+# cleanup can need the operator's sudo — a known userns tradeoff, not a scan-blocking failure.)
+chmod 0777 "$OUT" "$OUT/raw" "$CARGO_RO" 2>/dev/null || true
 
 echo "=== sast-driven: $NAME @ ${COMMIT:0:12} ==="
 echo "    src=$SRC_DIR"

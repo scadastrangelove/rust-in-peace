@@ -159,7 +159,7 @@ ENV HOME=/tmp \
 RUN mkdir -p /tmp/.cache /.cache && chmod 1777 /tmp /tmp/.cache /.cache
 
 # ── our runner + normalizer, LAST: they change often, everything above does not ───────────────────
-COPY run-all.sh normalize.py /opt/sast/
+COPY run-all.sh normalize.py ruleclass.py /opt/sast/
 RUN chmod +x /opt/sast/run-all.sh
 
 # ── provenance manifest: what actually made it into this image ────────────────────────────────────
