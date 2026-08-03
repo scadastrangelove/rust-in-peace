@@ -1,0 +1,7 @@
+[package]
+name = "pathescape"
+version = "0.0.0"
+edition = "2021"
+[[bin]]
+name = "pathescape"
+path = "src/main.rs"
