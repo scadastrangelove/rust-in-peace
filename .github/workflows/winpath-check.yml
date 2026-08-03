@@ -4,13 +4,21 @@ on:
     branches: [ci/winpath-canon-check]
   workflow_dispatch:
 jobs:
-  check:
+  winpath:
     strategy:
       matrix:
         os: [windows-latest, ubuntu-latest]
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
-      - name: run
-        working-directory: ci-experiments/winpath
+      - working-directory: ci-experiments/winpath
+        run: cargo run --release
+  pathescape:
+    strategy:
+      matrix:
+        os: [macos-latest, ubuntu-latest]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - working-directory: ci-experiments/pathescape
         run: cargo run --release
