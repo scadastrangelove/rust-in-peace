@@ -903,3 +903,12 @@ basis alone), and `normalize.py` now drops hits inside in-file `#[cfg(test)] mod
   replay the existing findings/ledger corpus and count how many findings the cross-check would have
   reclassified as fixed-upstream or already-reported (the base rate of rediscovery) — plus a recorded
   go/no-go: build (b) only if that rate is high enough to pay for the query plumbing; otherwise ship (a).
+- **W48 — deploy-layer preflight: shipped for the SAST mode; generalize to every container mode.** `[SHIPPED][L59][deploy]`.
+  `scripts/preflight-deploy.sh` (image-present · export-canary · egress-canary · result-writeback) now
+  gates `docker/sast/sast-scan.sh`, settling in seconds the daemon traps that otherwise surface an hour
+  into a build at layer export. Proven on a hardened box (`userns-remap` + `containerd-snapshotter` +
+  `iptables: false`) where the image build failed three separate ways, each at its own expensive moment
+  (L59). **Remaining:** call the same preflight from every other container-using entry point
+  (vuln-pipeline build/grade, patch verify), and add a `--dry-run` that prints the environment verdict
+  alone. **Done-when:** every mode that runs a container refuses to start until the preflight passes,
+  and the SAST bring-up doc (`docs/case-studies/sast-driven-bringup.md`) points at it as step 0.
