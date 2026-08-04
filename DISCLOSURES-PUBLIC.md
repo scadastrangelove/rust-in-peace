@@ -44,7 +44,7 @@ Findings sent as (or since converted to) a public issue, pull request, or vendor
 | Target | Reported | Report | Severity | Status | Summary |
 |---|---|---|---|---|---|
 | actix-web | 2026-07-23 | #4161 (removed by repository, 410 Gone) | Low | Closed — issue deleted; report was hardening-only, not a demonstrated smuggling exploit | Chunked-transfer-encoding parser accepts non-conformant chunk-size terminators |
-| Chromium / Skia (vendored `image` fork) | 2026-07-22 | [issue 537617321](https://issues.chromium.org/issues/537617321) | Low | Open — awaiting triage | Unbounded allocation while parsing an embedded BMP color-profile size field |
+| Chromium / Skia (vendored `image` fork) | 2026-07-22 | [issue 537617325](https://issues.chromium.org/issues/537617325) | Low | Root cause fixed upstream ([image-rs/image#3095](https://github.com/image-rs/image/pull/3095), merged 2026-08-03) — Chromium's own vendored copy not yet confirmed updated | Unbounded allocation while parsing an embedded BMP color-profile size field |
 | Deno | 2026-07-26 | [PR #36327](https://github.com/denoland/deno/pull/36327) | High | Resolved (2026-07-26) | WebSocket-over-HTTP/2 fallback path left HTTP/2 server push enabled, reachable to a process-crashing assertion in the `h2` crate |
 | fdeflate | 2026-07-19 | [#83](https://github.com/image-rs/fdeflate/issues/83) | Low | Closed — severity disputed by vendor; our own reassessment concurred | Huffman-table-rebuild cost scaling on crafted input |
 | gimli | 2026-07-19 | [#898](https://github.com/gimli-rs/gimli/issues/898) | Low-Medium | Open | Quadratic-time attribute parsing via zero-byte DWARF forms |
