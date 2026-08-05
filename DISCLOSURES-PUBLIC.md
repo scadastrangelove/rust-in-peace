@@ -25,15 +25,16 @@ Reporter of record: Sergey Gordeychik ([@scadastrangelove](https://github.com/sc
 
 ## Summary
 
-_As of 2026-08-06._
+_As of 2026-08-06 (live-recheck against GitHub via `gh`)._
 
 | | |
 |---|---:|
 | Reports filed | 70 |
-| Resolved (fixed / merged) | 29 |
-| Open — awaiting vendor action | 23 |
+| Resolved (fixed / merged) | 33 |
+| Open — awaiting vendor action | 19 |
 | Closed — disputed, not a vulnerability, or declined | 7 |
 | Private advisories pending vendor publication | 7 |
+| — of which accepted by vendor (draft / fix in progress) | 2 (h2 GHSA-q83h, quinn-proto) |
 | — of which published as a public advisory | 1 (gitoxide, the campaign's first) |
 
 ## Public disclosures
@@ -55,7 +56,7 @@ Findings sent as (or since converted to) a public issue, pull request, or vendor
 | fdeflate | 2026-07-19 | [#83](https://github.com/image-rs/fdeflate/issues/83) | Low | Closed — severity disputed by vendor; our own reassessment concurred | Huffman-table-rebuild cost scaling on crafted input |
 | gimli | 2026-07-19 | [#898](https://github.com/gimli-rs/gimli/issues/898) | Low-Medium | Open | Quadratic-time attribute parsing via zero-byte DWARF forms |
 | gitoxide | 2026-07-22 | [GHSA-pmm9-4h7q-24c8](https://github.com/GitoxideLabs/gitoxide/security/advisories/GHSA-pmm9-4h7q-24c8) | Medium | **Resolved (2026-08-02) — published as a public advisory**, CVSS 5.3 | `checkout()` follows an existing terminal symlink on Windows during non-exclusive (incremental) materialization, writing outside the intended worktree |
-| h2 | 2026-07-26 | [PR #925](https://github.com/hyperium/h2/pull/925) | Low | Open | HTTP/2 trailer emission doesn't filter connection-specific header fields the same code rejects on receive (RFC 9113 §8.2.2) |
+| h2 | 2026-07-26 | [PR #925](https://github.com/hyperium/h2/pull/925) | Low | Resolved (2026-07-28, merged by `seanmonstar` himself) | HTTP/2 trailer emission doesn't filter connection-specific header fields the same code rejects on receive (RFC 9113 §8.2.2) |
 | harfrust | 2026-08-06 | [#410](https://github.com/harfbuzz/harfrust/issues/410) | Medium | Open | GPOS cursive `attach_chain` i16 truncation → out-of-bounds slice index panic (process abort from a crafted font) |
 | httparse | 2026-07-19 | [#222](https://github.com/seanmonstar/httparse/issues/222) / [PR #223](https://github.com/seanmonstar/httparse/pull/223) | Low-Medium | Open | A whitespace-only header line silently truncates the entire header block, under an opt-in leniency flag |
 | image | 2026-07-19 | [#3076](https://github.com/image-rs/image/issues/3076) | High | Open | AVIF decode proceeds before configured memory limits are enforced |
@@ -98,8 +99,8 @@ Findings sent as (or since converted to) a public issue, pull request, or vendor
 | ttf-parser | 2026-08-05 | [#232](https://github.com/harfbuzz/ttf-parser/issues/232) / [PR #234](https://github.com/harfbuzz/ttf-parser/pull/234) | Medium | Resolved (PR #234 merged 2026-08-05) | c-api `ttfp_get_glyph_name` aborts/UB on a CFF glyph name ≥256 bytes |
 | ttf-parser | 2026-08-05 | [PR #235](https://github.com/harfbuzz/ttf-parser/pull/235) (Fixes [#192](https://github.com/harfbuzz/ttf-parser/issues/192)) | Medium | Resolved (PR #235 merged 2026-08-05) | Self-referential GSUB/GPOS extension lookup → stack-overflow DoS; PR fixes the open fuzzer report #192 (credits @llooFlashooll) |
 | ttf-parser | 2026-08-05 | [#233](https://github.com/harfbuzz/ttf-parser/issues/233) / [PR #236](https://github.com/harfbuzz/ttf-parser/pull/236) | Medium | Resolved (PR #236 merged 2026-08-05) | CFF/CFF2 interpreter caps recursion depth but not total subroutine invocations (work amplification) |
-| fontations (skrifa) | 2026-08-05 | [#2010](https://github.com/googlefonts/fontations/issues/2010) / [PR #2012](https://github.com/googlefonts/fontations/pull/2012) | Medium | Open | skrifa panics drawing a VARC glyph with a null `MultiItemVariationStore` offset (upstream-only; OTS strips VARC on the web path) |
-| fontations (skrifa) | 2026-08-05 | [#2013](https://github.com/googlefonts/fontations/issues/2013) / [PR #2014](https://github.com/googlefonts/fontations/pull/2014) | Medium | Open | Unbounded recursion in skrifa VARC `eval_condition` → stack overflow (upstream-only; same class as their #1993) |
+| fontations (skrifa) | 2026-08-05 | [#2010](https://github.com/googlefonts/fontations/issues/2010) / [PR #2012](https://github.com/googlefonts/fontations/pull/2012) | Medium | Resolved (2026-08-05, merged by `dfrg`) | skrifa panics drawing a VARC glyph with a null `MultiItemVariationStore` offset (upstream-only; OTS strips VARC on the web path) |
+| fontations (skrifa) | 2026-08-05 | [#2013](https://github.com/googlefonts/fontations/issues/2013) / [PR #2014](https://github.com/googlefonts/fontations/pull/2014) | Medium | Resolved (2026-08-05, merged by `dfrg`) | Unbounded recursion in skrifa VARC `eval_condition` → stack overflow (upstream-only; same class as their #1993) |
 | x509-parser | 2026-07-19 | [#251](https://github.com/rusticata/x509-parser/issues/251) / [PR #252](https://github.com/rusticata/x509-parser/pull/252) | Low | Resolved (2026-07-22) | `ASN1Time` arithmetic panics instead of returning `None` on overflow |
 | zune-jpeg | 2026-07-18 | reported via private channel | Low | Resolved upstream (fix predates this report; not yet in a published crate release) | Reachable panic decoding a crafted progressive JPEG |
 
@@ -115,7 +116,7 @@ here by advisory ID and status only — no technical detail is disclosed before 
 | ciborium | 2026-07-19 | [GHSA-5857-62v3-27wr](https://github.com/enarx/ciborium/security/advisories/GHSA-5857-62v3-27wr) | Under vendor review |
 | ciborium | 2026-07-19 | [GHSA-qxw2-g7wc-7h4j](https://github.com/enarx/ciborium/security/advisories/GHSA-qxw2-g7wc-7h4j) | Under vendor review |
 | ciborium | 2026-07-19 | [GHSA-gpv3-7pvc-5937](https://github.com/enarx/ciborium/security/advisories/GHSA-gpv3-7pvc-5937) | Under vendor review |
-| h2 | 2026-07-26 | [GHSA-q83h-524g-xf6h](https://github.com/hyperium/hyper/security/advisories/GHSA-q83h-524g-xf6h) | Under vendor review |
+| h2 | 2026-07-26 | [GHSA-q83h-524g-xf6h](https://github.com/hyperium/hyper/security/advisories/GHSA-q83h-524g-xf6h) | Accepted by vendor — advisory in draft |
 | h2 | 2026-07-26 | [GHSA-8r6j-x8wp-qpm3](https://github.com/hyperium/hyper/security/advisories/GHSA-8r6j-x8wp-qpm3) | Under vendor review |
 | quinn-proto | 2026-07-23 | [GHSA-hmxj-32vh-65vr](https://github.com/quinn-rs/quinn/security/advisories/GHSA-hmxj-32vh-65vr) | Accepted by vendor — fix in progress |
 | rustls | 2026-07-23 | [GHSA-j99h-2h74-pcqx](https://github.com/rustls/rustls/security/advisories/GHSA-j99h-2h74-pcqx) | Closed by vendor — advisory not published; addressed via public [PR #3173](https://github.com/rustls/rustls/pull/3173) |
@@ -135,4 +136,5 @@ here by advisory ID and status only — no technical detail is disclosed before 
 - The openai/codex CLI findings (2026-08-05) were filed as **public GitHub issues**: Codex's `SECURITY.md` routes validated vulnerabilities to Bugcrowd, but no private GitHub advisory channel is enabled and these are mostly deferred / operator-gated, medium-and-below. One further escalation-environment finding was withdrawn before filing during accuracy re-verification and is not counted here.
 - The **RustDesk** disclosure (2026-08-05) was a single coordinated **email** to info@rustdesk.com covering 9 findings, with suggested patches attached. RustDesk has no SECURITY.md and GitHub private vulnerability reporting is disabled, so there is no advisory-ID channel; it is tracked here by send-date and status only, with no vulnerability class, mechanism, or PoC disclosed until the vendor responds (per the policy above).
 - **ttf-parser** (harfbuzz/ttf-parser) — our 4 PRs ([#222](https://github.com/harfbuzz/ttf-parser/pull/222)–[#225](https://github.com/harfbuzz/ttf-parser/pull/225)) sat open under a dormant repo, so a maintained fork (`xberg-ttf-parser`, xberg-io/xberg) cherry-picked all four with attribution. That surfaced upstream on [#230](https://github.com/harfbuzz/ttf-parser/issues/230), where on **2026-08-05 the harfbuzz lead (`behdad`) granted the fork's authors commit access to the upstream repo** (re-maintained, not deprecated). By end of **2026-08-05 the new maintainers merged all seven** of our PRs — the four earlier (#222–#225) plus three further findings filed the same day (#232/#234, #235 which fixes #192, #233/#236). See LESSONS L60 on re-checking governance before routing a disclosure. Separately, we filed two skrifa VARC findings to `googlefonts/fontations` (the strategic successor) the same day — see the table above.
-- This list is updated as reports change status. Last updated: 2026-08-05.
+- **2026-08-06 live-recheck** (`gh issue/pr view`, `gh api .../security-advisories/{id}`, per-item, not search): two fontations/skrifa VARC findings ([#2010](https://github.com/googlefonts/fontations/issues/2010)/[PR #2012](https://github.com/googlefonts/fontations/pull/2012), [#2013](https://github.com/googlefonts/fontations/issues/2013)/[PR #2014](https://github.com/googlefonts/fontations/pull/2014)) merged same-day by maintainer `dfrg`; [h2 PR #925](https://github.com/hyperium/h2/pull/925) confirmed merged 2026-07-28 (a stale "Open" label from a prior pass, corrected here); h2's [GHSA-q83h](https://github.com/hyperium/hyper/security/advisories/GHSA-q83h-524g-xf6h) moved `triage` → `draft` with `submission.accepted:true`. Everything else re-checked (openai/codex ×6, image/image-png/miniz_oxide ×8, gimli, httparse, rmp-serde, ciborium ×4, h2 GHSA-8r6j, quinn-proto) was unchanged.
+- This list is updated as reports change status. Last updated: 2026-08-06.
