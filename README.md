@@ -31,10 +31,11 @@ reproduction.
 ## Proof of work, not AI slop
 
 Skepticism about AI-driven vulnerability research is fair — so here are receipts, not a pitch. As of
-2026-08-05, this pipeline has filed **63 vulnerability reports across 21 independent Rust projects**:
-20 already fixed upstream (via a merged fix or the maintainer's own commit — including `lopdf`,
-`x509-parser`, `quick-xml`, `ntex`, `rustls`), 8 more accepted or under review as private
-security advisories (`gitoxide`, `quinn-proto`, `ciborium`, `hyper`). Every report, date, and link:
+2026-08-05, this pipeline has filed **69 vulnerability reports across 22 independent Rust projects**:
+**29 already fixed upstream** (via a merged fix or the maintainer's own commit — including `ttf-parser`
+(all seven of our PRs merged), `lopdf`, `x509-parser`, `quick-xml`, `ntex`, `rustls`), plus 8 accepted,
+under review, or published as private security advisories (`gitoxide` — now a published public advisory;
+`quinn-proto`, `ciborium`, `hyper`). Every report, date, and link:
 **[DISCLOSURES-PUBLIC.md](DISCLOSURES-PUBLIC.md)**.
 
 ## What this fork adds

@@ -1236,6 +1236,32 @@ not a fundamental block. That is exactly what a cheap probe tells you and an hou
   root-ownership trap), egress-canary (iptables/NAT/DNS), result-writeback (L28 root-owned litter). Each
   failure prints a specific remediation and aborts. Generalizing it to every container mode is W48.
 
+## L60 — "Unmaintained" is a timestamp, not a property; re-check governance before routing a disclosure — and your own work can move it `[PROVEN]` · disclosure-relations · extends L57/L58
+
+- **Evidence:** ttf-parser. We filed four security PRs (#222–#225, 2026-07-20) against `harfbuzz/ttf-parser`;
+  the repo was effectively dormant — no merge since 2025-11-22 (`main` HEAD `6e75b3c`) — and they sat open.
+  The apparent end-state was "unmaintained, route the next findings to a fork or the successor." It wasn't.
+  A third party (`Goldziher`/`tobocop2`) who wanted the fixes forked the crate to `xberg-ttf-parser`, carried
+  all four PRs as-is with attribution, and began migrating downstream consumers onto the fork (`pdf_oxide`
+  #1014). That fork — and the RUSTSEC-2026-0192 "unmaintained" advisory behind it — surfaced the question on
+  issue #230, where the harfbuzz lead (`behdad`), rather than deprecate, **granted the fork's authors commit
+  access to the upstream repo** on 2026-08-05 (verified via `gh api` on the #230 thread; #231 deprecation-PR
+  and #1014 both self-closed as moot once access was granted). Inside ~2 hours the target flipped from
+  "dormant, our PRs dead" to "freshly re-maintained by people who already value our work." Our own disclosures
+  were part of the causal chain that revived it — a fork worth maintaining is what forced the governance question.
+- **Why:** Maintenance/ownership is a property of a *moment*, not a constant — and, unlike code, it can change
+  for reasons your own work sets in motion (a fork worth carrying, a downstream migration, an unmaintained
+  advisory). A routing decision made on last week's snapshot ("upstream is dead → file to the fork/successor")
+  can be wrong by the time you send. This is the governance analogue of L57: there you re-check whether the bug
+  still exists in the latest *release*; here you re-check who can actually *merge* a fix right now.
+- **Change:** Add a governance re-check to the pre-disclosure gate, alongside is-latest (L57) and
+  trace-to-source (L58). Before routing any finding, confirm (a) who currently holds commit access and whether
+  the repo has recent merge activity (`gh api repos/{o}/{r}` + recent commits), (b) whether a *maintained* fork
+  or an official successor exists and whether the upstream maintainers endorse it, and (c) any RUSTSEC/GHSA
+  "unmaintained" advisory that a fork or ownership transfer may have already changed. Route to whoever can merge
+  *now*, and re-run the check if the decision has been sitting. Applied live: three more ttf-parser findings we
+  had queued for the fork were re-routed back to upstream mid-decision when access changed hands.
+
 ## Suggested next actions
 
 The original cheap honesty gates are implemented for the Rust baseline. The
