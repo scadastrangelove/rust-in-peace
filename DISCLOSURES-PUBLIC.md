@@ -25,13 +25,13 @@ Reporter of record: Sergey Gordeychik ([@scadastrangelove](https://github.com/sc
 
 ## Summary
 
-_As of 2026-08-02._
+_As of 2026-08-05._
 
 | | |
 |---|---:|
-| Reports filed | 57 |
+| Reports filed | 63 |
 | Resolved (fixed / merged) | 21 |
-| Open — awaiting vendor action | 19 |
+| Open — awaiting vendor action | 25 |
 | Closed — disputed, not a vulnerability, or declined | 7 |
 | Private advisories pending vendor publication | 7 |
 | — of which published as a public advisory | 1 (gitoxide, the campaign's first) |
@@ -44,6 +44,12 @@ Findings sent as (or since converted to) a public issue, pull request, or vendor
 | Target | Reported | Report | Severity | Status | Summary |
 |---|---|---|---|---|---|
 | actix-web | 2026-07-23 | #4161 (removed by repository, 410 Gone) | Low | Closed — issue deleted; report was hardening-only, not a demonstrated smuggling exploit | Chunked-transfer-encoding parser accepts non-conformant chunk-size terminators |
+| Codex (openai/codex) | 2026-08-05 | [#37077](https://github.com/openai/codex/issues/37077) | Medium | Open | MCP OAuth login opens the server-supplied `authorization_endpoint` via `webbrowser::open` with no URL-scheme allowlist — a malicious/MITM MCP server can drive an arbitrary OS URL-handler |
+| Codex (openai/codex) | 2026-08-05 | [#37078](https://github.com/openai/codex/issues/37078) | Low-Medium | Open | Command auto-approval "known-safe" list keys on the executable basename, so `./cat` (an attacker-controlled file) is auto-approved without a prompt under `UnlessTrusted` |
+| Codex (openai/codex) | 2026-08-05 | [#37079](https://github.com/openai/codex/issues/37079) | Low | Open | execpolicy `forbidden`/deny rules bypassable by spelling argv[0] as an unregistered path (`/tmp/git` vs `git`) |
+| Codex (openai/codex) | 2026-08-05 | [#37080](https://github.com/openai/codex/issues/37080) | Medium | Open | MCP client does not cap the HTTP/SSE response body on the default (Legacy) request — malicious MCP server memory-exhaustion DoS |
+| Codex (openai/codex) | 2026-08-05 | [#37081](https://github.com/openai/codex/issues/37081) | Medium | Open | workspace-write `.git` carveout not applied to nested repositories — a sandboxed agent can plant a git hook that runs unsandboxed later (e2e on macOS Seatbelt) |
+| Codex (openai/codex) | 2026-08-05 | [#37082](https://github.com/openai/codex/issues/37082) | Low | Open | Windows: a not-yet-existing protected dir (`.codex`/`.git`/`.agents`) gets no deny rule, so a sandboxed agent can create and poison it |
 | Chromium / Skia (vendored `image` fork) | 2026-07-22 | [issue 537617325](https://issues.chromium.org/issues/537617325) | Low | Root cause fixed upstream ([image-rs/image#3095](https://github.com/image-rs/image/pull/3095), merged 2026-08-03) — Chromium's own vendored copy not yet confirmed updated | Unbounded allocation while parsing an embedded BMP color-profile size field |
 | Deno | 2026-07-26 | [PR #36327](https://github.com/denoland/deno/pull/36327) | High | Resolved (2026-07-26) | WebSocket-over-HTTP/2 fallback path left HTTP/2 server push enabled, reachable to a process-crashing assertion in the `h2` crate |
 | fdeflate | 2026-07-19 | [#83](https://github.com/image-rs/fdeflate/issues/83) | Low | Closed — severity disputed by vendor; our own reassessment concurred | Huffman-table-rebuild cost scaling on crafted input |
@@ -119,4 +125,5 @@ here by advisory ID and status only — no technical detail is disclosed before 
 - A closure marked "disputed" reflects our own re-verification against the target's current source, not
   a claim that the vendor acted in bad faith — vendors regularly and reasonably assess scope and
   priority differently than an external reporter.
-- This list is updated as reports change status. Last updated: 2026-08-02.
+- The openai/codex CLI findings (2026-08-05) were filed as **public GitHub issues**: Codex's `SECURITY.md` routes validated vulnerabilities to Bugcrowd, but no private GitHub advisory channel is enabled and these are mostly deferred / operator-gated, medium-and-below. One further escalation-environment finding was withdrawn before filing during accuracy re-verification and is not counted here.
+- This list is updated as reports change status. Last updated: 2026-08-05.
