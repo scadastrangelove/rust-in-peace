@@ -25,11 +25,11 @@ Reporter of record: Sergey Gordeychik ([@scadastrangelove](https://github.com/sc
 
 ## Summary
 
-_As of 2026-08-05._
+_As of 2026-08-06._
 
 | | |
 |---|---:|
-| Reports filed | 69 |
+| Reports filed | 70 |
 | Resolved (fixed / merged) | 29 |
 | Open — awaiting vendor action | 23 |
 | Closed — disputed, not a vulnerability, or declined | 7 |
@@ -56,6 +56,7 @@ Findings sent as (or since converted to) a public issue, pull request, or vendor
 | gimli | 2026-07-19 | [#898](https://github.com/gimli-rs/gimli/issues/898) | Low-Medium | Open | Quadratic-time attribute parsing via zero-byte DWARF forms |
 | gitoxide | 2026-07-22 | [GHSA-pmm9-4h7q-24c8](https://github.com/GitoxideLabs/gitoxide/security/advisories/GHSA-pmm9-4h7q-24c8) | Medium | **Resolved (2026-08-02) — published as a public advisory**, CVSS 5.3 | `checkout()` follows an existing terminal symlink on Windows during non-exclusive (incremental) materialization, writing outside the intended worktree |
 | h2 | 2026-07-26 | [PR #925](https://github.com/hyperium/h2/pull/925) | Low | Open | HTTP/2 trailer emission doesn't filter connection-specific header fields the same code rejects on receive (RFC 9113 §8.2.2) |
+| harfrust | 2026-08-06 | [#410](https://github.com/harfbuzz/harfrust/issues/410) | Medium | Open | GPOS cursive `attach_chain` i16 truncation → out-of-bounds slice index panic (process abort from a crafted font) |
 | httparse | 2026-07-19 | [#222](https://github.com/seanmonstar/httparse/issues/222) / [PR #223](https://github.com/seanmonstar/httparse/pull/223) | Low-Medium | Open | A whitespace-only header line silently truncates the entire header block, under an opt-in leniency flag |
 | image | 2026-07-19 | [#3076](https://github.com/image-rs/image/issues/3076) | High | Open | AVIF decode proceeds before configured memory limits are enforced |
 | image | 2026-07-19 | [#3077](https://github.com/image-rs/image/issues/3077) | High | Resolved | WebP animation decode bypassed configured memory limits |
