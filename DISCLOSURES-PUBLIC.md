@@ -29,9 +29,9 @@ _As of 2026-08-05._
 
 | | |
 |---|---:|
-| Reports filed | 63 |
-| Resolved (fixed / merged) | 22 |
-| Open — awaiting vendor action | 24 |
+| Reports filed | 69 |
+| Resolved (fixed / merged) | 29 |
+| Open — awaiting vendor action | 23 |
 | Closed — disputed, not a vulnerability, or declined | 7 |
 | Private advisories pending vendor publication | 7 |
 | — of which published as a public advisory | 1 (gitoxide, the campaign's first) |
@@ -90,10 +90,15 @@ Findings sent as (or since converted to) a public issue, pull request, or vendor
 | rmp-serde | 2026-07-20 | [#381](https://github.com/3Hren/msgpack-rust/issues/381) / [PR #382](https://github.com/3Hren/msgpack-rust/pull/382) | Medium | Open | Recursion-depth guard doesn't cover all deserialization entry points |
 | rustls | 2026-07-23 | [PR #3173](https://github.com/rustls/rustls/pull/3173) | Low | Resolved (2026-07-29, PR #3173 merged) | A `CryptoProvider` mixing QUIC-capable and -incapable TLS1.3 cipher suites can panic if the peer selects the incapable one |
 | rustls | 2026-07-23 | [PR #3173](https://github.com/rustls/rustls/pull/3173) | Low | Resolved (2026-07-29, PR #3173 merged) | A QUIC client would incorrectly accept a TLS1.2 ServerHello from a trusted-but-misbehaving server |
-| ttf-parser | 2026-07-20 | [#218](https://github.com/harfbuzz/ttf-parser/issues/218) / [PR #222](https://github.com/harfbuzz/ttf-parser/pull/222) | Medium | Open | CFF2 operand-stack underflow |
-| ttf-parser | 2026-07-20 | [#219](https://github.com/harfbuzz/ttf-parser/issues/219) / [PR #223](https://github.com/harfbuzz/ttf-parser/pull/223) | Low | Open | Variation-axis-mapping integer overflow |
-| ttf-parser | 2026-07-20 | [#220](https://github.com/harfbuzz/ttf-parser/issues/220) / [PR #224](https://github.com/harfbuzz/ttf-parser/pull/224) | High | Open | Composite-glyph shared-subtree parsing scales exponentially |
-| ttf-parser | 2026-07-20 | [#221](https://github.com/harfbuzz/ttf-parser/issues/221) / [PR #225](https://github.com/harfbuzz/ttf-parser/pull/225) | High | Open | COLR paint-graph shared-subtree parsing scales exponentially |
+| ttf-parser | 2026-07-20 | [#218](https://github.com/harfbuzz/ttf-parser/issues/218) / [PR #222](https://github.com/harfbuzz/ttf-parser/pull/222) | Medium | Resolved (PR #222 merged 2026-08-05) | CFF2 operand-stack underflow |
+| ttf-parser | 2026-07-20 | [#219](https://github.com/harfbuzz/ttf-parser/issues/219) / [PR #223](https://github.com/harfbuzz/ttf-parser/pull/223) | Low | Resolved (PR #223 merged 2026-08-05) | Variation-axis-mapping integer overflow |
+| ttf-parser | 2026-07-20 | [#220](https://github.com/harfbuzz/ttf-parser/issues/220) / [PR #224](https://github.com/harfbuzz/ttf-parser/pull/224) | High | Resolved (PR #224 merged 2026-08-05) | Composite-glyph shared-subtree parsing scales exponentially |
+| ttf-parser | 2026-07-20 | [#221](https://github.com/harfbuzz/ttf-parser/issues/221) / [PR #225](https://github.com/harfbuzz/ttf-parser/pull/225) | High | Resolved (PR #225 merged 2026-08-05) | COLR paint-graph shared-subtree parsing scales exponentially |
+| ttf-parser | 2026-08-05 | [#232](https://github.com/harfbuzz/ttf-parser/issues/232) / [PR #234](https://github.com/harfbuzz/ttf-parser/pull/234) | Medium | Resolved (PR #234 merged 2026-08-05) | c-api `ttfp_get_glyph_name` aborts/UB on a CFF glyph name ≥256 bytes |
+| ttf-parser | 2026-08-05 | [PR #235](https://github.com/harfbuzz/ttf-parser/pull/235) (Fixes [#192](https://github.com/harfbuzz/ttf-parser/issues/192)) | Medium | Resolved (PR #235 merged 2026-08-05) | Self-referential GSUB/GPOS extension lookup → stack-overflow DoS; PR fixes the open fuzzer report #192 (credits @llooFlashooll) |
+| ttf-parser | 2026-08-05 | [#233](https://github.com/harfbuzz/ttf-parser/issues/233) / [PR #236](https://github.com/harfbuzz/ttf-parser/pull/236) | Medium | Resolved (PR #236 merged 2026-08-05) | CFF/CFF2 interpreter caps recursion depth but not total subroutine invocations (work amplification) |
+| fontations (skrifa) | 2026-08-05 | [#2010](https://github.com/googlefonts/fontations/issues/2010) / [PR #2012](https://github.com/googlefonts/fontations/pull/2012) | Medium | Open | skrifa panics drawing a VARC glyph with a null `MultiItemVariationStore` offset (upstream-only; OTS strips VARC on the web path) |
+| fontations (skrifa) | 2026-08-05 | [#2013](https://github.com/googlefonts/fontations/issues/2013) / [PR #2014](https://github.com/googlefonts/fontations/pull/2014) | Medium | Open | Unbounded recursion in skrifa VARC `eval_condition` → stack overflow (upstream-only; same class as their #1993) |
 | x509-parser | 2026-07-19 | [#251](https://github.com/rusticata/x509-parser/issues/251) / [PR #252](https://github.com/rusticata/x509-parser/pull/252) | Low | Resolved (2026-07-22) | `ASN1Time` arithmetic panics instead of returning `None` on overflow |
 | zune-jpeg | 2026-07-18 | reported via private channel | Low | Resolved upstream (fix predates this report; not yet in a published crate release) | Reachable panic decoding a crafted progressive JPEG |
 
@@ -114,6 +119,7 @@ here by advisory ID and status only — no technical detail is disclosed before 
 | quinn-proto | 2026-07-23 | [GHSA-hmxj-32vh-65vr](https://github.com/quinn-rs/quinn/security/advisories/GHSA-hmxj-32vh-65vr) | Accepted by vendor — fix in progress |
 | rustls | 2026-07-23 | [GHSA-j99h-2h74-pcqx](https://github.com/rustls/rustls/security/advisories/GHSA-j99h-2h74-pcqx) | Closed by vendor — advisory not published; addressed via public [PR #3173](https://github.com/rustls/rustls/pull/3173) |
 | rustls | 2026-07-23 | [GHSA-4xwv-fw6q-5gvr](https://github.com/rustls/rustls/security/advisories/GHSA-4xwv-fw6q-5gvr) | Closed by vendor — advisory not published; addressed via public [PR #3173](https://github.com/rustls/rustls/pull/3173) |
+| RustDesk | 2026-08-05 | direct email — info@rustdesk.com (no SECURITY.md / GitHub private reporting; no advisory ID) | Sent; awaiting acknowledgement. Coordinated report, suggested patches attached; technical detail withheld pending vendor response. |
 
 ## Notes
 
@@ -126,4 +132,6 @@ here by advisory ID and status only — no technical detail is disclosed before 
   a claim that the vendor acted in bad faith — vendors regularly and reasonably assess scope and
   priority differently than an external reporter.
 - The openai/codex CLI findings (2026-08-05) were filed as **public GitHub issues**: Codex's `SECURITY.md` routes validated vulnerabilities to Bugcrowd, but no private GitHub advisory channel is enabled and these are mostly deferred / operator-gated, medium-and-below. One further escalation-environment finding was withdrawn before filing during accuracy re-verification and is not counted here.
+- The **RustDesk** disclosure (2026-08-05) was a single coordinated **email** to info@rustdesk.com covering 9 findings, with suggested patches attached. RustDesk has no SECURITY.md and GitHub private vulnerability reporting is disabled, so there is no advisory-ID channel; it is tracked here by send-date and status only, with no vulnerability class, mechanism, or PoC disclosed until the vendor responds (per the policy above).
+- **ttf-parser** (harfbuzz/ttf-parser) — our 4 PRs ([#222](https://github.com/harfbuzz/ttf-parser/pull/222)–[#225](https://github.com/harfbuzz/ttf-parser/pull/225)) sat open under a dormant repo, so a maintained fork (`xberg-ttf-parser`, xberg-io/xberg) cherry-picked all four with attribution. That surfaced upstream on [#230](https://github.com/harfbuzz/ttf-parser/issues/230), where on **2026-08-05 the harfbuzz lead (`behdad`) granted the fork's authors commit access to the upstream repo** (re-maintained, not deprecated). By end of **2026-08-05 the new maintainers merged all seven** of our PRs — the four earlier (#222–#225) plus three further findings filed the same day (#232/#234, #235 which fixes #192, #233/#236). See LESSONS L60 on re-checking governance before routing a disclosure. Separately, we filed two skrifa VARC findings to `googlefonts/fontations` (the strategic successor) the same day — see the table above.
 - This list is updated as reports change status. Last updated: 2026-08-05.

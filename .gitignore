@@ -156,3 +156,8 @@ http-pathquery-u16-disclosure/
 # Article drafts — reference DISCLOSURES.md + infra codename; hold until sanitized.
 /ARTICLE.md
 /ARTICLE-DRAFT.md
+
+# also cover disclosure ARCHIVES at root (files, not just the /*-disclosure/ dirs)
+/*-disclosure*.zip
+/*-disclosure*.tar*
+/*-disclosure*.tgz
