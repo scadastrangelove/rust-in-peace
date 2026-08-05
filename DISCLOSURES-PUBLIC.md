@@ -30,8 +30,8 @@ _As of 2026-08-05._
 | | |
 |---|---:|
 | Reports filed | 63 |
-| Resolved (fixed / merged) | 21 |
-| Open — awaiting vendor action | 25 |
+| Resolved (fixed / merged) | 22 |
+| Open — awaiting vendor action | 24 |
 | Closed — disputed, not a vulnerability, or declined | 7 |
 | Private advisories pending vendor publication | 7 |
 | — of which published as a public advisory | 1 (gitoxide, the campaign's first) |
@@ -65,7 +65,7 @@ Findings sent as (or since converted to) a public issue, pull request, or vendor
 | image | 2026-07-19 | [#3081](https://github.com/image-rs/image/issues/3081) | High | Closed — disputed; independently reconfirmed present in current source | `DynamicImage::from_decoder` allocates without consulting configured memory limits |
 | image | 2026-07-19 | [#3082](https://github.com/image-rs/image/issues/3082) | High | Resolved | HDR decode limits gap, same root cause as #3077 |
 | image | 2026-07-19 | [#3083](https://github.com/image-rs/image/issues/3083) | Low-Medium | Open — proposed fix declined by vendor; underlying issue not disputed | `resize_to_fill` overshoots on an extreme aspect ratio |
-| image | 2026-07-19 | [#3084](https://github.com/image-rs/image/issues/3084) / [PR #3085](https://github.com/image-rs/image/pull/3085) | Medium | Open — positively reviewed, blocked on CI | AVIF alpha-plane data corruption |
+| image | 2026-07-19 | [#3084](https://github.com/image-rs/image/issues/3084) / [PR #3085](https://github.com/image-rs/image/pull/3085) | Medium | Resolved (2026-08-05, via maintainer's own commit `76ab596`; our PR #3085 superseded, still open) | AVIF alpha-plane data corruption |
 | lopdf | 2026-07-19 | [#532](https://github.com/J-F-Liu/lopdf/issues/532) / [PR #533](https://github.com/J-F-Liu/lopdf/pull/533) | Low | Resolved (2026-07-20) | Four reachable panics decoding crafted PDFs |
 | lopdf | 2026-07-19 | [#530](https://github.com/J-F-Liu/lopdf/issues/530) / [PR #531](https://github.com/J-F-Liu/lopdf/pull/531) | Low | Resolved (2026-07-20) | Unbounded recursion walking the post-load document graph |
 | miniz_oxide | 2026-07-19 | [#198](https://github.com/Frommi/miniz_oxide/issues/198) / [PR #199](https://github.com/Frommi/miniz_oxide/pull/199) | Medium-High | Open | Huffman-table-rebuild cost decoupled from decompressed output size |
