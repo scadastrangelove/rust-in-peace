@@ -29,11 +29,11 @@ _As of 2026-08-06 (live-recheck against GitHub via `gh`)._
 
 | | |
 |---|---:|
-| Reports filed | 71 |
+| Reports filed | 73 |
 | Resolved (fixed / merged) | 33 |
 | Open — awaiting vendor action | 20 |
 | Closed — disputed, not a vulnerability, or declined | 7 |
-| Private advisories pending vendor publication | 7 |
+| Private advisories pending vendor publication | 9 |
 | — of which accepted by vendor (draft / fix in progress) | 2 (h2 GHSA-q83h, quinn-proto) |
 | — of which published as a public advisory | 1 (gitoxide, the campaign's first) |
 
@@ -113,6 +113,8 @@ here by advisory ID and status only — no technical detail is disclosed before 
 | Target | Reported | Advisory ID | Status |
 |---|---|---|---|
 | actix-web | 2026-07-23 | [GHSA-rmg3-w467-r3hg](https://github.com/actix/actix-web/security/advisories/GHSA-rmg3-w467-r3hg) | Closed by vendor — advisory not published |
+| BoxLite | 2026-08-06 | [GHSA-fj94-x2qq-2qmq](https://github.com/boxlite-ai/boxlite/security/advisories/GHSA-fj94-x2qq-2qmq) | Under vendor triage |
+| BoxLite | 2026-08-06 | [GHSA-gcpm-8w8q-gp9v](https://github.com/boxlite-ai/boxlite/security/advisories/GHSA-gcpm-8w8q-gp9v) | Under vendor triage |
 | ciborium | 2026-07-19 | [GHSA-gg22-wcqw-grr3](https://github.com/enarx/ciborium/security/advisories/GHSA-gg22-wcqw-grr3) | Under vendor review |
 | ciborium | 2026-07-19 | [GHSA-5857-62v3-27wr](https://github.com/enarx/ciborium/security/advisories/GHSA-5857-62v3-27wr) | Under vendor review |
 | ciborium | 2026-07-19 | [GHSA-qxw2-g7wc-7h4j](https://github.com/enarx/ciborium/security/advisories/GHSA-qxw2-g7wc-7h4j) | Under vendor review |
