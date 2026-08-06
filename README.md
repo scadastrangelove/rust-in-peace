@@ -31,7 +31,7 @@ reproduction.
 ## Proof of work, not AI slop
 
 Skepticism about AI-driven vulnerability research is fair — so here are receipts, not a pitch. As of
-2026-08-06, this pipeline has filed **70 vulnerability reports across 25 independent Rust projects**:
+2026-08-06, this pipeline has filed **71 vulnerability reports across 25 independent Rust projects**:
 **33 already fixed upstream** (via a merged fix or the maintainer's own commit — including `ttf-parser`
 (all seven of our PRs merged), `lopdf`, `x509-parser`, `quick-xml`, `ntex`, `rustls`, and Google's own
 `fontations`/skrifa), plus 8 accepted, under review, or published as private security advisories
