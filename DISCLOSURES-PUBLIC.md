@@ -25,13 +25,13 @@ Reporter of record: Sergey Gordeychik ([@scadastrangelove](https://github.com/sc
 
 ## Summary
 
-_As of 2026-08-06 (live-recheck against GitHub via `gh`)._
+_As of 2026-08-09 (live-recheck against GitHub via `gh`)._
 
 | | |
 |---|---:|
 | Reports filed | 73 |
-| Resolved (fixed / merged) | 33 |
-| Open — awaiting vendor action | 20 |
+| Resolved (fixed / merged) | 34 |
+| Open — awaiting vendor action | 19 |
 | Closed — disputed, not a vulnerability, or declined | 7 |
 | Private advisories pending vendor publication | 9 |
 | — of which accepted by vendor (draft / fix in progress) | 2 (h2 GHSA-q83h, quinn-proto) |
@@ -44,7 +44,7 @@ Findings sent as (or since converted to) a public issue, pull request, or vendor
 
 | Target | Reported | Report | Severity | Status | Summary |
 |---|---|---|---|---|---|
-| harfrust | 2026-08-06 | [#410](https://github.com/harfbuzz/harfrust/issues/410) | Medium | Open | GPOS cursive `attach_chain` i16 truncation → out-of-bounds slice index panic (process abort from a crafted font) |
+| harfrust | 2026-08-06 | [#410](https://github.com/harfbuzz/harfrust/issues/410) | Medium | Resolved (2026-08-09, via merged [PR #411](https://github.com/harfbuzz/harfrust/pull/411), a maintainer/contributor fix by @youdie006) | GPOS cursive `attach_chain` i16 truncation → out-of-bounds slice index panic (process abort from a crafted font) |
 | Codex (openai/codex) | 2026-08-05 | [#37077](https://github.com/openai/codex/issues/37077) | Medium | Open | MCP OAuth login opens the server-supplied `authorization_endpoint` via `webbrowser::open` with no URL-scheme allowlist — a malicious/MITM MCP server can drive an arbitrary OS URL-handler |
 | Codex (openai/codex) | 2026-08-05 | [#37078](https://github.com/openai/codex/issues/37078) | Low-Medium | Open | Command auto-approval "known-safe" list keys on the executable basename, so `./cat` (an attacker-controlled file) is auto-approved without a prompt under `UnlessTrusted` |
 | Codex (openai/codex) | 2026-08-05 | [#37079](https://github.com/openai/codex/issues/37079) | Low | Open | execpolicy `forbidden`/deny rules bypassable by spelling argv[0] as an unregistered path (`/tmp/git` vs `git`) |
@@ -141,4 +141,4 @@ here by advisory ID and status only — no technical detail is disclosed before 
 - **ttf-parser** (harfbuzz/ttf-parser) — our 4 PRs ([#222](https://github.com/harfbuzz/ttf-parser/pull/222)–[#225](https://github.com/harfbuzz/ttf-parser/pull/225)) sat open under a dormant repo, so a maintained fork (`xberg-ttf-parser`, xberg-io/xberg) cherry-picked all four with attribution. That surfaced upstream on [#230](https://github.com/harfbuzz/ttf-parser/issues/230), where on **2026-08-05 the harfbuzz lead (`behdad`) granted the fork's authors commit access to the upstream repo** (re-maintained, not deprecated). By end of **2026-08-05 the new maintainers merged all seven** of our PRs — the four earlier (#222–#225) plus three further findings filed the same day (#232/#234, #235 which fixes #192, #233/#236). See LESSONS L60 on re-checking governance before routing a disclosure. Separately, we filed two skrifa VARC findings to `googlefonts/fontations` (the strategic successor) the same day — see the table above.
 - **2026-08-06 live-recheck** (`gh issue/pr view`, `gh api .../security-advisories/{id}`, per-item, not search): two fontations/skrifa VARC findings ([#2010](https://github.com/googlefonts/fontations/issues/2010)/[PR #2012](https://github.com/googlefonts/fontations/pull/2012), [#2013](https://github.com/googlefonts/fontations/issues/2013)/[PR #2014](https://github.com/googlefonts/fontations/pull/2014)) merged same-day by maintainer `dfrg`; [h2 PR #925](https://github.com/hyperium/h2/pull/925) confirmed merged 2026-07-28 (a stale "Open" label from a prior pass, corrected here); h2's [GHSA-q83h](https://github.com/hyperium/hyper/security/advisories/GHSA-q83h-524g-xf6h) moved `triage` → `draft` with `submission.accepted:true`. Everything else re-checked (openai/codex ×6, image/image-png/miniz_oxide ×8, gimli, httparse, rmp-serde, ciborium ×4, h2 GHSA-8r6j, quinn-proto) was unchanged.
 - Added the second Chromium/Skia finding (`rust/exif` quadratic-DoS, [issue 541725390](https://issues.chromium.org/issues/541725390), filed 2026-08-02) — present in the internal tracker since filing but missing from this public list until now.
-- This list is updated as reports change status. Last updated: 2026-08-06.
+- This list is updated as reports change status. Last updated: 2026-08-09.
