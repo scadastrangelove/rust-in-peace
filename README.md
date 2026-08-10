@@ -50,13 +50,26 @@ exists for:
   detector, find→fuzz binder) from a `profile:` field in `config.yaml`. Adding a
   crash-shaped language is a new `harness/<lang>/` package + one registry entry;
   a new evidence model may also require shared disposition/orchestration work.
-  The registered `android-app` profile is an experimental research branch, not
-  part of the supported Rust release baseline.
+  The registered `android-app` profile (below) is one such addition — an
+  experimental research branch, not part of the supported Rust release baseline.
 - **The `rust` profile** (`harness/rust/`) — a Rust find prompt, a
   Miri / AddressSanitizer / panic / hang crash detector, Rust-tuned
   grade/judge/report/patch prompts, and the Rust bug taxonomy: unsafe/FFI memory
   safety, panic-DoS, deserialization trust, and `Send`/`Sync` + panic-safety
   soundness. See [profiles/rust/README.md](profiles/rust/README.md).
+- **The `android-app` profile** (`harness/android_app/`, `profiles/android-app/`)
+  — an **experimental** research profile (not part of the supported Rust release
+  baseline) that applies the same pipeline to a **decompiled APK**. MASVS/MASTG-
+  grounded, it walks an entry→sink→guard reachability graph over the decoded tree,
+  handles **both** native-smali and **Flutter/Dart-AOT** (`libapp.so`) apps, grades
+  candidates on a 1–4 evidence-strength ladder, and can promote static candidates to
+  observed effects in an adb/Frida device sandbox. Use it like any other profile:
+  ```
+  /vuln-scan <decoded-apk-dir> --extra profiles/android-app/scan-extras.txt
+  /triage VULN-FINDINGS.json --fp-rules profiles/android-app/fp-rules.txt
+  ```
+  (`<decoded-apk-dir>` is an `apktool d app.apk` tree.) See
+  [docs/profiles/android/](docs/profiles/android/).
 - **Recall-first union-of-N** — single-run recall is noisy, so `find` runs N
   times and merges candidates by **(CWE + crash-site)** — not exact line —
   keeping every candidate ≥1 run found, tagged `votes: k/N`
