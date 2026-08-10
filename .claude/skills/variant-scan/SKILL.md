@@ -78,6 +78,15 @@ pass's lenses:
 1. **Find** — N lens-agents in parallel, each emitting `FIND_SCHEMA` findings
    (`bug_class, file, line, symbol, mechanism, reachability_from_entry,
    poc_sketch, severity, confidence`).
+   **Corpus isolation (L38 — load-bearing).** Each finder works ONLY from the
+   target source + its own lens brief. A finder must NOT read another lens's
+   output, a sibling `findings-*.json`, or any on-disk answer key (a plan / PoC /
+   THREAT_MODEL solution) — cross-reading destroys vote independence and invites
+   an over-claim (an earlier run's cve-sonnet glimpsed a sibling `cve-opus.json`).
+   Give each finder its OWN output path it cannot list siblings from (per-agent
+   dir, not a shared `findings/`), and instruct it: "never open another
+   findings-*.json." Votes are only meaningful when the finders were blind to
+   each other.
 2. **Union-of-N dedup** — collapse by `bug_class-prefix @ file:symbol`,
    counting votes across lenses.
 3. **Verify** — per candidate, 3 skeptic lenses (**correctness / reachability /

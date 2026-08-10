@@ -92,6 +92,7 @@ promotion. STATIC_TERMINAL_CLASSES (the closed set):
     android:exported-no-permission  (exported component with no permission gate)
     android:backup-no-rules         (backup enabled, no full-backup-content rules)
     android:test-only-flag          (android:testOnly="true")
+    android:weak-apk-signature      (v1-only / no v2+v3 / empty-DN self-signed cert)
 Every other android:<class> (exported-activity-launch, exported-service,
 broadcast-injection, content-provider-sqli, content-provider-traversal,
 webview-js-bridge, webview-file-access, cleartext-endpoint, insecure-storage-secret,

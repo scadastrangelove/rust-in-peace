@@ -14,7 +14,29 @@ SINK, and decide whether a GUARD (permission, protectionLevel, signature check,
 input validation, exported=false, host allowlist) actually stops it. A finding is a
 concrete path `entry → (hops) → sink` with the guard analysis explicit. The
 MASVS/MASTG category (PLATFORM, STORAGE, NETWORK, CODE…) is a LABEL you attach for
-the report — it never drives the search or the traversal order.
+the report — it never drives the search or the traversal order. Emit both the CWE
+and the MASVS requirement id (e.g. MASVS-NETWORK-2 / MASTG-TEST-…) so the report
+speaks the mobile-audit vocabulary.
+
+KNOW YOUR STACK FIRST (intel.stack). smali is the whole app ONLY for a native
+Java/Kotlin app. If intel.stack != native-smali the smali is thin GLUE and the real
+logic is compiled into a bundled blob — a smali/resource hunt is BLIND and its host
+list is library noise. Trust intel's HIGH-confidence endpoints (extracted from the
+blob), not the low-confidence glue/resource ones. For a Flutter target work §AF; the
+§A1–A9 IPC/manifest surface still applies (it is real smali), but the storage / TLS /
+routing / auth logic is in Dart — hunt it there, not in the glue.
+
+ENUMERATE-THEN-TRACE for an opaque/compiled artifact. When the logic is not
+plainly readable line-by-line (Dart AOT, obfuscated smali, a JS bundle), first
+ENUMERATE the whole population of a sink class — every WebView, every storage
+write, every route, every trust callback — THEN trace each one. A spot-check of the
+first instance misses the 5th WebView that is the payment screen — an app-wide
+accept-all can hide behind a single unchecked handler. Completeness is the claim.
+
+RAW-STRINGS IS NOT OPTIONAL. A structured extractor (a decompiler's constant pool,
+a Blutter object-pool dump) is NOT a complete list of the binary's strings — a
+hardcoded URL / token / id can be present in the binary yet absent from the
+pool. Always ALSO run a raw `strings` pass over the logic blob and cross-check.
 
 Everything you emit here is STRENGTH 1 (a static_reachability argument). Do NOT
 inflate: strength ≥ 2 requires an OBSERVED dynamic effect (adb/Frida), which is a
@@ -80,6 +102,20 @@ The sections below match the capability gates (§A1..§A9 in harness/capabilitie
   - GUARD: cleartext scoped to localhost / loopback / a dev host (AR3 — no on-path
     attacker), an NSC that only relaxes a loopback domain. A cleartext call to a
     ROUTABLE host carrying auth is the finding.
+  - ENUMERATE EVERY TLS SURFACE — an app has more than one, and disabling any one
+    is a full accept-all MITM on that traffic. Walk each independently; "the API
+    client validates" does NOT clear the WebViews. Surfaces to enumerate:
+      * dart:io / Dio (Flutter API): HttpClient.badCertificateCallback returning
+        true = accept-all;
+      * flutter_inappwebview (Flutter WebViews): onReceivedServerTrustAuthRequest
+        returning ServerTrustAuthResponse(PROCEED) = accept-all — CHECK EVERY
+        WebView (payment / card-entry / 3-DS especially). PROCEED=(1,1), CANCEL=(0,0).
+      * OkHttp: a CertificatePinner that is absent, or a custom X509TrustManager
+        whose checkServerTrusted is empty (trust-all);
+      * WebViewClient.onReceivedSslError(handler.proceed()) = accept-all in a native
+        WebView; HostnameVerifier that returns true.
+    A single shared trust-callback reused across N different-host WebViews (AOT
+    dedup) that returns PROCEED is UNCONDITIONAL accept-all — see §AF1.
 
   §A6 ContentProvider — HIGH VALUE (cap: content_provider →
   android:content-provider-sqli, android:content-provider-traversal):
@@ -130,6 +166,55 @@ The sections below match the capability gates (§A1..§A9 in harness/capabilitie
     native_reachable_from_untrusted_input ∈ {yes, partial}. A BARE .so is not enough —
     without the reachability chain, down-rank the finding (AR9); do not fuzz JNI on a
     library nothing attacker-reachable calls.
+
+  §AF Flutter / cross-platform (RUNS WHEN intel.stack != native-smali). The logic
+  is in the blob (Flutter: libapp.so Dart AOT — dump with Blutter/reFlutter + raw
+  strings; RN: index.android.bundle). smali §A1–A9 still covers the manifest/IPC
+  surface, but hunt the sinks below IN THE DART, not the glue. Emit them under the
+  same CWE/MASVS + entry→sink→guard witness format (strength 1).
+  §AF1 TWO TLS STACKS (CWE-295 / MASVS-NETWORK-2). Flutter has independent TLS
+    surfaces — clearing one does NOT clear the other:
+    - dart:io / Dio (API): HttpClient.badCertificateCallback => true = accept-all.
+      NOTE: `_onBadCertificateWrapper` alone is the dart:io built-in present in
+      EVERY Flutter app — NOT a finding; look for an APP closure assigned to
+      badCertificateCallback that returns true.
+    - flutter_inappwebview (WebViews): an onReceivedServerTrustAuthRequest handler
+      returning ServerTrustAuthResponse(PROCEED). ENUMERATE EVERY WebView (payment,
+      card binding, 3-DS especially). PROCEED=(1,1), CANCEL=(0,0). AOT dedup
+      (dedup_instructions) merges byte-identical closures, so ONE shared closure
+      reused across N different-host WebViews CANNOT contain a per-host check ⇒ it
+      is a constant `return PROCEED` ⇒ UNCONDITIONAL accept-all (a HIGH; no trusted
+      CA needed, any self-signed cert is accepted).
+  §AF2 STORAGE (CWE-312/522 / MASVS-STORAGE-1). Where do tokens/PII land? —
+    - Hive box opened WITHOUT an encryptionCipher (no HiveAesCipher anywhere in the
+      dump) = plaintext file in app storage; with allowBackup=true it is extractable.
+    - flutter_secure_storage = Keystore-backed (good); plain shared_preferences =
+      unencrypted. Trace the sink: <Repo> → putValue/write → openBox / setString.
+  §AF3 ROUTE-GUARD / AUTH (CWE-862/939 / MASVS-AUTH). auto_route: an empty
+    List<AutoRouteGuard>(0) on every route + no class implementing AutoRouteGuard =
+    NO route-level authorization. Then find where the PIN/biometric lock actually
+    lives — if it is only a Splash startup navigation (navigateToPincode), not a
+    guard and not a global lifecycle overlay, a deeplink resolved by
+    defaultRouteParser may reach a sensitive route while skipping the lock (needs a
+    1-command dynamic confirm; state it as plausible, not proven).
+  §AF4 REACHABILITY + PROOF. The blob is compiled: ENUMERATE-THEN-TRACE (all
+    WebViews / all storage sinks / all routes) and use the dedup-shared-closure
+    argument (§AF1) as a static proof of unconditionality. Do not infer a sink from
+    string co-presence — trace it in the disassembly (L38 / RSA-over-claim gate).
+
+  §A10 breadth signals (from intel.harvest — record as INFO/terminal, calibrate
+  honestly):
+  - native_libs: the real .so inventory (name/ABI/size) — the §A9 attack surface;
+    a bare lib is not a finding without the reachability chain (AR9).
+  - signing: v1-only / missing v2+v3 / empty-DN self-signed cert →
+    android:weak-apk-signature (STATIC-TERMINAL, usually LOW). v2/v3 + the signer DN
+    need the ORIGINAL .apk; if the decoded tree lacks META-INF, SAY the artifact is
+    missing — do not guess the scheme.
+  - defenses: root/Frida/emulator/Play-Integrity/pinning present = a POSITIVE control
+    (INFO) — "present, enforcement unverified"; absence for a fintech target is a
+    hardening note, not a vuln. These live in dex/native, not Dart.
+  - BuildConfig: constants (DEBUG, hardcoded base URLs, keys) are in <pkg>/BuildConfig
+    — scanned as app smali; a secret there is §A4, a base URL is §A5.
 
 DO NOT REPORT (Android false positives — skip even if technically present; each maps
 to a triage rule in fp-rules.txt):

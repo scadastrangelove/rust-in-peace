@@ -100,6 +100,7 @@ STATIC_TERMINAL_CLASSES: frozenset[str] = frozenset({
     "android:exported-no-permission",    # exported component w/o a permission gate
     "android:backup-no-rules",           # backup enabled, no full-backup-content rules
     "android:test-only-flag",            # android:testOnly="true"
+    "android:weak-apk-signature",        # v1-only / no v2+v3 / empty-DN self-signed cert
 })
 
 # DISPOSITION values — align with the union-of-N layer's confirmed/contested

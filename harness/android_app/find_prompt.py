@@ -105,8 +105,19 @@ Sinks:
 {_SINKS}
 
 A finding is a concrete path: `entry → (hops) → sink`, with the guard analysis
-explicit. The MASVS/MASTG category (STORAGE, PLATFORM, NETWORK, …) is a *label*
-you attach for the report — it does not drive the search.
+explicit. Attach BOTH the CWE and the MASVS requirement id (e.g. MASVS-NETWORK-2 /
+MASTG-TEST-0xxx) as report labels — they speak the mobile-audit vocabulary but do
+NOT drive the search or the traversal order.
+
+**Know your stack first.** smali is the whole app ONLY for a native Java/Kotlin
+app. If the target is Flutter (`lib/**/libapp.so` + `libflutter.so`), React-Native
+(`assets/index.android.bundle`), Xamarin, etc., the smali is thin GLUE and the real
+logic — storage, TLS, routing, auth — is compiled into the blob. The manifest/IPC
+surface (entry points below) is still real smali; but for the blob's logic you must
+extract it (Flutter: Blutter/reFlutter + a raw `strings` pass) and hunt there. For
+an opaque/compiled artifact, ENUMERATE-THEN-TRACE: list the whole population of a
+sink class (every WebView / storage write / route / trust callback) before tracing
+each — a spot-check misses the 5th WebView that is the payment screen.
 {known}{dedup}
 # Confirm each candidate with the reachability oracle
 For each hypothesized path, write a **candidate** file describing it (entry
@@ -145,6 +156,13 @@ Header fields:
                  `android:pending-intent-hijack`, `android:dynamic-code-load`).
 
 # Honesty guardrails (these are load-bearing)
+- **Quote, or it is not a finding.** Every claim about the code is backed by an
+  EXACT citation from the artifact (`path:line` + the smali/string fragment) —
+  never a paraphrase, never an invented class/method/version/key/CWE. Separate
+  what is CONFIRMED-BY-CODE from what is an ASSUMPTION needing a further step. If
+  an artifact you need is absent (the original `.apk` for the signature scheme,
+  the Dart dump for logic), SAY which artifact is missing — do not guess it. Do
+  not infer a sink from string co-presence; trace it (L38 / the RSA over-claim).
 - **Reachability is the claim.** "This method looks unsafe" is not a finding
   unless an attacker-controlled entry reaches it past the guards. If you cannot
   trace the path, DEFER it — say so in `dup_check`, do not submit a strength-1
