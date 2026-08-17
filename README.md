@@ -31,13 +31,18 @@ reproduction.
 ## Proof of work, not AI slop
 
 Skepticism about AI-driven vulnerability research is fair — so here are receipts, not a pitch. As of
-2026-08-06, this pipeline has filed **71 vulnerability reports across 25 independent Rust projects**:
-**33 already fixed upstream** (via a merged fix or the maintainer's own commit — including `ttf-parser`
+2026-08-17, this pipeline has filed **73 vulnerability reports across 25 independent Rust projects**:
+**35 already fixed upstream** (via a merged fix or the maintainer's own commit — including `ttf-parser`
 (all seven of our PRs merged), `lopdf`, `x509-parser`, `quick-xml`, `ntex`, `rustls`, and Google's own
-`fontations`/skrifa), plus 8 accepted, under review, or published as private security advisories
-(`gitoxide` — now a published public advisory; `quinn-proto` and `hyper`'s `h2` — both accepted, fix in
-progress; `ciborium`). Every report, date, and link:
+`fontations`/skrifa), plus 9 accepted, under review, or published as private security advisories
+(`gitoxide` and `hyper`'s `h2` — now both published public advisories (`h2` fixed in 0.4.16); `quinn-proto`
+accepted, fix in progress; `ciborium` under review). Every report, date, and link:
 **[DISCLOSURES-PUBLIC.md](DISCLOSURES-PUBLIC.md)**.
+
+Separately, **16 findings across three Linux kernel subsystems** — Android Binder IPC (6), net/xfrm IP-TFS
+(4), and the nova-core GPU driver (6) — were disclosed to maintainers by email on 2026-08-17. As unfixed
+kernel issues they are tracked by subsystem and count only, with technical detail withheld pending fixes.
+That brings the total to **89 vulnerabilities reported across both campaigns** (73 Rust crates + 16 kernel).
 
 ## What this fork adds
 

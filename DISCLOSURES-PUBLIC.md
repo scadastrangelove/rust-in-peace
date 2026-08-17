@@ -29,13 +29,17 @@ _As of 2026-08-17 (h2 GHSA-q83h published — see log; all other rows per the 20
 
 | | |
 |---|---:|
-| Reports filed | 73 |
+| Reports filed — Rust open-source crates (across 25 projects) | 73 |
 | Resolved (fixed / merged) | 35 |
 | Open — awaiting vendor action | 19 |
 | Closed — disputed, not a vulnerability, or declined | 7 |
 | Private advisories pending vendor publication | 9 |
 | — of which accepted by vendor (draft / fix in progress) | 1 (quinn-proto) |
 | — of which published as a public advisory | 2 (gitoxide; h2 GHSA-q83h, published 2026-08-17, fixed in h2 0.4.16) |
+| Linux kernel findings (separate email disclosure, 2026-08-17) | 16 across 3 subsystems (Android Binder IPC 6, net/xfrm IP-TFS 4, nova-core GPU 6) |
+| **Total vulnerabilities reported (all campaigns)** | **89** (73 Rust crates + 16 Linux kernel) |
+
+_The Rust-crate row and its status breakdown (Resolved / Open / Closed / advisories) cover the open-source-crate campaign across 25 projects. The Linux kernel findings are a separate email disclosure, tracked by subsystem and count only (see Pending disclosures). The two sum to the 89 total._
 
 ## Public disclosures
 
@@ -126,6 +130,9 @@ here by advisory ID and status only — no technical detail is disclosed before 
 | rustls | 2026-07-23 | [GHSA-j99h-2h74-pcqx](https://github.com/rustls/rustls/security/advisories/GHSA-j99h-2h74-pcqx) | Closed by vendor — advisory not published; addressed via public [PR #3173](https://github.com/rustls/rustls/pull/3173) |
 | rustls | 2026-07-23 | [GHSA-4xwv-fw6q-5gvr](https://github.com/rustls/rustls/security/advisories/GHSA-4xwv-fw6q-5gvr) | Closed by vendor — advisory not published; addressed via public [PR #3173](https://github.com/rustls/rustls/pull/3173) |
 | RustDesk | 2026-08-05 | direct email — info@rustdesk.com (no SECURITY.md / GitHub private reporting; no advisory ID) | **Acknowledged 2026-08-10 — vendor confirmed all 9 findings.** Finding #2 (macOS clipboard) resolved via public [PR #15693](https://github.com/rustdesk/rustdesk/pull/15693) — refound (fix predates our report), listed in the public table above; the other 8 are under active vendor fix, technical detail withheld per policy. |
+| Linux kernel — Android Binder IPC (`drivers/android/binder`) | 2026-08-17 | direct email to maintainers (no advisory ID) | Sent — **6 findings** (Rust + C driver); awaiting acknowledgement; technical detail withheld per policy |
+| Linux kernel — IP-TFS / IPsec (`net/xfrm/xfrm_iptfs.c`) | 2026-08-17 | direct email to maintainers (no advisory ID) | Sent — **4 findings**; awaiting acknowledgement; technical detail withheld per policy |
+| Linux kernel — nova-core GPU driver (`drivers/gpu/nova-core`) | 2026-08-17 | direct email to maintainers (no advisory ID) | Sent — **6 findings**; awaiting acknowledgement; technical detail withheld per policy |
 
 ## Notes
 
@@ -139,6 +146,7 @@ here by advisory ID and status only — no technical detail is disclosed before 
   priority differently than an external reporter.
 - The openai/codex CLI findings (2026-08-05) were filed as **public GitHub issues**: Codex's `SECURITY.md` routes validated vulnerabilities to Bugcrowd, but no private GitHub advisory channel is enabled and these are mostly deferred / operator-gated, medium-and-below. One further escalation-environment finding was withdrawn before filing during accuracy re-verification and is not counted here.
 - The **RustDesk** disclosure (2026-08-05) was a single coordinated **email** to info@rustdesk.com covering 9 findings, with suggested patches attached. RustDesk has no SECURITY.md and GitHub private vulnerability reporting is disabled, so there is no advisory-ID channel; it is tracked here by send-date and status only, with no vulnerability class, mechanism, or PoC disclosed until the vendor responds (per the policy above). On **2026-08-10 RustDesk replied, confirming all nine findings.** They mapped finding #2 (macOS clipboard file-copy) to an already-merged public fix, [PR #15693](https://github.com/rustdesk/rustdesk/pull/15693) (merged 2026-08-04, one day before our report — a concurrent/independent fix we re-found, not one our report prompted; not yet in a published release, the latest being 1.4.9). The remaining eight are confirmed and under active fix; their class and mechanism stay withheld until fixed or published.
+- The **Linux kernel** findings (2026-08-17) are a **separate campaign** from the Rust open-source-crate work above and were disclosed to the respective maintainers **by email**. They are tracked here **by subsystem and finding count only** — no vulnerability class, mechanism, file, or PoC is disclosed, since these are unfixed kernel issues and the appropriate embargo applies until the maintainers respond and any fix ships. Three subsystems, 16 findings total: Android Binder IPC (`drivers/android/binder`, Rust + C driver) — 6; net/xfrm IP-TFS (`net/xfrm/xfrm_iptfs.c`, C) — 4; nova-core GPU driver (`drivers/gpu/nova-core`, Rust) — 6. All by Sergey Gordeychik / rust-in-peace, targeting `torvalds/linux` at `db2ddb87`. Awaiting maintainer acknowledgement.
 - **ttf-parser** (harfbuzz/ttf-parser) — our 4 PRs ([#222](https://github.com/harfbuzz/ttf-parser/pull/222)–[#225](https://github.com/harfbuzz/ttf-parser/pull/225)) sat open under a dormant repo, so a maintained fork (`xberg-ttf-parser`, xberg-io/xberg) cherry-picked all four with attribution. That surfaced upstream on [#230](https://github.com/harfbuzz/ttf-parser/issues/230), where on **2026-08-05 the harfbuzz lead (`behdad`) granted the fork's authors commit access to the upstream repo** (re-maintained, not deprecated). By end of **2026-08-05 the new maintainers merged all seven** of our PRs — the four earlier (#222–#225) plus three further findings filed the same day (#232/#234, #235 which fixes #192, #233/#236). See LESSONS L60 on re-checking governance before routing a disclosure. Separately, we filed two skrifa VARC findings to `googlefonts/fontations` (the strategic successor) the same day — see the table above.
 - **2026-08-06 live-recheck** (`gh issue/pr view`, `gh api .../security-advisories/{id}`, per-item, not search): two fontations/skrifa VARC findings ([#2010](https://github.com/googlefonts/fontations/issues/2010)/[PR #2012](https://github.com/googlefonts/fontations/pull/2012), [#2013](https://github.com/googlefonts/fontations/issues/2013)/[PR #2014](https://github.com/googlefonts/fontations/pull/2014)) merged same-day by maintainer `dfrg`; [h2 PR #925](https://github.com/hyperium/h2/pull/925) confirmed merged 2026-07-28 (a stale "Open" label from a prior pass, corrected here); h2's [GHSA-q83h](https://github.com/hyperium/hyper/security/advisories/GHSA-q83h-524g-xf6h) moved `triage` → `draft` with `submission.accepted:true`. Everything else re-checked (openai/codex ×6, image/image-png/miniz_oxide ×8, gimli, httparse, rmp-serde, ciborium ×4, h2 GHSA-8r6j, quinn-proto) was unchanged.
 - Added the second Chromium/Skia finding (`rust/exif` quadratic-DoS, [issue 541725390](https://issues.chromium.org/issues/541725390), filed 2026-08-02) — present in the internal tracker since filing but missing from this public list until now.
