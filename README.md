@@ -35,8 +35,8 @@ Skepticism about AI-driven vulnerability research is fair — so here are receip
 **35 already fixed upstream** (via a merged fix or the maintainer's own commit — including `ttf-parser`
 (all seven of our PRs merged), `lopdf`, `x509-parser`, `quick-xml`, `ntex`, `rustls`, and Google's own
 `fontations`/skrifa), plus 9 accepted, under review, or published as private security advisories
-(`gitoxide` and `hyper`'s `h2` — now both published public advisories (`h2` fixed in 0.4.16); `quinn-proto`
-accepted, fix in progress; `ciborium` under review). Every report, date, and link:
+(`gitoxide`, `hyper`'s `h2`, and `quinn-proto` — now all three published public advisories (`h2` fixed in
+0.4.16, `quinn-proto` in 0.11.17); `ciborium` under review). Every report, date, and link:
 **[DISCLOSURES-PUBLIC.md](DISCLOSURES-PUBLIC.md)**.
 
 Separately, **16 findings across three Linux kernel subsystems** — Android Binder IPC (6), net/xfrm IP-TFS

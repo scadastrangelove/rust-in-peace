@@ -25,7 +25,7 @@ Reporter of record: Sergey Gordeychik ([@scadastrangelove](https://github.com/sc
 
 ## Summary
 
-_As of 2026-08-17 (h2 GHSA-q83h published — see log; all other rows per the 2026-08-11 live-recheck against GitHub via `gh`, incl. reporter-scoped advisory states)._
+_As of 2026-08-17 (h2 GHSA-q83h and quinn-proto GHSA-hmxj both published — see log; all other rows per the 2026-08-11 live-recheck against GitHub via `gh`, incl. reporter-scoped advisory states)._
 
 | | |
 |---|---:|
@@ -34,8 +34,8 @@ _As of 2026-08-17 (h2 GHSA-q83h published — see log; all other rows per the 20
 | Open — awaiting vendor action | 19 |
 | Closed — disputed, not a vulnerability, or declined | 7 |
 | Private advisories pending vendor publication | 9 |
-| — of which accepted by vendor (draft / fix in progress) | 1 (quinn-proto) |
-| — of which published as a public advisory | 2 (gitoxide; h2 GHSA-q83h, published 2026-08-17, fixed in h2 0.4.16) |
+| — of which accepted by vendor (draft / fix in progress) | 0 (quinn-proto published 2026-08-17) |
+| — of which published as a public advisory | 3 (gitoxide; h2 GHSA-q83h, fixed in h2 0.4.16; quinn-proto GHSA-hmxj, fixed in 0.11.17 — h2 + quinn both published 2026-08-17) |
 | Linux kernel findings (separate email disclosure, 2026-08-17) | 16 across 3 subsystems (Android Binder IPC 6, net/xfrm IP-TFS 4, nova-core GPU 6) |
 | **Total vulnerabilities reported (all campaigns)** | **89** (73 Rust crates + 16 Linux kernel) |
 
@@ -126,7 +126,7 @@ here by advisory ID and status only — no technical detail is disclosed before 
 | ciborium | 2026-07-19 | [GHSA-gpv3-7pvc-5937](https://github.com/enarx/ciborium/security/advisories/GHSA-gpv3-7pvc-5937) | Under vendor review |
 | h2 | 2026-07-26 | [GHSA-q83h-524g-xf6h](https://github.com/hyperium/hyper/security/advisories/GHSA-q83h-524g-xf6h) | **Published 2026-08-17** — "h2 unbounded empty DATA frames", Low, CWE-400 (no CVE); fixed in **h2 0.4.16**; credit @scadastrangelove (Sergey Gordeychik), remediation @seanmonstar |
 | h2 | 2026-07-26 | [GHSA-8r6j-x8wp-qpm3](https://github.com/hyperium/hyper/security/advisories/GHSA-8r6j-x8wp-qpm3) | Under vendor review |
-| quinn-proto | 2026-07-23 | [GHSA-hmxj-32vh-65vr](https://github.com/quinn-rs/quinn/security/advisories/GHSA-hmxj-32vh-65vr) | Accepted by vendor — fix in progress |
+| quinn-proto | 2026-07-23 | [GHSA-hmxj-32vh-65vr](https://github.com/quinn-rs/quinn/security/advisories/GHSA-hmxj-32vh-65vr) | **Published 2026-08-17** — remote memory-exhaustion DoS (unbounded `pending.retire_cids`), Moderate (no CVE); fixed in **quinn-proto 0.11.17**; credit @scadastrangelove (Sergey Gordeychik) |
 | rustls | 2026-07-23 | [GHSA-j99h-2h74-pcqx](https://github.com/rustls/rustls/security/advisories/GHSA-j99h-2h74-pcqx) | Closed by vendor — advisory not published; addressed via public [PR #3173](https://github.com/rustls/rustls/pull/3173) |
 | rustls | 2026-07-23 | [GHSA-4xwv-fw6q-5gvr](https://github.com/rustls/rustls/security/advisories/GHSA-4xwv-fw6q-5gvr) | Closed by vendor — advisory not published; addressed via public [PR #3173](https://github.com/rustls/rustls/pull/3173) |
 | RustDesk | 2026-08-05 | direct email — info@rustdesk.com (no SECURITY.md / GitHub private reporting; no advisory ID) | **Acknowledged 2026-08-10 — vendor confirmed all 9 findings.** Finding #2 (macOS clipboard) resolved via public [PR #15693](https://github.com/rustdesk/rustdesk/pull/15693) — refound (fix predates our report), listed in the public table above; the other 8 are under active vendor fix, technical detail withheld per policy. |
@@ -152,4 +152,5 @@ here by advisory ID and status only — no technical detail is disclosed before 
 - Added the second Chromium/Skia finding (`rust/exif` quadratic-DoS, [issue 541725390](https://issues.chromium.org/issues/541725390), filed 2026-08-02) — present in the internal tracker since filing but missing from this public list until now.
 - **2026-08-11 re-check** (per-item; reporter-scoped `gh api .../security-advisories` for draft/triage states): **RustDesk acknowledged — all 9 findings confirmed by the vendor**; finding #2 fixed via public PR #15693 (refound, not yet in a release). Everything else re-verified unchanged since 2026-08-09: ciborium ×4 still `triage`, rmp-serde #381/#382 still open/silent (their 60-day marks ≈ 2026-09-17/18 have not yet arrived), gimli #898 / httparse #222–#223 / miniz_oxide #199–#202 / image #3083 / png #697/#702/#703 still open, h2 `GHSA-q83h` `draft` and `GHSA-8r6j` `triage`, quinn-proto `draft`, BoxLite ×2 `triage`, gitoxide `GHSA-pmm9` published. harfrust #410 remained resolved.
 - **2026-08-17** — h2 **[GHSA-q83h-524g-xf6h](https://github.com/hyperium/hyper/security/advisories/GHSA-q83h-524g-xf6h) PUBLISHED** (was `draft`): "h2 unbounded empty DATA frames" (our finding D — zero-length DATA bypasses HTTP/2 flow control → unbounded queued empty DATA frames), **Low**, **CWE-400**, no CVE; fixed in **h2 0.4.16**; credited to SCADA StrangeLove (@scadastrangelove / Sergey Gordeychik), remediation by @seanmonstar. The campaign's **second published advisory** (after gitoxide GHSA-pmm9). (Incremental update — other rows unchanged from the 2026-08-11 sweep.)
+- **2026-08-17** — quinn-proto **[GHSA-hmxj-32vh-65vr](https://github.com/quinn-rs/quinn/security/advisories/GHSA-hmxj-32vh-65vr) PUBLISHED** (was accepted/`draft` since 2026-07-23): "unbounded `pending.retire_cids` growth via already-retired NEW_CONNECTION_ID frames" — remote memory-exhaustion DoS, **Moderate**, no CVE; fixed in **quinn-proto 0.11.17**; credited to @scadastrangelove (Sergey Gordeychik). The campaign's **third published advisory** (gitoxide, h2, quinn-proto).
 - This list is updated as reports change status. Last updated: 2026-08-17.
