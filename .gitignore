@@ -31,6 +31,12 @@ cc.tkn
 # unfixed findings or third-party integration internals before coordinated disclosure)
 CHROMIUM-RUST-CODECS-PLAN.md
 CHROMIUM-CAMPAIGN-WRITEUP.md
+RUST-BINDER-CAMPAIGN-LADDER.md
+LINUX-KERNEL-C-CAMPAIGN-ROADMAP.md
+/rust-binder-poc-prep/
+# binder/nova/iptfs disclosure packages were reorganized under here (2026-08-17); nested paths
+# aren't caught by the root-anchored /*-disclosure/ pattern below, so anchor by directory instead
+/linux-kernel/
 chromium-bmp-disclosure/
 gitoxide-win-disclosure/
 quinn-retire-cids-disclosure/
