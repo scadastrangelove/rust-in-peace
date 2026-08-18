@@ -25,23 +25,37 @@ Reporter of record: Sergey Gordeychik ([@scadastrangelove](https://github.com/sc
 
 ## Summary
 
-_As of 2026-08-18 (h2 GHSA-8r6j resolved — fixed in 0.4.16, closed without publishing; Chromium exif fix landed; 3 Codex candidate patches logged — see log below. h2 GHSA-q83h and quinn-proto GHSA-hmxj published 2026-08-17; all other rows per the 2026-08-11 live-recheck against GitHub via `gh`, incl. reporter-scoped advisory states). **Note:** the summary counts below were not recomputed in this pass — see the 2026-08-18 log entry._
+_As of 2026-08-18 — **full ground-up recount**, done after a user question surfaced real drift between
+this file and the internal `DISCLOSURES.csv`/`.json` tracker. RustDesk (9 findings) and BoxLite (3
+findings) had never been added to the internal CSV/JSON at all; the Linux kernel binder (6) and nova (6)
+subsystems were also completely absent there (only IP-TFS's 4 existed, and those were stale-marked
+`draft`/`not sent` despite being emailed 2026-08-17); 3 ttf-parser findings from the 2026-08-05 batch
+were missing too. All backfilled/corrected; see the 2026-08-18 log entry for the full list of fixes and
+methodology. Counts below are now mechanically derived from the reconciled CSV, not hand-maintained._
 
 | | |
 |---|---:|
-| Reports filed — Rust open-source crates (across 25 projects) | 73 |
-| Resolved (fixed / merged) | 35 |
-| Open — awaiting vendor action | 19 |
-| Closed — disputed, not a vulnerability, or declined | 7 |
-| Private advisories currently tracked (Rust-crate campaign) | 10 — matches the Pending disclosures table below exactly |
-| — still under vendor review / triage | 6 (4 ciborium, 2 BoxLite) |
-| — closed without publishing, fix delivered via a public PR | 3 (h2 GHSA-8r6j → PR #936; rustls GHSA-j99h + GHSA-4xwv → PR #3173) |
-| — closed without publishing, no fix (rejected) | 1 (actix-web GHSA-rmg3) |
-| Private advisories **published** as a public advisory (historical total — no longer listed in the Pending table below, tracked in Public disclosures instead) | 3 (gitoxide GHSA-pmm9; h2 GHSA-q83h, fixed in 0.4.16; quinn-proto GHSA-hmxj, fixed in 0.11.17) |
+| Reports filed — Rust open-source crates (across 27 projects) | 78 |
+| Resolved (fixed / merged) | 37 |
+| Open — awaiting vendor action (public issue/PR) | 18 |
+| Closed — disputed, not a vulnerability, or declined | 8 |
+| Private, still awaiting vendor action (not yet resolved or rejected) | 15 |
+| — of which vendor has acknowledged and is actively fixing | 8 (RustDesk's remaining 8 of 9 — the 9th, macOS clipboard, is refound/resolved and counted above) |
+| — of which still awaiting a first vendor response | 7 (4 ciborium, 3 BoxLite) |
 | Linux kernel findings (separate email disclosure, 2026-08-17) | 16 across 3 subsystems (Android Binder IPC 6, net/xfrm IP-TFS 4, nova-core GPU 6) |
-| **Total vulnerabilities reported (all campaigns)** | **89** (73 Rust crates + 16 Linux kernel) |
+| **Total vulnerabilities reported (all campaigns)** | **94** (78 Rust crates + 16 Linux kernel) |
 
-_The Rust-crate row and its status breakdown (Resolved / Open / Closed / advisories) cover the open-source-crate campaign across 25 projects. The Linux kernel findings are a separate email disclosure, tracked by subsystem and count only (see Pending disclosures). The two sum to the 89 total._
+_Note: the Pending disclosures table below counts by **advisory/row** (BoxLite has 3 distinct findings
+but only 2 GHSA filings — two of the three share one bundled advisory — so it shows 2 rows there;
+RustDesk's 8 still-private findings share one coordinated email and appear as 1 summary row) — its own
+row-count is 10, not 15. The summary above counts by **distinct finding** instead, matching how
+Resolved/Open/Closed are counted elsewhere on this page. Both are correct; they're answering different
+questions ("how many advisories are open" vs "how many distinct bugs are still private"). Also excluded
+from the 78: `rustls-fix-pr` and `fdeflate`'s withdrawn PR#84 (both are supporting-artifact rows for an
+already-counted finding, not separate bugs), and the `http2` fork's courtesy notification (same
+technical finding as h2 GHSA-8r6j, sent to a second maintainer — tracked, but not a second distinct bug)._
+
+_The Rust-crate row and its status breakdown (Resolved / Open / Closed / Private) cover the open-source-crate campaign across 27 projects. The Linux kernel findings are a separate email disclosure, tracked by subsystem and count only (see Pending disclosures). The two sum to the 94 total._
 
 ## Public disclosures
 
@@ -158,5 +172,32 @@ here by advisory ID and status only — no technical detail is disclosed before 
 - **2026-08-17** — quinn-proto **[GHSA-hmxj-32vh-65vr](https://github.com/quinn-rs/quinn/security/advisories/GHSA-hmxj-32vh-65vr) PUBLISHED** (was accepted/`draft` since 2026-07-23): "unbounded `pending.retire_cids` growth via already-retired NEW_CONNECTION_ID frames" — remote memory-exhaustion DoS, **Moderate**, no CVE; fixed in **quinn-proto 0.11.17**; credited to @scadastrangelove (Sergey Gordeychik). The campaign's **third published advisory** (gitoxide, h2, quinn-proto).
 - **2026-08-18** — full open/triage live-recheck via `gh`. **h2 [GHSA-8r6j-x8wp-qpm3](https://github.com/hyperium/hyper/security/advisories/GHSA-8r6j-x8wp-qpm3) resolved**: `seanmonstar` responded same-day (2026-07-26) assessing it "not security related, just a bug fix" but committed to fixing it regardless; ~3 weeks later (2026-08-18) confirmed *"A bug fix was released in v0.4.16."* Live-verified `state: closed`, `published_at: null` — same shape as the Deno/rustls rows above (closed without publishing, fix public via a merged PR — [#936](https://github.com/hyperium/h2/pull/936) — moved to the public table). While re-checking, also added public-table rows for **h2 GHSA-q83h** and **quinn-proto GHSA-hmxj** — both published 2026-08-17 but hadn't been given their own row in the Public disclosures table yet, only noted in the Pending table and this log; now consistent. **Chromium/Skia exif** (issue 541725390): root-cause fix landed directly upstream in Skia (`rust/exif`, 2026-08-17) and was auto-rolled into `chromium/src` 2026-08-18 via the `chromium-autoroll` bot — independently of our prepared (never-uploaded) Gerrit CL. **Codex**: 3 of the 6 open issues (#37077, #37079, #37080) had candidate-fix comments posted 2026-08-07 (not logged here until now, since `openai/codex` restricts PR creation to collaborators); zero maintainer response on any as of this check. Everything else re-verified unchanged: gimli #898, httparse #222/#223, miniz_oxide #199–#202, rmp-serde #381/#382, ciborium ×4 (still `triage`), all open image/image-png rows, and all `closed_unmerged` rows (object #951/#953, quick-xml #982, image-png #693, fdeflate #84, image #3086) remain closed, none reopened. **Follow-up same day — user flagged the "0 (quinn-proto published...)" line as confusing, triggered a full consistency audit:**
 the "Private advisories pending vendor publication | 9" bucket didn't match the Pending disclosures table's actual row count (12, mechanically recounted). Root cause: the Pending table's own header says "not yet published by the vendor," but it still listed **h2 GHSA-q83h** and **quinn-proto GHSA-hmxj** after both published 2026-08-17 — contradicting its own scope. **Fix applied:** removed both published rows from the Pending table (fully represented in the Public table + this log instead); replaced the confusing "9 / 0 (...) / 3" lines with a breakdown that matches the table's current, literal content exactly (10 rows: 6 still under review, 3 closed-without-publishing-but-fixed-via-public-PR, 1 closed-rejected) plus a separate "published historically" tally (3) that no longer implies current Pending-table membership.
-**Not fixed, flagged instead:** attempted to verify the top-line **"73" Rust-crate report total** (and its 35/19/7 sub-split) against the internal `DISCLOSURES.csv` (72 distinct `finding_id`s: 66 Rust-crate + 2 Chromium + 4 kernel) — the **25-projects** figure matches exactly, but **66 ≠ 73**, and adding RustDesk's 9 findings (absent from the CSV entirely) and BoxLite's 2 (also absent) gives 77, still not 73 either way. Genuine unresolved discrepancy, not guessed away — a dedicated recount (including backfilling RustDesk/BoxLite into the CSV, which they've never been) is still owed before the top summary numbers can be trusted.
+**Follow-up, same day — full recount completed** (user asked for it explicitly after the above flag).
+Root causes of the "73 vs 66" gap, found and fixed in `DISCLOSURES.csv`/`.json`:
+1. **RustDesk's 9 findings and BoxLite's findings had never been added to the CSV/JSON at all** —
+   backfilled as distinct `finding_id` rows (RustDesk: 1 `refound` — macOS clipboard, PR #15693 — + 8
+   `sent_awaiting_response`; BoxLite: 3, not 2 — `f001` egress domain-fronting has its own GHSA, `f002`
+   decompression-bomb + `f005` download-tar-DoS share one bundled GHSA-gcpm filing).
+2. **Linux kernel binder (6) and nova (6) were also completely absent** — only IP-TFS's 4 existed, and
+   those were stale (`draft`/`draft_not_sent`, no `date_sent`) despite being emailed 2026-08-17 alongside
+   binder/nova. All 16 kernel findings now present with `sent_awaiting_response` status (see the
+   correction on the IP-TFS section, above the RustDesk section, in this file's internal counterpart).
+3. **3 ttf-parser findings from the 2026-08-05 batch were missing** (`#232/234` c-api glyph-name
+   overflow, `#235` GSUB/GPOS stack-overflow fixing `#192`, `#233/236` CFF subroutine-count
+   amplification) — added.
+4. **Two CSV rows were stale published-status**: `h2-zerolen-data-flow-control-bypass` (GHSA-q83h) and
+   `quinn-proto-retire-cids-growth` (GHSA-hmxj) still read `draft`/`private_accepted` despite both
+   publishing 2026-08-17 — corrected to `published`.
+5. **One redundant row** (`rustls-fix-pr`, tracking the same PR that fixes 2 *already-counted* rustls
+   findings) and **one withdrawn-PR row** (`fdeflate`'s stale-clone incident, PR #84, for an
+   *already-counted* finding) were flagged as non-findings and excluded from the tally rather than
+   deleted. The `http2` fork's courtesy notification (same technical bug as h2 GHSA-8r6j, sent to a
+   second maintainer) was excluded from the *finding* count for the same reason, though it remains its
+   own row for *project*-counting purposes.
+
+**Result: 78 distinct Rust-crate findings across 27 projects** (37 resolved + 18 open + 8 closed + 15
+still private-and-unresolved = 78, exactly — first time this has fully reconciled). Kernel stays at 16,
+Chromium's 2 stay excluded from the total per existing convention. **New grand total: 94** (78 + 16, was
+89). Summary table above rewritten with these reconciled numbers; see the note directly under it for how
+"distinct finding" and "advisory/row" counting differ (they're intentionally not the same number).
 - This list is updated as reports change status. Last updated: 2026-08-18.
