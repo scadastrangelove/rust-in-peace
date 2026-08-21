@@ -35,15 +35,15 @@ methodology. Counts below are now mechanically derived from the reconciled CSV, 
 
 | | |
 |---|---:|
-| Reports filed — Rust open-source crates (across 27 projects) | 78 |
+| Reports filed — Rust open-source crates (across 28 projects) | 85 |
 | Resolved (fixed / merged) | 37 |
-| Open — awaiting vendor action (public issue/PR) | 18 |
+| Open — awaiting vendor action (public issue/PR) | 25 |
 | Closed — disputed, not a vulnerability, or declined | 8 |
 | Private, still awaiting vendor action (not yet resolved or rejected) | 15 |
 | — of which vendor has acknowledged and is actively fixing | 8 (RustDesk's remaining 8 of 9 — the 9th, macOS clipboard, is refound/resolved and counted above) |
 | — of which still awaiting a first vendor response | 7 (4 ciborium, 3 BoxLite) |
 | Linux kernel findings (separate email disclosure, 2026-08-17) | 16 across 3 subsystems (Android Binder IPC 6, net/xfrm IP-TFS 4, nova-core GPU 6) |
-| **Total vulnerabilities reported (all campaigns)** | **94** (78 Rust crates + 16 Linux kernel) |
+| **Total vulnerabilities reported (all campaigns)** | **101** (85 Rust crates + 16 Linux kernel) |
 
 _Note: the Pending disclosures table below counts by **advisory/row** (BoxLite has 3 distinct findings
 but only 2 GHSA filings — two of the three share one bundled advisory — so it shows 2 rows there;
@@ -64,6 +64,13 @@ Findings sent as (or since converted to) a public issue, pull request, or vendor
 
 | Target | Reported | Report | Severity | Status | Summary |
 |---|---|---|---|---|---|
+| wirefilter (cloudflare) | 2026-08-21 | [#194](https://github.com/cloudflare/wirefilter/issues/194) | High | Open | Two of five FFI value-ingestion setters have no null-pointer check at all — confirmed real SIGSEGV (not a panic) from a compiled-C caller, both debug and release |
+| wirefilter (cloudflare) | 2026-08-21 | [#195](https://github.com/cloudflare/wirefilter/issues/195) | Medium | Open | `CompoundType`'s internal 32-layer nesting cap panics instead of rejecting, reachable from both JSON deserialization and the FFI type-builder; confirmed crossing the real C ABI (SIGABRT) |
+| wirefilter (cloudflare) | 2026-08-21 | [#196](https://github.com/cloudflare/wirefilter/issues/196) | Medium | Open | `wirefilter_create_primitive_type` receives a `#[repr(u8)]` enum directly by value across the C ABI with no validation (real language-level UB); confirmed via a real C caller in both profiles, resolves to a controlled panic on this specific target |
+| wirefilter (cloudflare) | 2026-08-21 | [#191](https://github.com/cloudflare/wirefilter/issues/191) | Low-Medium | Open | A function's declared parameter type isn't enforced against the value it actually receives (parenthesized-field/`IsTrue` coercion delivers an `Array` where a `Map(Bool)` was declared) |
+| wirefilter (cloudflare) | 2026-08-21 | [#192](https://github.com/cloudflare/wirefilter/issues/192) | Low | Open | Regex-literal lexer's character-class tracking can silently fold later filter text into one pattern with no parse error |
+| wirefilter (cloudflare) | 2026-08-21 | [#193](https://github.com/cloudflare/wirefilter/issues/193) | Low | Open | `wirefilter_get_last_error()` returns a borrowed pointer with no documented lifetime, inconsistent with the rest of the FFI's owned-string convention |
+| wirefilter (cloudflare) | 2026-08-21 | [#190](https://github.com/cloudflare/wirefilter/issues/190) | Low | Open | `AlwaysListMatcher::match_value` always returns `false`, contradicting its own doc comment ("List that always matches") |
 | harfrust | 2026-08-06 | [#410](https://github.com/harfbuzz/harfrust/issues/410) | Medium | Resolved (2026-08-09, via merged [PR #411](https://github.com/harfbuzz/harfrust/pull/411), a maintainer/contributor fix by @youdie006) | GPOS cursive `attach_chain` i16 truncation → out-of-bounds slice index panic (process abort from a crafted font) |
 | Codex (openai/codex) | 2026-08-05 | [#37077](https://github.com/openai/codex/issues/37077) | Medium | Open — candidate patch posted 2026-08-07 (`openai/codex` restricts PR creation to collaborators; fix + regression test posted inline plus a cherry-pickable fork branch); no maintainer response yet | MCP OAuth login opens the server-supplied `authorization_endpoint` via `webbrowser::open` with no URL-scheme allowlist — a malicious/MITM MCP server can drive an arbitrary OS URL-handler |
 | Codex (openai/codex) | 2026-08-05 | [#37078](https://github.com/openai/codex/issues/37078) | Low-Medium | Open | Command auto-approval "known-safe" list keys on the executable basename, so `./cat` (an attacker-controlled file) is auto-approved without a prompt under `UnlessTrusted` |
@@ -200,4 +207,20 @@ still private-and-unresolved = 78, exactly — first time this has fully reconci
 Chromium's 2 stay excluded from the total per existing convention. **New grand total: 94** (78 + 16, was
 89). Summary table above rewritten with these reconciled numbers; see the note directly under it for how
 "distinct finding" and "advisory/row" counting differ (they're intentionally not the same number).
-- This list is updated as reports change status. Last updated: 2026-08-18.
+- **2026-08-21** — **wirefilter (cloudflare/wirefilter), 7 findings, all filed as public GitHub
+  issues** (#190–#196). Two findings ([#194](https://github.com/cloudflare/wirefilter/issues/194),
+  [#195](https://github.com/cloudflare/wirefilter/issues/195)) additionally reproduce crossing the
+  **real C ABI boundary** — a compiled C test program linked against the built `cdylib`, not just
+  Rust-level `unsafe` code — confirming genuine process crashes (a SIGSEGV and a SIGABRT respectively)
+  from a real C caller, not merely in-process Rust panics. Three of the seven (#194 FFI null-guard
+  gaps, #195 CompoundType depth cap, #196 raw-enum invalid discriminant) were originally scoped for
+  the private security channel given their severity — `security@cloudflare.com` bounced ("We are no
+  longer accepting emails at this email address") when that report was sent. HackerOne
+  (hackerone.com/cloudflare) remained available as Cloudflare's own stated preferred channel but was
+  not tried as a fallback; the decision was made to file all seven publicly instead. Noting this
+  channel history plainly since it departs from this project's usual private-channel-first policy
+  above — the departure was forced by the bounced mailbox, not a policy change. Four findings (#190
+  AlwaysList inverted, #191 function-arg type mismatch, #192 regex lexer desync, #193 get_last_error
+  pointer lifetime) were always going to be public correctness issues regardless of channel. Full
+  technical detail, dynamic PoC evidence, and reproduction logs are in each linked issue.
+- This list is updated as reports change status. Last updated: 2026-08-21.
