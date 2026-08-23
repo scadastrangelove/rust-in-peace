@@ -37,8 +37,8 @@ methodology. Counts below are now mechanically derived from the reconciled CSV, 
 |---|---:|
 | Reports filed — Rust open-source crates (across 28 projects) | 85 |
 | Resolved (fixed / merged) | 37 |
-| Open — awaiting vendor action (public issue/PR) | 25 |
-| Closed — disputed, not a vulnerability, or declined | 8 |
+| Open — awaiting vendor action (public issue/PR) | 22 |
+| Closed — disputed, not a vulnerability, or declined | 11 |
 | Private, still awaiting vendor action (not yet resolved or rejected) | 15 |
 | — of which vendor has acknowledged and is actively fixing | 8 (RustDesk's remaining 8 of 9 — the 9th, macOS clipboard, is refound/resolved and counted above) |
 | — of which still awaiting a first vendor response | 7 (4 ciborium, 3 BoxLite) |
@@ -64,9 +64,9 @@ Findings sent as (or since converted to) a public issue, pull request, or vendor
 
 | Target | Reported | Report | Severity | Status | Summary |
 |---|---|---|---|---|---|
-| wirefilter (cloudflare) | 2026-08-21 | [#194](https://github.com/cloudflare/wirefilter/issues/194) | High | Open | Two of five FFI value-ingestion setters have no null-pointer check at all — confirmed real SIGSEGV (not a panic) from a compiled-C caller, both debug and release |
-| wirefilter (cloudflare) | 2026-08-21 | [#195](https://github.com/cloudflare/wirefilter/issues/195) | Medium | Open | `CompoundType`'s internal 32-layer nesting cap panics instead of rejecting, reachable from both JSON deserialization and the FFI type-builder; confirmed crossing the real C ABI (SIGABRT) |
-| wirefilter (cloudflare) | 2026-08-21 | [#196](https://github.com/cloudflare/wirefilter/issues/196) | Medium | Open | `wirefilter_create_primitive_type` receives a `#[repr(u8)]` enum directly by value across the C ABI with no validation (real language-level UB); confirmed via a real C caller in both profiles, resolves to a controlled panic on this specific target |
+| wirefilter (cloudflare) | 2026-08-21 | [#194](https://github.com/cloudflare/wirefilter/issues/194) | High | Closed — vendor confirmed accurate, no fix planned (2026-08-21; component using this FFI layer being retired; classified defense-in-depth, requires a trusted caller to pass a null pointer) | Two of five FFI value-ingestion setters have no null-pointer check at all — confirmed real SIGSEGV (not a panic) from a compiled-C caller, both debug and release |
+| wirefilter (cloudflare) | 2026-08-21 | [#195](https://github.com/cloudflare/wirefilter/issues/195) | Medium | Closed — vendor confirmed accurate, no fix planned (2026-08-21; component being retired; classified defense-in-depth) | `CompoundType`'s internal 32-layer nesting cap panics instead of rejecting, reachable from both JSON deserialization and the FFI type-builder; confirmed crossing the real C ABI (SIGABRT) |
+| wirefilter (cloudflare) | 2026-08-21 | [#196](https://github.com/cloudflare/wirefilter/issues/196) | Medium | Closed — vendor confirmed accurate, no fix planned (2026-08-21; component being retired; classified defense-in-depth, requires a trusted caller to pass an invalid enum value) | `wirefilter_create_primitive_type` receives a `#[repr(u8)]` enum directly by value across the C ABI with no validation (real language-level UB); confirmed via a real C caller in both profiles, resolves to a controlled panic on this specific target |
 | wirefilter (cloudflare) | 2026-08-21 | [#191](https://github.com/cloudflare/wirefilter/issues/191) | Low-Medium | Open | A function's declared parameter type isn't enforced against the value it actually receives (parenthesized-field/`IsTrue` coercion delivers an `Array` where a `Map(Bool)` was declared) |
 | wirefilter (cloudflare) | 2026-08-21 | [#192](https://github.com/cloudflare/wirefilter/issues/192) | Low | Open | Regex-literal lexer's character-class tracking can silently fold later filter text into one pattern with no parse error |
 | wirefilter (cloudflare) | 2026-08-21 | [#193](https://github.com/cloudflare/wirefilter/issues/193) | Low | Open | `wirefilter_get_last_error()` returns a borrowed pointer with no documented lifetime, inconsistent with the rest of the FFI's owned-string convention |
@@ -223,4 +223,15 @@ Chromium's 2 stay excluded from the total per existing convention. **New grand t
   AlwaysList inverted, #191 function-arg type mismatch, #192 regex lexer desync, #193 get_last_error
   pointer lifetime) were always going to be public correctness issues regardless of channel. Full
   technical detail, dynamic PoC evidence, and reproduction logs are in each linked issue.
+- **2026-08-21, same day** — Cloudflare ProdSec (`bugbounty@cloudflare.com`) responded to the FFI
+  trio, #194/#195/#196: confirmed all three technically accurate as described. **No fix planned** —
+  the component using this FFI layer is being retired in the near term; classified as defense-in-depth
+  (requires a trusted integrating caller to pass a null pointer or invalid enum value, not externally
+  controllable input) — consistent with what these three reports said themselves about reachability
+  not being established end-to-end. Closed. One internal reservation not raised with the vendor: #195
+  actually has two distinct paths, and the "caller passes a malformed argument" framing fits only one
+  of them — its JSON-deserialization path panics on ordinary, well-formed *data* (deep nesting)
+  reaching a normally-called API, a data-driven CWE-674 shape rather than a caller-misuse one. Doesn't
+  change the outcome (retirement is the stated reason regardless), but worth keeping straight in our
+  own tracking. #190/#191/#192/#193 — no response yet.
 - This list is updated as reports change status. Last updated: 2026-08-21.
