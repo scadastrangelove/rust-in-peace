@@ -95,7 +95,7 @@ Findings sent as (or since converted to) a public issue, pull request, or vendor
 | ntex | 2026-07-23 | [#946](https://github.com/ntex-rs/ntex/issues/946) / [PR #947](https://github.com/ntex-rs/ntex/pull/947) | Low-Medium | Resolved (2026-07-24) | Per-connection byte counter never reset per message, causing spurious request-too-large errors (regression caught before any published release was ever affected) |
 | rustls | 2026-07-23 | [PR #3173](https://github.com/rustls/rustls/pull/3173) | Low | Resolved (2026-07-29, PR #3173 merged) | A `CryptoProvider` mixing QUIC-capable and -incapable TLS1.3 cipher suites can panic if the peer selects the incapable one |
 | rustls | 2026-07-23 | [PR #3173](https://github.com/rustls/rustls/pull/3173) | Low | Resolved (2026-07-29, PR #3173 merged) | A QUIC client would incorrectly accept a TLS1.2 ServerHello from a trusted-but-misbehaving server |
-| Chromium / Skia (vendored `image` fork) | 2026-07-22 | [issue 537617325](https://issues.chromium.org/issues/537617325) | Low | Root cause fixed upstream ([image-rs/image#3095](https://github.com/image-rs/image/pull/3095), merged 2026-08-03) — Chromium's own vendored copy not yet confirmed updated | Unbounded allocation while parsing an embedded BMP color-profile size field |
+| Chromium / Skia (vendored `image` fork) | 2026-07-22 | [issue 537617325](https://issues.chromium.org/issues/537617325) | Low | **Fixed (2026-09-07)** — root cause fixed upstream ([image-rs/image#3095](https://github.com/image-rs/image/pull/3095), 2026-08-03) and Chromium's vendored roll landed ([CL 8183991](https://chromium-review.googlesource.com/8183991), commit [685d6eac](https://chromiumdash.appspot.com/commit/685d6eac6a9cd2eea74ea50589447ad809093634), 2026-08-05) | Unbounded allocation while parsing an embedded BMP color-profile size field |
 | gitoxide | 2026-07-22 | [GHSA-pmm9-4h7q-24c8](https://github.com/GitoxideLabs/gitoxide/security/advisories/GHSA-pmm9-4h7q-24c8) | Medium | **Resolved (2026-08-02) — published as a public advisory**, CVSS 5.3 | `checkout()` follows an existing terminal symlink on Windows during non-exclusive (incremental) materialization, writing outside the intended worktree |
 | quinn-proto | 2026-07-23 | [GHSA-hmxj-32vh-65vr](https://github.com/quinn-rs/quinn/security/advisories/GHSA-hmxj-32vh-65vr) | Medium | **Resolved — published as a public advisory** (2026-08-17); fixed in **quinn-proto 0.11.17** | Handling an already-retired `NEW_CONNECTION_ID` frame pushes into `pending.retire_cids` with no cap or de-duplication (the sibling code path that handles new CIDs is capped) — remote, post-handshake memory-exhaustion DoS |
 | rmp-serde | 2026-07-20 | [#381](https://github.com/3Hren/msgpack-rust/issues/381) / [PR #382](https://github.com/3Hren/msgpack-rust/pull/382) | Medium | Open | Recursion-depth guard doesn't cover all deserialization entry points |
@@ -124,7 +124,7 @@ Findings sent as (or since converted to) a public issue, pull request, or vendor
 | png | 2026-07-19 | [#696](https://github.com/image-rs/image-png/issues/696) / [PR #697](https://github.com/image-rs/image-png/pull/697) | Medium-High | Open | Decompression-bomb hardening for zTXt/iTXt chunks |
 | png | 2026-07-19 | [#694](https://github.com/image-rs/image-png/issues/694) | Medium | Resolved | PLTE-chunk-length panic (fixed independently before this report) |
 | png | 2026-07-19 | [#692](https://github.com/image-rs/image-png/issues/692) | Medium | Closed — disputed; independently reconfirmed present in current source | `output_buffer_size()` doesn't consult configured memory limits |
-| png | 2026-07-19 | [#699](https://github.com/image-rs/image-png/issues/699) / [PR #703](https://github.com/image-rs/image-png/pull/703) | Low-Medium | Open | APNG interlaced-frame stride miscalculation |
+| png | 2026-07-19 | [#699](https://github.com/image-rs/image-png/issues/699) / [PR #703](https://github.com/image-rs/image-png/pull/703) | Low-Medium | Resolved (2026-09-04, PR #703 merged) | APNG interlaced-frame stride miscalculation |
 | png | 2026-07-19 | [#700](https://github.com/image-rs/image-png/issues/700) / [PR #702](https://github.com/image-rs/image-png/pull/702) | Low-Medium | Open | Chunk-ordering validation gap |
 | png | 2026-07-19 | [#698](https://github.com/image-rs/image-png/issues/698) | Low | Closed — not a vulnerability (documented, required behavior) | Adam7 interlacing buffer-reuse report |
 | png | 2026-07-19 | [#701](https://github.com/image-rs/image-png/issues/701) | Low | Closed — not a vulnerability (works as documented) | ICC-profile error handling |
@@ -234,4 +234,34 @@ Chromium's 2 stay excluded from the total per existing convention. **New grand t
   reaching a normally-called API, a data-driven CWE-674 shape rather than a caller-misuse one. Doesn't
   change the outcome (retirement is the stated reason regardless), but worth keeping straight in our
   own tracking. #190/#191/#192/#193 — no response yet.
-- This list is updated as reports change status. Last updated: 2026-08-21.
+- **2026-09-04** — png/image-rs spot recheck (triggered by GitHub notification email on #699).
+  **png #699 CLOSED as completed via merged [PR #703](https://github.com/image-rs/image-png/pull/703)**
+  (APNG interlaced-frame stride miscalculation) — table row above updated from Open to Resolved. Also
+  live-verified via `gh api` while at it: png #696/#700 and image #3083 all still open, unchanged. No
+  new maintainer comments beyond the standing 2026-07-21 org-wide LLM-authorship-policy notice already
+  recorded in full in memory (`image-rs-maintainer-pushback.md`) — confirmed that same boilerplate
+  notice (`fintelia`, 2026-07-21T19:44) was posted on #696 and #700 as well as #699, consistent with it
+  being an org-wide notice rather than specific to any one issue. The image-rs/image **hold from
+  2026-07-20 remains in effect** — nothing was posted to that org as part of this check, read-only
+  `gh api` only.
+- **2026-09-07** — **Chromium BMP** (issue [537617325](https://issues.chromium.org/issues/537617325))
+  marked **Fixed**: Chromium's own vendored roll of the `image-rs/image#3095` fix landed
+  ([CL 8183991](https://chromium-review.googlesource.com/8183991), commit
+  [685d6eac](https://chromiumdash.appspot.com/commit/685d6eac6a9cd2eea74ea50589447ad809093634),
+  `chromium/src` main @`{#1674242}`, 2026-08-05, by `sergiog@microsoft.com`) — table row above updated.
+  **Full open-item live-recheck via `gh api`**: no further state changes — gimli #898, httparse #222/#223,
+  miniz_oxide #198–#202, rmp-serde #381/#382, image #3076/#3083/#3085, codex #37077–82 still open;
+  ciborium ×4 + BoxLite ×2 GHSAs still `triage`/unpublished. Also synced the internal JSON/CSV export,
+  which had lagged the narrative on already-resolved items (ttf-parser #218–225 merged 2026-08-05;
+  harfrust #410 closed-completed 2026-08-09) — this public table was already correct.
+- **2026-09-08** — **RustDesk fix-recheck** (read-only `gh api` over `rustdesk/rustdesk` + `rustdesk/hbb_common`,
+  all merged PRs and commits since the 2026-08-05 disclosure). Of the 9 confirmed findings, **only #2**
+  (macOS clipboard file-copy) has a fix — [PR #15693](https://github.com/rustdesk/rustdesk/pull/15693),
+  merged to `master` 2026-08-04, and **still not in any published release** (stable 1.4.9 2026-07-06 and
+  nightly 2026-07-10 both predate the merge). The **other 8 remain confirmed-but-unfixed**, including High
+  #1 (transport nonce/key reuse): `hbb_common/src/tcp.rs` has had **zero commits since August**, and no
+  merged PR/commit matches findings #3–#9 (keyword sweep across clipboard/cliprdr, encryption/nonce,
+  online-status, OIDC token, rendezvous server-list, 2FA/trusted-device, cursor/sciter, panic/overflow).
+  Consistent with the vendor's 2026-08-11 email (all 9 confirmed, remaining 8 "being worked on"). No count
+  change (this only re-confirms existing statuses).
+- This list is updated as reports change status. Last updated: 2026-09-08.
