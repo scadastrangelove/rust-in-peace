@@ -279,5 +279,9 @@ Chromium's 2 stay excluded from the total per existing convention. **New grand t
   server-list) and #8 (2FA trusted-device) have no fix yet. None of the fixes is in a released build (latest
   stable 1.4.9). Counts updated: Resolved 37→41, Private-awaiting 15→11, actively-fixing 8→4. The four newly
   fixed findings are now described in the public table above (vendor's own public PRs → "fixed or published"
-  policy); #5/#7/#8 stay withheld.
+  policy); #5/#7/#8 stay withheld. The **full open-item recheck the same day found no other movement**:
+  gimli #898, httparse #222/#223, miniz_oxide #198–#202, rmp-serde #381/#382, image #3076/#3083/#3085,
+  image-png #696/#697 + #700/#702, codex #37077–82 all still open; ciborium ×4 + BoxLite ×2 GHSAs still
+  `triage`/unpublished. Note: **rmp-serde #381/#382 passed their ~60-day mark (2026-09-18) with no maintainer
+  response** — a candidate for follow-up.
 - This list is updated as reports change status. Last updated: 2026-09-24.
