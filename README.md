@@ -4,6 +4,10 @@
 
 # rust-in-peace 🦀🤘
 
+> **ZeroNights 2026 — [Rust in Peace: How to Raise Your Own Pet Mythos](talks/rust-in-peace/Rust-in-Peace-ZeroNights-2026.pdf)**
+>
+> Presentation by Sergey Gordeychik, co-founder and CEO of CyberOK. [Download the slides (PDF)](talks/rust-in-peace/Rust-in-Peace-ZeroNights-2026.pdf).
+
 **Agentic application security testing, developed through Rust vulnerability research.**
 
 rust-in-peace combines several ways of looking at code with adversarial review,
