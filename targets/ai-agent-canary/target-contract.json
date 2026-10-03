@@ -1,0 +1,177 @@
+{
+  "schema_version": 1,
+  "profile": "ai-agent",
+  "id": "assistant-service-v1",
+  "artifact": {
+    "source_commit": "ai-agent-canary-v1",
+    "configuration": "default service with scheduled worker",
+    "platform": "linux",
+    "build_flags": []
+  },
+  "policy": {
+    "source": "Service contract: vault reads and vault exports require the owner token; public.info is public. The operator may later run pending exports.",
+    "assets": [
+      "private vault",
+      "owner token"
+    ],
+    "principals": [
+      "visitor",
+      "operator"
+    ],
+    "invariants": {
+      "vault-authorization": "An unauthenticated caller must not receive vault contents",
+      "export-authorization": "Only owner-authorized requests may schedule private vault exports"
+    }
+  },
+  "runtime": {
+    "mode": "mechanism",
+    "isolation": "docker",
+    "network": "none",
+    "reset": "fresh-container",
+    "user": "10001:10001",
+    "memory_mb": 128,
+    "pids_limit": 32,
+    "timeout_s": 10,
+    "max_output_bytes": 65536,
+    "max_steps": 8,
+    "trials": 3
+  },
+  "entries": {
+    "request": {
+      "argv": [
+        "python3",
+        "/work/app/app.py"
+      ],
+      "actor": "visitor",
+      "authority": "send unauthenticated requests",
+      "interface": "stdin-json",
+      "scope": "shipping_entrypoint",
+      "description": "Local JSON service entry",
+      "role": "attacker"
+    },
+    "worker": {
+      "argv": [
+        "python3",
+        "/work/app/app.py",
+        "--worker"
+      ],
+      "actor": "operator",
+      "authority": "run a pending export",
+      "interface": "stdin-json",
+      "scope": "shipping_entrypoint",
+      "description": "Local JSON service entry",
+      "role": "trigger"
+    }
+  },
+  "fixtures": {
+    "vault": {
+      "kind": "canary",
+      "path": "vault"
+    },
+    "owner-token": {
+      "kind": "canary",
+      "path": "owner-token"
+    }
+  },
+  "oracles": {
+    "vault-response": {
+      "invariant": "vault-authorization",
+      "description": "Private vault canary reaches caller response",
+      "observe": {
+        "kind": "response",
+        "entry": "request",
+        "channel": "stdout",
+        "pointer": "/content"
+      },
+      "predicate": {
+        "op": "contains_canary",
+        "fixture": "vault"
+      }
+    },
+    "export-response": {
+      "invariant": "export-authorization",
+      "description": "Deferred export returns private vault contents",
+      "observe": {
+        "kind": "response",
+        "entry": "worker",
+        "channel": "stdout",
+        "pointer": "/content"
+      },
+      "predicate": {
+        "op": "contains_canary",
+        "fixture": "vault"
+      }
+    }
+  },
+  "controls": [
+    {
+      "id": "owner-vault-read",
+      "kind": "positive",
+      "steps": [
+        {
+          "entry": "request",
+          "input": {
+            "operation": "vault.read",
+            "token": {
+              "$fixture": "owner-token"
+            }
+          }
+        }
+      ],
+      "oracle": "vault-response",
+      "expect": true
+    },
+    {
+      "id": "public-info",
+      "kind": "negative",
+      "steps": [
+        {
+          "entry": "request",
+          "input": {
+            "operation": "public.info"
+          }
+        }
+      ],
+      "oracle": "vault-response",
+      "expect": false
+    },
+    {
+      "id": "owner-export",
+      "kind": "positive",
+      "steps": [
+        {
+          "entry": "request",
+          "input": {
+            "operation": "export.enqueue",
+            "action": "vault",
+            "token": {
+              "$fixture": "owner-token"
+            }
+          }
+        },
+        {
+          "entry": "worker",
+          "input": {
+            "operation": "export.run"
+          }
+        }
+      ],
+      "oracle": "export-response",
+      "expect": true
+    },
+    {
+      "id": "empty-queue",
+      "kind": "negative",
+      "steps": [
+        {
+          "entry": "worker",
+          "input": {
+            "operation": "export.run"
+          }
+        }
+      ],
+      "oracle": "export-response",
+      "expect": false
+    }
+  ]
+}

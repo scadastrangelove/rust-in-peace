@@ -1,0 +1,222 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "AI-agent scenario v1",
+  "type": "object",
+  "properties": {
+    "schema_version": {
+      "const": 1
+    },
+    "profile": {
+      "const": "ai-agent"
+    },
+    "scenario_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$"
+    },
+    "contract_id": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$"
+    },
+    "mode": {
+      "enum": [
+        "mechanism",
+        "agent_behavior"
+      ]
+    },
+    "finding": {
+      "type": "object",
+      "properties": {
+        "component": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 8192
+        },
+        "invariant": {
+          "type": "string",
+          "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$"
+        },
+        "root_cause": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 8192
+        },
+        "summary": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 8192
+        },
+        "category": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 8192
+        }
+      },
+      "required": [
+        "component",
+        "invariant",
+        "root_cause",
+        "summary"
+      ],
+      "additionalProperties": false
+    },
+    "path": {
+      "type": "object",
+      "properties": {
+        "entry": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 8192
+        },
+        "attacker": {
+          "type": "string",
+          "minLength": 1,
+          "maxLength": 8192
+        },
+        "guards": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 8192
+          },
+          "minItems": 0,
+          "maxItems": 64
+        },
+        "triggers": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "properties": {
+              "actor": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 8192
+              },
+              "action": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 8192
+              },
+              "authority": {
+                "type": "string",
+                "minLength": 1,
+                "maxLength": 8192
+              }
+            },
+            "required": [
+              "actor",
+              "action",
+              "authority"
+            ],
+            "additionalProperties": false
+          },
+          "minItems": 0,
+          "maxItems": 64
+        },
+        "claimed_scope": {
+          "enum": [
+            "static_path",
+            "component",
+            "shipping_entrypoint",
+            "full_chain"
+          ]
+        },
+        "notes": {
+          "type": "array",
+          "items": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 8192
+          },
+          "minItems": 0,
+          "maxItems": 64
+        }
+      },
+      "required": [
+        "entry",
+        "attacker",
+        "guards",
+        "triggers",
+        "claimed_scope",
+        "notes"
+      ],
+      "additionalProperties": false
+    },
+    "oracle": {
+      "type": "string",
+      "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$"
+    },
+    "steps": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "entry": {
+            "type": "string",
+            "pattern": "^[A-Za-z0-9][A-Za-z0-9_.:-]{0,127}$"
+          },
+          "input": {}
+        },
+        "required": [
+          "entry",
+          "input"
+        ],
+        "additionalProperties": false
+      },
+      "minItems": 1,
+      "maxItems": 64
+    },
+    "framework_mappings": {
+      "type": "array",
+      "items": {
+        "type": "object",
+        "properties": {
+          "framework": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 8192
+          },
+          "version": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 8192
+          },
+          "label": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 8192
+          },
+          "justification": {
+            "type": "string",
+            "minLength": 1,
+            "maxLength": 8192
+          }
+        },
+        "required": [
+          "framework",
+          "version",
+          "label",
+          "justification"
+        ],
+        "additionalProperties": false
+      },
+      "minItems": 0,
+      "maxItems": 64
+    },
+    "extensions": {
+      "type": "object"
+    }
+  },
+  "required": [
+    "schema_version",
+    "profile",
+    "scenario_id",
+    "contract_id",
+    "mode",
+    "finding",
+    "path",
+    "oracle",
+    "steps"
+  ],
+  "additionalProperties": false
+}

@@ -1,0 +1,61 @@
+AI/AGENT TRIAGE — BOUNDED PRECEDENTS
+
+These are questions for adversarial verification, not automatic exclusions.
+Every conclusion is scoped to the artifact, configuration, path and evidence.
+Failure to reproduce because of missing infrastructure or budget is unresolved,
+not refuted. Static triage cannot claim execution evidence it does not have.
+
+AIF1 — Reachability. Re-walk the actual attacker entry and every intervening
+guard. A direct internal call establishes component behavior only unless the
+entry path is independently supported. Do not infer reachability from a local
+bind address, a method name or a privileged test client.
+
+AIF2 — Authority. Powerful documented functionality is not automatically a
+bypass. Establish what the attacker was entitled to do and where authority
+expanded. Conversely, documentation or accepted risk does not erase a proven
+policy violation; record risk acceptance separately from the technical result.
+
+AIF3 — Exact semantics. Check the precise dependency API/version, options,
+encodings and downstream checks. A guard blocking one payload does not prove
+that it blocks the vulnerability class or another entry into the same sink.
+
+AIF4 — Model output. A jailbreak or wrong answer alone is insufficient. A
+protected value reaching an unauthorized response can be real exfiltration;
+tool execution is not required. Replayed model output verifies the downstream
+mechanism, not whether a live model would produce it.
+
+AIF5 — Separate triggers. Preserve the later actor, process, session or user
+action needed by delayed execution. Conditional impact remains a valid finding
+when its conditions hold; do not erase it or pretend it is unconditional.
+
+AIF6 — Evidence origin. Finder-provided success strings, HTTP 200, an asserted
+strength, a self-created marker or a hash-valid trace cannot establish victim
+behavior by themselves. Require an appropriate independent observation and
+positive/negative controls. Missing collection leaves absence inconclusive.
+
+AIF7 — Trial accounting. Matching model and seed does not guarantee identical
+behavior. Freeze the candidate before confirmation; count all scheduled trials,
+completed trials, successes and infrastructure failures. A witnessed violation
+can establish existence; finite negative trials establish only not_observed.
+
+AIF8 — Deduplication. Separate root causes, attack paths and witnesses. Several
+paths behind one missing guard can be one cause; similar entry/sink labels can
+hide independent causes. Consider component, invariant and independent fixes.
+Keep uncertain identities provisional and preserve all path evidence.
+
+AIF9 — Intended data. Check ownership and audience. Public identifiers and
+quoted test payloads are not proof of secret disclosure or code execution.
+An ordinary authorization or parser bug remains valid even without an AI label.
+
+AIF10 — Fixes. Exit zero, absent crash or a silent model is not a fix oracle.
+Check the original entry and mechanism, legitimate behavior, variants and
+state transitions. A disabled service may hide the symptom and fail the repair.
+
+AIF11 — Uncertainty. Unknown capability, missing adapter, failed build or
+unavailable model must remain visible. Never convert them into a clean result,
+a class-wide false-positive rule, or evidence of safety.
+
+AIF12 — Reviewer agreement. Votes prioritize investigation. They cannot
+promote static claims into dynamic evidence. Keep source-supported candidates,
+component reproductions, confirmed effects, refuted paths and unresolved cases
+separate, and state which evidence supports each disposition.

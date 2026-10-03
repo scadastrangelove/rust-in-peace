@@ -1,0 +1,53 @@
+{
+  "schema_version": 2,
+  "policy": "Track the evolving standards; do NOT freeze them. This file lists each framework's CANONICAL SOURCE and a resolver for finding its CURRENT version. It carries no authoritative pin. Default posture: use the current version. Reproducibility comes from RECORDING what a run observed -- refresh_frameworks.py --lock writes a per-campaign frameworks.lock.json (resolved version + date + source) that the campaign stamps -- not from preventing the standard from evolving. 'reference_version'/'reference_seen' are informational only (what was current when this entry was written); they are never a gate and a newer upstream is the expected, correct state, not drift to be reverted.",
+  "frameworks": [
+    {
+      "id": "asamm",
+      "name": "ASAMM taxonomy + environment profile",
+      "resolver": "github_release_or_tag",
+      "repo": "scadastrangelove/asamm",
+      "documents": [
+        "https://github.com/scadastrangelove/asamm/blob/main/taxonomy.md",
+        "https://github.com/scadastrangelove/asamm/blob/main/audit/agent-environment-profile.md"
+      ],
+      "reference_version": "v0.5.1",
+      "reference_seen": "2026-10-03"
+    },
+    {
+      "id": "owasp-llm-top10",
+      "name": "OWASP Top 10 for LLM Applications",
+      "resolver": "owasp_year",
+      "source_url": "https://genai.owasp.org/resource/owasp-genai-llm-top-10-2026/",
+      "year_url_template": "https://genai.owasp.org/resource/owasp-genai-llm-top-10-{year}/",
+      "reference_version": "2026",
+      "reference_seen": "2026-10-03"
+    },
+    {
+      "id": "owasp-agentic-top10",
+      "name": "OWASP Top 10 for Agentic Applications",
+      "resolver": "owasp_year",
+      "source_url": "https://genai.owasp.org/resource/owasp-top-10-for-agentic-applications-for-2026/",
+      "year_url_template": "https://genai.owasp.org/resource/owasp-top-10-for-agentic-applications-for-{year}/",
+      "reference_version": "2026",
+      "reference_seen": "2026-10-03"
+    },
+    {
+      "id": "mitre-atlas",
+      "name": "MITRE ATLAS data",
+      "resolver": "github_release_or_tag",
+      "repo": "mitre-atlas/atlas-data",
+      "source_url": "https://github.com/mitre-atlas/atlas-data",
+      "reference_version": null,
+      "reference_seen": null
+    },
+    {
+      "id": "cwe",
+      "name": "CWE (Common Weakness Enumeration)",
+      "resolver": "cwe_homepage",
+      "source_url": "https://cwe.mitre.org/",
+      "reference_version": null,
+      "reference_seen": null
+    }
+  ]
+}

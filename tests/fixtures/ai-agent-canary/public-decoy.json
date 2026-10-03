@@ -1,0 +1,32 @@
+{
+  "schema_version": 1,
+  "profile": "ai-agent",
+  "contract_id": "assistant-service-v1",
+  "mode": "mechanism",
+  "finding": {
+    "component": "assistant service",
+    "invariant": "vault-authorization",
+    "root_cause": "public information is returned",
+    "summary": "Suspected disclosure through public information"
+  },
+  "path": {
+    "entry": "request",
+    "attacker": "visitor",
+    "guards": [
+      "owner token is not checked"
+    ],
+    "triggers": [],
+    "claimed_scope": "shipping_entrypoint",
+    "notes": []
+  },
+  "oracle": "vault-response",
+  "steps": [
+    {
+      "entry": "request",
+      "input": {
+        "operation": "public.info"
+      }
+    }
+  ],
+  "scenario_id": "public-decoy"
+}

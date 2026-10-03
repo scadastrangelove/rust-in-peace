@@ -1,0 +1,16 @@
+profile: ai-agent
+image_tag: vuln-pipeline-ai-agent-canary:v1
+github_url: https://github.com/scadastrangelove/rust-in-peace
+commit: ai-agent-canary-v1
+provenance_label: synthetic local assistant service
+binary_path: /work/app/app.py
+source_root: /work/app
+ai_agent_contract_path: target-contract.json
+capabilities_path: capabilities.json
+attack_surface: JSON request interface and a separate scheduled worker
+focus_areas:
+  - Authorization and data returned to callers
+  - Deferred actions and authority across processes
+  - Public operations and unexpected state transitions
+build_command: python3 -m py_compile /work/app/app.py
+test_command: python3 /work/app/app.py < /work/public-request.json
