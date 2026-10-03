@@ -4,16 +4,23 @@
 
 # rust-in-peace 🦀🤘
 
-> **ZeroNights 2026 — [Rust in Peace: How to Raise Your Own Pet Mythos](talks/rust-in-peace/Rust-in-Peace-ZeroNights-2026.pdf)**
->
-> Presentation by Sergey Gordeychik, co-founder and CEO of CyberOK. [Download the slides (PDF)](talks/rust-in-peace/Rust-in-Peace-ZeroNights-2026.pdf).
+[Public disclosure record](DISCLOSURES-PUBLIC.md) · [Start a review](#start-a-review) ·
+[Run the pipeline](#run-the-pipeline) · [Documentation](#documentation)
 
-**Agentic application security testing, developed through Rust vulnerability research.**
+**Agent-assisted vulnerability research across Rust, Android apps, and AI agents.**
 
 rust-in-peace combines several ways of looking at code with adversarial review,
 targeted reproduction, and patch verification. It investigates memory safety,
-protocol state, resource accounting, authorization, and API contracts. Rust is
-the primary target; memory corruption is one part of the problem.
+protocol state, resource accounting, authorization, trust boundaries, and API
+contracts. The methods grew out of Rust research and now extend to other
+application and agent surfaces.
+
+As of 29 September 2026, research using this workflow had identified findings
+with upstream fixes in **19 projects**, including
+[Chromium](https://issues.chromium.org/issues/537617325) and the
+[Linux kernel](https://github.com/torvalds/linux/commit/cad5591bc098ab367682e483ea7b34166cefdf12).
+The [disclosure record](DISCLOSURES-PUBLIC.md) links reports and fixes; an
+upstream fix may still need a release and a downstream update.
 
 The repository contains **interactive research skills** and a **sandboxed
 execution pipeline**, plus the rules, experiments, and failure records used to
@@ -21,10 +28,22 @@ develop them. Research workflows cover more than the autonomous CLI: protocol
 and logic findings often need a target-specific test and an explicit security
 invariant to check.
 
+[ZeroNights 2026 talk: *Rust in Peace — How to Raise Your Own Pet Mythos*](talks/rust-in-peace/Rust-in-Peace-ZeroNights-2026.pdf)
+by Sergey Gordeychik, co-founder and CEO of CyberOK.
+
 [![License: Apache-2.0](https://img.shields.io/badge/license-Apache--2.0-blue.svg)](LICENSE)
 
-[Start a review](#start-a-review) · [Run the pipeline](#run-the-pipeline) ·
-[Public research](#public-research) · [Documentation](#documentation)
+## Profiles and maturity
+
+| Surface | What is available |
+|---|---|
+| Rust | Main executable profile: capability-routed Miri, sanitizer, panic, hang, and fuzzing workflows |
+| Android APKs | Decompiled-app review guidance and experimental witness and dynamic-test adapters |
+| AI and agent systems | Generalized scan/triage pack, evidence contracts, and a replay prototype; execution profile not yet registered |
+| C/C++ | Retained AddressSanitizer execution profile from the original harness |
+
+See the [Rust](profiles/rust/README.md), [Android](profiles/android-app/README.md),
+and [AI-agent](profiles/ai-agent/README.md) packs for their current scope.
 
 ## Choose the method for the target
 
@@ -37,8 +56,10 @@ and capabilities before selecting a search or verification method.
 | Byte parsers, codecs, fonts, document formats | Can input defeat bounds, recursion limits, allocation limits, or progress? | A reproducer through the real parser; cargo-fuzz, ASan, Miri, panic or timeout signals |
 | Protocols and state machines | Is a rule enforced on both sides? Can valid messages produce an invalid transition or unbounded retained state? | Real protocol sequences, guard comparisons, control-versus-attack tests |
 | APIs, libraries, and agent tools | Do validation, authorization, and later use agree? Can safe callers violate an unsafe implementation's assumptions? | Contract tests, differential results, adversarial trait implementations, Miri or compile proofs |
+| Android APKs | Can external components, links, WebViews, or imported files reach privileged actions? | Manifest and bytecode paths, then device observations where available |
+| AI and agent systems | Can untrusted context, delegated tools, persistent state, or later execution cross an authority boundary? | Declared invariants, real entry points, independent observations and controls |
 
-The same crate can expose different attack surfaces in different products.
+The same dependency can expose different attack surfaces in different products.
 Review the consuming application's entry point, enabled features, configuration,
 limits, and build profile. A dependency version alone does not establish impact.
 
@@ -249,7 +270,10 @@ Software maintenance continues to obey gravity.
 | Topic | Read |
 |---|---|
 | CLI stages, flags, resume, and artifacts | [Pipeline](docs/pipeline.md) |
+| Reference harness and Rust research extensions | [Architecture and method comparison](docs/reference-harness-comparison.md) |
 | Rust detectors and execution routing | [Rust profile](profiles/rust/README.md), [capabilities](profiles/rust/capabilities.md), [find-to-fuzz](profiles/rust/find-to-fuzz.md) |
+| Android application research | [Android APK profile](profiles/android-app/README.md) |
+| AI and agent system research | [AI-agent pack](profiles/ai-agent/README.md), [extension design](docs/extending-ai-agents.md) |
 | Review and remediation | [Triage](docs/triage.md), [patching](docs/patching.md) |
 | Experiments and failure analysis | [DVRA benchmark](targets/dvra3-parser/README.md), [lessons](LESSONS.md), [SAST bring-up](docs/case-studies/sast-driven-bringup.md) |
 | Design and development | [Decisions](docs/DECISIONS.md), [extending](docs/extending.md), [backlog](IMPROVEMENTS.md), [changelog](CHANGELOG.md) |
@@ -258,7 +282,9 @@ Software maintenance continues to obey gravity.
 The profile registry defaults to `rust`. The inherited C/C++ + ASan examples
 remain available as `cpp`. The [Android app profile](profiles/android-app/README.md)
 is experimental; its evidence model is not yet integrated throughout the shared
-grade/aggregate/reattack lifecycle.
+grade/aggregate/reattack lifecycle. The [AI-agent pack](profiles/ai-agent/README.md)
+provides static review guidance and a replay prototype; its execution profile
+is not yet registered.
 
 Contributions are welcome. For harness changes, install the development
 dependencies with `python -m pip install -e '.[dev]'` and run `pytest tests/`.
@@ -270,8 +296,9 @@ with `python scripts/check_markdown_links.py`.
 rust-in-peace builds on Anthropic's
 [defending-code-reference-harness](https://github.com/anthropics/defending-code-reference-harness),
 which provided the original C/C++ find/grade/report/patch loop and sandbox
-architecture. This repository develops the Rust profiles, research workflows,
-capability routing, SAST integration, and evidence checks described above.
+architecture. This repository develops the Rust and Android profiles, AI-agent
+research pack, multi-pass review, capability routing, SAST integration, and
+evidence checks described above.
 Apache-2.0; upstream copyright and license are retained. See [LICENSE](LICENSE).
 
 Maintained by **Sergey Gordeychik**:
