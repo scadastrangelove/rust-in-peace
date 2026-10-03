@@ -3,10 +3,15 @@
 An additional rust-in-peace pack for AI applications, agent runtimes, tools,
 connectors and their infrastructure, alongside the Rust and Android packs.
 
-**Status:** interactive review guidance is available. Execution integration is
-paused; `ai-agent` is **not registered** in `harness/profiles.py`. The retained
-replay code and canary are prototypes, not a supported `vuln-pipeline run`
-target. No container build or end-to-end run has been completed for this pack.
+**Status:** interactive review guidance is available, and (2026-10-03) the profile
+is **registered as experimental** in `harness/profiles.py` (like `android-app`):
+the detector + find/grade/judge/report/patch prompts are wired, config validates the
+target contract (fail-closed) for `profile: ai-agent`, and 60 offline unit tests
+pass. It is **not yet a verified end-to-end run target**: no container build, no
+`find→…→scorecard` campaign, no live-agent, and dynamic **confirmation is not wired**
+— a passed grade or an aggregate vote is a *graded candidate*, not a confirmed
+finding (confirmation must come from `runtime.replay` → `evidence.assess`, which no
+stage calls yet). See [IMPLEMENTATION.md](IMPLEMENTATION.md) for the remaining steps.
 
 ## Use with the existing skills
 
@@ -64,6 +69,8 @@ The prototype Python modules require the optional dependency set:
 python -m pip install -e '.[ai-agent]'
 ```
 
-Installing the extra does not register or launch a profile. Container work is
-paused. If resumed, the designated execution host is Tamm, user `gorde`, with
-`sudo`; its SSH endpoint still needs resolving. Do not substitute local Docker.
+The profile is registered (experimental) but **not launchable end to end**:
+installing the extra enables the offline contracts/replay prototypes and unit tests,
+not a verified `vuln-pipeline run`. Container work is paused. If resumed, the
+designated execution host is **Tamm = `gordey@85.142.100.8`** (`sudo`). Do not
+substitute local Docker.

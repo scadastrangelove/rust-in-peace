@@ -52,6 +52,18 @@ from .android_app import report_prompt as _an_report
 from .android_app import patch_prompt as _an_patch
 from .android_app import find_to_fuzz as _an_reattack
 
+# --- ai-agent pieces (behavioral/authorization findings; see profiles/ai-agent/,
+# docs/extending-ai-agents.md). Experimental, like android-app: find/report/judge
+# run, but confirmation is the operator replay (harness.ai_agent.runtime.replay +
+# evidence.assess), NOT this stage's grade and NOT aggregate's vote — that wiring
+# is still pending (see profiles/ai-agent/IMPLEMENTATION.md). ---
+from .ai_agent import detect as _ai_detect
+from .ai_agent import find_prompt as _ai_find
+from .ai_agent import grade_prompt as _ai_grade
+from .ai_agent import judge_prompt as _ai_judge
+from .ai_agent import report_prompt as _ai_report
+from .ai_agent import patch_prompt as _ai_patch
+
 
 @dataclass(frozen=True)
 class Profile:
@@ -113,7 +125,23 @@ _ANDROID = Profile(
     build_reattack=_an_reattack.build_reattack,           # static→dynamic Tier-A/B promotion
 )
 
-_REGISTRY: dict[str, Profile] = {"cpp": _CPP, "rust": _RUST, "android-app": _ANDROID}
+_AI_AGENT = Profile(
+    name="ai-agent",
+    detector=_ai_detect,                                  # AIAGENT-header parsing (no stack trace)
+    build_find_prompt=_ai_find.build_find_prompt,         # open-ended agent/authority review
+    build_grade_prompt=_ai_grade.build_grade_prompt,      # static-argument quality (NOT confirmation)
+    build_judge_prompt=_ai_judge.build_judge_prompt,      # dedup on invariant+component+root cause
+    build_compare_prompt=_ai_judge.build_compare_prompt,  # report-vs-report (base re-export)
+    build_report_prompt=_ai_report.build_report_prompt,   # invariant/attacker/entry/evidence-scope
+    build_patch_prompt=_ai_patch.build_patch_prompt,      # restore the guard; behavioral oracle
+    build_style_judge_prompt=_ai_patch.build_style_judge_prompt,  # advisory (base re-export)
+    # build_reattack intentionally None: the cli invokes rust's reattack only;
+    # ai-agent dynamic confirmation is the operator replay, wired separately.
+)
+
+_REGISTRY: dict[str, Profile] = {
+    "cpp": _CPP, "rust": _RUST, "android-app": _ANDROID, "ai-agent": _AI_AGENT,
+}
 
 
 def get_profile(name: str | None) -> Profile:
@@ -143,6 +171,8 @@ def detector_for_output(crash_output: str) -> ModuleType:
     otherwise the ASAN parser (its assertion/summary regex also covers non-ASAN
     C crashes)."""
     t = crash_output or ""
+    if t.lstrip().startswith("AIAGENT:") or "\nAIAGENT:" in t:
+        return _ai_detect
     if t.lstrip().startswith("WITNESS:") or "\nWITNESS:" in t:
         return _an_detect
     if "panicked at" in t or "error: Undefined Behavior:" in t or _RS_FRAME_HINT.search(t):

@@ -59,6 +59,7 @@ class TargetConfig:
     capabilities_path: str | None = None  # host path to capabilities.json (§9 machine form);
                                       # relative → resolved under the target dir. None → no
                                       # capability routing (additive; older targets omit it).
+    ai_agent_contract_path: str | None = None  # operator-reviewed behavioral verification contract
 
     @classmethod
     def load(cls, target_dir: str | Path) -> TargetConfig:
@@ -78,6 +79,15 @@ class TargetConfig:
             cap_path = str(cp if cp.is_absolute() else target_dir / cp)
         elif (target_dir / "capabilities.json").exists():
             cap_path = str(target_dir / "capabilities.json")  # convention default
+
+        ai_contract = cfg.get("ai_agent_contract_path")
+        if cfg.get("profile") == "ai-agent":
+            from .ai_agent.contracts import load, validate_target
+            if not ai_contract:
+                raise ValueError(f"{target_dir.name}: ai-agent requires ai_agent_contract_path")
+            contract_path = Path(ai_contract)
+            ai_contract = str(contract_path if contract_path.is_absolute() else target_dir / contract_path)
+            validate_target(load(ai_contract, "target-contract"))
 
         return cls(
             name=target_dir.name,
@@ -99,4 +109,5 @@ class TargetConfig:
             memory_limit=cfg.get("memory_limit", "4g"),
             reattack_harness=cfg.get("reattack_harness"),
             capabilities_path=cap_path,
+            ai_agent_contract_path=ai_contract,
         )

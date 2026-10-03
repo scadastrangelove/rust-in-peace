@@ -1,8 +1,18 @@
-# Implementation ledger — paused 2026-10-03
+# Implementation ledger
 
-The user stopped execution work and requested that the work be retained as a
-separate pack. No container builds, target execution, paid agent campaigns or
-remote deployments are running for this work. Resume only on a new request.
+**2026-10-03 — integration layer landed (no execution).** The profile is now
+**registered** (`harness/profiles.py`, as an *experimental* profile like
+`android-app`): detector + find/grade/judge/report/patch prompt builders are wired,
+`get_profile("ai-agent")` resolves, `detector_for_output` sniffs the `AIAGENT:`
+header, and `integration.patch` is applied so `config.py` validates the target
+contract (fail-closed) when `profile: ai-agent`. 60 offline unit tests pass and the
+full 524-test suite still collects clean. **Still NOT a verified end-to-end run
+target:** no container build, no `find→grade→…→scorecard` campaign, no live-agent,
+and — critically — dynamic **confirmation is not wired**: a passed grade or an
+aggregate vote is a *graded candidate*, not a confirmed finding. Confirmation must
+come from `harness.ai_agent.runtime.replay` → `evidence.assess` (positive+negative
+controls), which no stage calls yet. Container builds, paid campaigns and remote
+deployment remain paused; resume those on a new request.
 
 ## Saved work
 
@@ -15,39 +25,52 @@ remote deployments are running for this work. Resume only on a new request.
 | `harness/ai_agent/runtime.py` | Prototype bounded Docker victim/observer replay, controls and scheduled-trial accounting |
 | `targets/ai-agent-canary/` | Synthetic service, Dockerfile, capability inventory and target contract; not built |
 | `tests/fixtures/ai-agent-canary/` | Evaluator-only direct/deferred attack cases, public decoy and an unlisted-category case |
-| `tests/test_ai_agent_contracts.py`, `tests/test_ai_agent_replay.py` | 45 local unit tests passed; replay tests use simulated labs, not Docker |
-| `integration.patch` | Saved, unapplied `TargetConfig` integration; registry and lifecycle not wired |
+| `harness/ai_agent/detect.py` + `{find,grade,judge,report,patch}_prompt.py` | NEW 2026-10-03: detector surface (AIAGENT-header, dedup = invariant+component) + the 5 prompt builders; grade/find prompts defer confirmation to the operator replay, not self-report/votes |
+| `harness/profiles.py` | NEW 2026-10-03: `_AI_AGENT` registered (experimental) + `AIAGENT:` sniff branch in `detector_for_output`; rust/cpp/android unaffected |
+| `harness/config.py` | NEW 2026-10-03: `integration.patch` APPLIED — validates the target-contract (fail-closed) when `profile: ai-agent` |
+| `tests/test_ai_agent_{contracts,replay,frameworks,profile}.py` | 60 offline unit tests pass; replay tests use simulated labs, not Docker |
 | `frameworks.json` + `refresh_frameworks.py` | Evolving-standard tracker (track-don't-pin): sources + resolvers, current-version resolution, per-campaign provenance lock. 9 offline unit tests; live-verified 2026-10-03 (surfaced ASAMM v0.5.1→v0.5.1-draft, ATLAS v2026.09, CWE 4.20) |
 
-Additional existing artifact/capability tests passed (20); the config-guard
-checks passed alongside the contract tests. These are limited regression
-checks, not a full test-suite run or proof of an executable profile.
+Test state after this step: 60 ai-agent offline unit tests pass
+(contracts/replay/frameworks/profile), the full 524-test suite collects clean, and
+the existing profile/dedup/config/aggregate regressions (58) still pass. These are
+offline checks — not a container run or proof of an executable end-to-end profile.
+
+## Done 2026-10-03 (integration layer, offline)
+
+- Detector surface (`detect.py`) + the 5 prompt builders, emitting the exact tags
+  each stage parses; dedup keyed on invariant+component (no `:line` to mangle).
+- `_AI_AGENT` registered in `harness/profiles.py` (experimental) + `AIAGENT:` sniff;
+  other profiles unaffected.
+- `integration.patch` applied: `config.py` validates the target contract,
+  fail-closed, when `profile: ai-agent`.
+- Grade/find prompts explicitly defer dynamic confirmation to the operator replay.
 
 ## Remaining integration and verification
 
-1. Review the prototype trust boundaries and evidence promotion. Bind scope,
-   provenance, observation coverage and control adequacy to the authoritative
-   replay; do not accept finder-supplied assessment JSON as trusted evidence.
-2. Complete profile prompt/detector builders and `find/grade` integration.
-   Preserve source arguments and unresolved candidates; verification needs a
-   real entry and independent observation, not votes or legacy WITNESS strength.
-3. Wire cause/path/witness identity through judge, dedup, aggregate, reports,
-   scorecard and checkpoints. Do not inherit vote-based dynamic confirmation
-   or the memory-exploitation report rubric.
-4. Implement behavioral patch grading, legitimate-operation controls and
-   independent reattack. Exit zero and missing sanitizer output are insufficient.
-5. Implement live-agent/model access with isolated credentials, exact trial
-   accounting, state reset and poisoned-evidence tests. The current adapter
-   explicitly reports this mode unsupported.
-6. Add selected optional engines with modality/provenance checks, native or
-   guided fuzzing where relevant, and independently measured frontier search.
-7. Build vulnerable/fixed/decoy canaries on the designated execution host;
-   test forged evidence, observer failures, missing dependencies, delayed
-   triggers, unknown capabilities and initially unlisted findings. Keep finder
-   contexts and image layers free of answer keys and fixed/vulnerable labels.
-8. Run the existing profile regressions and a real `find -> grade -> judge ->
-   report -> patch/reattack -> scorecard` campaign before registering the profile
-   as usable. Expand to held-out targets and measure incremental value.
+1. **Confirmation (the critical gap).** Wire `grade`/`aggregate` to the trusted
+   verifier: call `harness.ai_agent.runtime.replay` → `evidence.assess` (positive+
+   negative controls) instead of the self-grade, and give aggregate a non-vote
+   confirmation path — a passed static grade or `votes>=2`/`passed_votes>=1` must
+   NOT read as "confirmed" for this profile. Do not inherit the vote model or the
+   memory-exploitation report rubric. (Needs Docker/host for the real replay.)
+2. Wire cause/path/witness identity through judge, dedup, reports, scorecard and
+   checkpoints end to end (prompts are in place; the orchestration fields are not).
+3. Behavioral patch grading + independent reattack: `patch_grade._t1_passes` and
+   the reattack ladder are ASan-specific; add the behavioral oracle (attacker path
+   no longer violates the invariant AND the legitimate-operation control still
+   passes). Exit zero / missing sanitizer output are insufficient.
+4. Live-agent/model access with isolated credentials, exact trial accounting, state
+   reset and poisoned-evidence tests. The adapter currently reports this unsupported.
+5. Optional engines with modality/provenance checks; native or guided fuzzing where
+   relevant; independently measured frontier search.
+6. Build vulnerable/fixed/decoy canaries on the execution host; test forged
+   evidence, observer failures, missing dependencies, delayed triggers, unknown
+   capabilities and initially unlisted findings. Keep finder contexts and image
+   layers free of answer keys and fixed/vulnerable labels.
+7. Run a real `find → grade → judge → report → patch/reattack → scorecard` campaign
+   before calling the profile *usable* (it is registered-experimental, not usable).
+   Expand to held-out targets and measure incremental value.
 
 ## Execution host
 
