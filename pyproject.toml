@@ -9,9 +9,11 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+ai-agent = ["jsonschema>=4.23,<5"]
 dev = [
     "pre-commit>=3.7",
     "pytest>=8.0",
+    "jsonschema>=4.23,<5",
 ]
 
 [project.scripts]
@@ -23,3 +25,6 @@ build-backend = "setuptools.build_meta"
 
 [tool.setuptools.packages.find]
 include = ["harness*"]
+
+[tool.setuptools.package-data]
+"harness.ai_agent" = ["schemas/*.json"]

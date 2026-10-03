@@ -1,0 +1,22 @@
+{
+  "schema_version": 1,
+  "profile": "ai-agent",
+  "artifact": "sha256:487c456cbbb3186126eead6652d42d4ceb85e371d04e6907d4a44df818d5d4d3",
+  "configuration": "sha256:4c74fcd4c41b4e7ffb569b359150fc07498aaac62d5310e483da66d1105a8632",
+  "capabilities": {
+    "deferred_execution": {
+      "state": "present",
+      "scope": "local service and worker",
+      "evidence": [
+        "worker consumes persisted queue"
+      ],
+      "collector": "source review"
+    },
+    "native_parser": {
+      "state": "unknown",
+      "scope": "runtime dependencies not yet reviewed",
+      "evidence": [],
+      "collector": "source review"
+    }
+  }
+}

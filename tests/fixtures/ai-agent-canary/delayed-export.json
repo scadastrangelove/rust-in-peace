@@ -1,0 +1,45 @@
+{
+  "schema_version": 1,
+  "profile": "ai-agent",
+  "contract_id": "assistant-service-v1",
+  "mode": "mechanism",
+  "finding": {
+    "component": "assistant service",
+    "invariant": "export-authorization",
+    "root_cause": "export.enqueue omits authorization for private exports",
+    "summary": "An unauthenticated request prepares a privileged deferred export"
+  },
+  "path": {
+    "entry": "request",
+    "attacker": "visitor",
+    "guards": [
+      "owner token is not checked"
+    ],
+    "triggers": [
+      {
+        "actor": "operator",
+        "action": "run a pending export",
+        "authority": "run a pending export"
+      }
+    ],
+    "claimed_scope": "full_chain",
+    "notes": []
+  },
+  "oracle": "export-response",
+  "steps": [
+    {
+      "entry": "request",
+      "input": {
+        "operation": "export.enqueue",
+        "action": "vault"
+      }
+    },
+    {
+      "entry": "worker",
+      "input": {
+        "operation": "export.run"
+      }
+    }
+  ],
+  "scenario_id": "delayed-export"
+}
