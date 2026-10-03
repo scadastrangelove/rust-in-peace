@@ -8,7 +8,7 @@ description: >-
   vuln-pipeline instead. Use when asked to "scan for vulns", "review this code
   for security issues", "find bugs in <dir>", or as the step between
   /threat-model and /triage.
-argument-hint: "<target-dir> [--focus <area>] [--single] [--extra <file>] [--no-score]"
+argument-hint: "<target-dir> [--focus <area>] [--single] [--extra <file>] [--no-score] [--blind]"
 allowed-tools:
   - Read
   - Glob
@@ -56,14 +56,21 @@ shell interpreter.
   soundness), then triage with `--fp-rules profiles/rust/fp-rules.txt`.
 - `--no-score` — skip the Step 3b confidence pass (saves a round of
   subagents). Findings keep the scanner's self-reported confidence only.
+- `--blind` — ignore `<target-dir>/THREAT_MODEL.md` even if present; scope from
+  `--focus` or quick recon only. Use for a genuine **blind pass** whose recall
+  must not be contaminated by threat-model answers (corpus isolation — the same
+  discipline as `/variant-scan`'s blind pass; see the model-comparison lesson).
+  Default (without the flag): `THREAT_MODEL.md` is loaded when present.
 
 ## Step 1 — Scope
 
 1. Resolve `<target-dir>`. If it doesn't exist or has no source files, stop
    with an error.
-2. Look for `<target-dir>/THREAT_MODEL.md`. If present, parse its section 3 "Entry
-   points & trust boundaries" table and section 4 "Threats" table for focus areas
-   and threat classes. This is the preferred scoping input.
+2. Unless `--blind` is set, look for `<target-dir>/THREAT_MODEL.md`. If present,
+   parse its section 3 "Entry points & trust boundaries" table and section 4
+   "Threats" table for focus areas and threat classes. This is the preferred
+   scoping input. **With `--blind`, do not read THREAT_MODEL.md at all** (even if
+   present) — keep the pass uncontaminated; scope from `--focus` or quick recon.
 3. If no THREAT_MODEL.md and no `--focus`: do a **quick recon** — list the
    source tree, read entry points and dispatch code, and propose 3-10 focus
    areas using the pattern `<subsystem> (<function/file>) — <key operations>`.

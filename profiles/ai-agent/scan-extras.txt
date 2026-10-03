@@ -71,9 +71,11 @@ Discovery passes
 Use separate fresh contexts for blind, threat-model and history-seeded passes.
 A blind pass receives necessary operational facts, not previous findings,
 framework hypotheses, threat-model answers or benchmark labels. Do not label a
-pass blind if its context already contains those answers. The ordinary
-/vuln-scan command may load THREAT_MODEL.md: this pack does not add a CLI switch
-that prevents it. Context isolation remains the operator's responsibility.
+pass blind if its context already contains those answers. For a genuine blind
+pass run `/vuln-scan <target> --blind`, which skips THREAT_MODEL.md; without the
+flag /vuln-scan loads THREAT_MODEL.md when present. /variant-scan already
+isolates its blind pass. Context isolation across passes still remains the
+operator's responsibility.
 Threat-model and history passes add perspectives without restricting discovery.
 An optional later frontier pass challenges earlier assumptions and searches
 variants; because it consumes earlier results, it is not an independent vote.
