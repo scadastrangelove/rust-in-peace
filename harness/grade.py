@@ -76,6 +76,14 @@ async def run_grade(
     workspace_dir: host-side results dir where we also persist poc.bin so
     it survives the container teardown.
     """
+    # ai-agent: confirmation is a TRUSTED replay (positive+negative controls),
+    # not a self-grading agent in a fresh container. The PoC bytes are a scenario
+    # JSON, not a crash-repro command, so the crash-model path below does not
+    # apply. Delegate to the replay grader. (See harness/ai_agent/grade_runtime.)
+    if target.profile == "ai-agent":
+        from .ai_agent.grade_runtime import grade_via_replay
+        return grade_via_replay(crash, target)
+
     # Path-substitution sanity: replace() below no-ops silently if poc_path
     # isn't in reproduction_command. That's a find-agent output inconsistency
     # — reject it here rather than hand the grader an unadapted command.
