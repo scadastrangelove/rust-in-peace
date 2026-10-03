@@ -70,7 +70,15 @@ class Candidate:
     @property
     def is_confirmed(self) -> bool:
         """≥2 independent votes OR a passed grade — the "proved real" bar the
-        journal used (a lone unverified single-run hit stays a candidate)."""
+        journal used (a lone unverified single-run hit stays a candidate).
+
+        ai-agent is the exception: a passed grade there IS a trusted replay
+        (positive+negative controls), but "two finders agreed" is not — behavioral
+        findings have no sanitizer backstop, so found-twice is still just a claim.
+        Require an actual confirmed replay (passed_votes); drop the votes>=2
+        shortcut for this profile."""
+        if self.crash_type.startswith("aiagent:"):
+            return self.passed_votes >= 1
         return self.votes >= 2 or self.passed_votes >= 1
 
     @property

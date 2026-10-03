@@ -6,12 +6,16 @@ connectors and their infrastructure, alongside the Rust and Android packs.
 **Status:** interactive review guidance is available, and (2026-10-03) the profile
 is **registered as experimental** in `harness/profiles.py` (like `android-app`):
 the detector + find/grade/judge/report/patch prompts are wired, config validates the
-target contract (fail-closed) for `profile: ai-agent`, and 60 offline unit tests
-pass. It is **not yet a verified end-to-end run target**: no container build, no
-`find→…→scorecard` campaign, no live-agent, and dynamic **confirmation is not wired**
-— a passed grade or an aggregate vote is a *graded candidate*, not a confirmed
-finding (confirmation must come from `runtime.replay` → `evidence.assess`, which no
-stage calls yet). See [IMPLEMENTATION.md](IMPLEMENTATION.md) for the remaining steps.
+target contract (fail-closed) for `profile: ai-agent`, and **dynamic confirmation is
+now wired** — `grade`/`aggregate` route this profile through the trusted replay
+(`runtime.replay` → `evidence.assess`, positive+negative controls); a candidate is
+confirmed only by a passed replay, never by "two finders agreed". 70 offline unit
+tests pass. It is still **not yet a verified end-to-end run target**: the wired path
+has not been exercised through a full `find→…→scorecard` campaign against the live
+canary on the host (the verifier alone is proven on real Docker — see
+IMPLEMENTATION.md), there is no live-agent mode, and a *static* review candidate with
+no replay is a *graded candidate*, not a confirmed finding. See
+[IMPLEMENTATION.md](IMPLEMENTATION.md) for the remaining steps.
 
 ## Use with the existing skills
 
@@ -47,6 +51,8 @@ resource and lifecycle defects remain in scope.
 | [integration.patch](integration.patch) | Unapplied target-config integration saved for resumption |
 
 The full design is [docs/extending-ai-agents.md](../../docs/extending-ai-agents.md).
+The product-specific campaign shortlist is
+[AI and agent-system research targets](../../targets/ai-agent-research-targets.md).
 Reusable guidance contains generalized mechanisms. Named product findings,
 campaign statistics, disclosure records and embargoed material stay in separate
 target/campaign records and do not become finder hints.

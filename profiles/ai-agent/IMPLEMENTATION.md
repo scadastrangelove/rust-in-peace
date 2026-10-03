@@ -1,18 +1,32 @@
 # Implementation ledger
 
-**2026-10-03 — integration layer landed (no execution).** The profile is now
+**2026-10-03 — confirmation wiring landed (provodka #1).** `grade`/`aggregate` now
+route the ai-agent profile through the TRUSTED replay instead of the crash model:
+`run_grade` delegates to `harness/ai_agent/grade_runtime.grade_via_replay` (decode +
+schema-validate + contract cross-check the scenario → `runtime.replay` →
+`evidence.assess`), and `aggregate.Candidate.is_confirmed` denies this profile the
+`votes>=2` shortcut — an ai-agent candidate is confirmed only by a passed replay
+(`passed_votes>=1`), never by "two finders agreed". `detect.crash_reason` now
+guarantees the `aiagent:` namespace on every invariant so that routing cannot be
+dodged by a mislabeled finding. Infra/contract errors fail closed (non-passing
+`unverified`, never a silent pass). 10 new offline unit tests (70 ai-agent total);
+the full 534-test suite passes (525 passed, 9 skipped). **Caveat:** this is the
+wiring, unit-tested offline with the replay monkeypatched. The verifier ITSELF is
+already proven on real Docker (the e2e note below), but the *wired path* has not yet
+been exercised through a full `find→grade→aggregate` run against the live canary on
+the host — that is the next host step. Container builds, paid campaigns and remote
+deployment remain paused; resume those on a new request.
+
+**2026-10-03 — integration layer landed (no execution).** The profile is
 **registered** (`harness/profiles.py`, as an *experimental* profile like
 `android-app`): detector + find/grade/judge/report/patch prompt builders are wired,
 `get_profile("ai-agent")` resolves, `detector_for_output` sniffs the `AIAGENT:`
 header, and `integration.patch` is applied so `config.py` validates the target
-contract (fail-closed) when `profile: ai-agent`. 60 offline unit tests pass and the
-full 524-test suite still collects clean. **Still NOT a verified end-to-end run
-target:** no container build, no `find→grade→…→scorecard` campaign, no live-agent,
-and — critically — dynamic **confirmation is not wired**: a passed grade or an
-aggregate vote is a *graded candidate*, not a confirmed finding. Confirmation must
-come from `harness.ai_agent.runtime.replay` → `evidence.assess` (positive+negative
-controls), which no stage calls yet. Container builds, paid campaigns and remote
-deployment remain paused; resume those on a new request.
+contract (fail-closed) when `profile: ai-agent`. **Still NOT a verified end-to-end
+run target:** no full-pipeline container campaign, no live-agent, and no held-out
+measurement. A passed grade is now a trusted replay, but a *static* review candidate
+with no replay is still just a *graded candidate*. Container builds, paid campaigns
+and remote deployment remain paused; resume those on a new request.
 
 ## Saved work
 
@@ -64,15 +78,17 @@ discriminating — it is NOT yet called by the pipeline's grade/aggregate stages
 
 ## Remaining integration and verification
 
-1. **Confirmation wiring (the critical gap).** The trusted verifier itself is now
-   proven on real Docker (replay e2e above); what remains is to CALL it from the
-   pipeline: wire `grade`/`aggregate` to `harness.ai_agent.runtime.replay` →
-   `evidence.assess` (positive+negative controls) instead of the self-grade, and
-   give aggregate a non-vote confirmation path — a passed static grade or
-   `votes>=2`/`passed_votes>=1` must NOT read as "confirmed" for this profile.
-   Build the vulnerable/fixed/decoy canary set out to the e2e (currently one
-   canary with a real-bug + decoy scenario). Do not inherit the vote model or the
-   memory-exploitation report rubric. (Needs Docker/host for the real replay.)
+1. **Confirmation wiring — DONE in code (provodka #1, 2026-10-03), host-exercise
+   pending.** `grade` delegates to `grade_runtime.grade_via_replay` →
+   `runtime.replay` → `evidence.assess`, and `aggregate.Candidate.is_confirmed`
+   requires a passed replay for this profile (no `votes>=2` shortcut; `detect`
+   guarantees the `aiagent:` namespace so routing can't be dodged). Offline
+   unit-tested (replay monkeypatched); the vote model and the memory-exploitation
+   rubric were NOT inherited. **Remaining:** exercise the wired path end to end
+   through a real `find→grade→aggregate` against the live canary on the host (the
+   verifier alone is already proven — see the e2e note), and build the
+   vulnerable/fixed/decoy canary set out beyond the single real-bug+decoy canary.
+   (Needs Docker/host.)
 2. Wire cause/path/witness identity through judge, dedup, reports, scorecard and
    checkpoints end to end (prompts are in place; the orchestration fields are not).
 3. Behavioral patch grading + independent reattack: `patch_grade._t1_passes` and

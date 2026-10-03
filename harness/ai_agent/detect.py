@@ -65,10 +65,21 @@ def top_frame(crash_output: str) -> str | None:
 
 
 def crash_reason(crash_output: str) -> dict[str, str | None]:
-    """{'crash_type': <invariant id>, 'operation': None}. crash_type is the dedup key."""
+    """{'crash_type': <invariant id>, 'operation': None}. crash_type is the dedup key.
+
+    The invariant id is always namespaced with an `aiagent:` prefix. The finder is
+    instructed to emit it that way; we enforce it here so the prefix is a reliable
+    marker. aggregate.Candidate.is_confirmed keys on it to route ai-agent findings
+    to the trusted-replay confirmation path (passed_votes) and deny them the
+    crash-model votes>=2 shortcut — a mislabeled invariant must never slip back
+    into "two finders agreed = confirmed"."""
     f = _fields(crash_output)
     invariant = f.get("invariant")
-    return {"crash_type": invariant or "aiagent:unclassified", "operation": None}
+    if not invariant:
+        return {"crash_type": "aiagent:unclassified", "operation": None}
+    if not invariant.startswith("aiagent:"):
+        invariant = "aiagent:" + invariant
+    return {"crash_type": invariant, "operation": None}
 
 
 def excerpt(crash_output: str, max_frames: int = 10) -> str:
