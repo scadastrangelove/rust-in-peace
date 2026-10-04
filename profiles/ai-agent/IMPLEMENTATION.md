@@ -62,7 +62,7 @@ positive+negative controls gating every trial):
   is still caught).
 ~39s for all 4 × 3 trials × (4 controls + attack) fresh containers; zero leftover
 victim containers afterward. This proves the trusted verifier is real and
-discriminating — it is NOT yet called by the pipeline's grade/aggregate stages.
+discriminating — the pipeline's grade stage now invokes it (grade→grade_via_replay→runtime.replay→evidence.assess), exercised end-to-end on a live target canary on the host (target withheld pending disclosure); the full find→…→scorecard campaign remains.
 
 ## Done 2026-10-03 (integration layer + replay e2e)
 

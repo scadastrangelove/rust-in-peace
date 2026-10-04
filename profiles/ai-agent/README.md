@@ -12,7 +12,7 @@ now wired** — `grade`/`aggregate` route this profile through the trusted repla
 confirmed only by a passed replay, never by "two finders agreed". 70 offline unit
 tests pass. It is still **not yet a verified end-to-end run target**: the wired path
 has not been exercised through a full `find→…→scorecard` campaign against the live
-canary on the host (the verifier alone is proven on real Docker — see
+canary on the host (the grade→replay→assess wired leg is now proven end-to-end on a live target canary on the host — see
 IMPLEMENTATION.md), there is no live-agent mode, and a *static* review candidate with
 no replay is a *graded candidate*, not a confirmed finding. See
 [IMPLEMENTATION.md](IMPLEMENTATION.md) for the remaining steps.
