@@ -1270,3 +1270,65 @@ live W2b verification, credential separation (W3), first-class variant-scan
 (W2), then the protocol-logic lens/oracle/evaluation work (W9–W12), and the
 h2/hyper-arc refresh (W13–W19), and the finder-mechanism block (W20–W28: dimensional lenses,
 project-type emphasis packs, SAST-as-engine — see L50/L51).
+
+
+## L61 — Lab primitives (entry adapters, stock mocks, runtime modes) are reusable infrastructure, not per-target scaffolding  `[PROVEN]` · ai-agent-profile · dynamic-confirmation
+Across several agent/gateway/LLM-UI targets the same obvious pieces were rebuilt each time: a generic HTTP-API
+entry adapter (seed the DB/keys/connections + planted files, spawn mock upstreams, issue one request via loopback
+OR the container LAN address, verify via SQL + upstream logs), a mock OpenAI-compatible LLM, a mock stdio-MCP and an
+ACP client, an SSRF canary + a public redirector, an interactive-TTY (pty) driver, a shim for an external CLI a code
+path was hard-gated on, and an `internal-lan` runtime mode (docker `--internal`, RFC-1918 iface, no egress). Every one
+was target-agnostic; rebuilding them was the bulk of the per-target effort.
+- **Change:** ship a `lab-primitives/` library keyed by **entry type** (`http-api`, `mcp`, `stdio-ext`, `acp`,
+  `pty-interactive`) + stock mocks (LLM / MCP / ACP / SSRF-canary / redirector) + runtime modes (`internal-lan`). A new
+  target of a known stack should reuse an adapter + mocks with only a scenario + target-contract. Feed these into a
+  per-stack pack registry ({stack → adapters, mocks, scenarios, rules, cases}).
+
+## L62 — A replay that doesn't fire is INCONCLUSIVE until a reachability control proves the attack reached the sink  `[PROVEN]` · verify · sharpens L50
+Several first-pass replays returned not-observed for reasons that were setup/path errors, not the target being safe:
+a credential written to the wrong config key; the wrong entry path (a CLI that parses input *before* the vulnerable
+template render, vs the server path that renders *then* parses); a predictable-temp path whose component mapping
+differed from the assumption (`a/b` → `a__b`); a config body not wrapped as the API expected; a hook that fires only
+on an interactive/TTY session. Each looked like a clean "refuted" on a naive read, and a less careful pass would have
+recorded a false negative.
+- **Change:** every scenario carries an explicit **positive reachability control** (did the request reach the sink /
+  did the handler run at all). A not-observed where the reachability control *also* fails is `inconclusive`/setup,
+  NOT `refuted`. `assess()` must emit that distinction so a harness bug is never banked as "not vulnerable."
+
+## L63 — Measure on a provenance-gated artifact: byte-compare the finding's code path between the tested build and the analyzed commit  `[PROVEN]` · verify · extends L57
+Confirmations commonly run on a *substitute* build (a published image a few minors ahead of the analyzed source, or a
+pinned-source rebuild). A per-finding file/symbol **byte-identity diff** between the tested artifact and the analyzed
+commit was essential and caught real drift (one relevant file had moved paths; another was byte-identical) — without it
+a pass/fail is unanchored to the thing that was reviewed.
+- **Change:** a grade/replay **provenance gate** — given candidate(path/symbol) + running artifact, assert byte-identity
+  (or flag drift) vs the analyzed commit and record `provenance:{analyzed_commit, tested_artifact, identical|drift}` in
+  the evidence. L57 is the disclosure-time twin (re-verify vs the latest release before filing).
+
+## L64 — Execution-host identifiers, server IPs, local paths and creds must never reach a tracked/public file — gate it, don't trust review  `[PROVEN]` · disclosure-hygiene · extends L49
+An execution-host `user@IP` was committed to public profile docs and sat public for days; removal required a history
+rewrite (`git filter-repo --replace-text`) + force-push across all refs, and cached commit views / forks may retain it
+regardless. Redaction-by-review had already missed it (the earlier hygiene habit only scanned local paths, not host
+identifiers).
+- **Change:** a **fail-closed redaction linter** in the commit/package path that blocks any artifact containing a
+  `user@ip`, a server IP, a `/Users/`-or-home path, or a real credential; keep execution-host config OUT of tracked
+  files (env/untracked only); profile docs reference the host via a placeholder. Treat a leaked host as burned (harden),
+  not merely scrubbed.
+
+## L65 — The disposition vocabulary needs agent-world verdicts and sub-claim granularity — "confirmed/refuted" is too coarse  `[PROVEN]` · aggregate · extends the witness disposition set
+Real outcomes this profile produced that the crash-class vocabulary cannot name: **edition/license-gated** (an endpoint
+behind a cryptographically-signed license check — unmockable, so static-only, which is NOT a failed replay);
+**infra-pending** (a path gated on an external CLI / a controlled upstream repo the lab lacked); **config-gated**
+(reachable only once an admin enables a feature/engine); and findings whose **core is confirmed while a sub-claim is
+refuted** (e.g. "runs unattended in auto-approve" confirmed, but "an attacker edits the source later" refuted because
+the artifact is snapshotted at registration).
+- **Change:** extend the ai-agent disposition set with `edition_gated` / `infra_pending` / `config_gated`, and let a
+  finding carry **per-sub-claim verdicts** so "core confirmed, sub-claim refuted" is first-class rather than lost in a
+  single confirmed/refuted bit.
+
+## L66 — A refute is a claim that needs a cited source line too; same-model agreement is weak signal  `[PROVEN]` · verify · extends L58/L50
+Prior: two lenses of the **same model** agreed on a WRONG refute that a second model overturned into a published
+advisory. This run: reading the code beat assuming — a getter's real backing store, a guard's actual basis
+(config-gate vs membership check), and a serializer's quoting behavior each flipped a tentative refute/confirm once the
+source was read.
+- **Change:** grade/judge must require a **cited source line for a REFUTE**, not only for a confirm; down-weight
+  agreement among lenses of the *same* model; a refute with no source citation is `unverified_refute`, not `refuted`.

@@ -912,3 +912,18 @@ basis alone), and `normalize.py` now drops hits inside in-file `#[cfg(test)] mod
   (vuln-pipeline build/grade, patch verify), and add a `--dry-run` that prints the environment verdict
   alone. **Done-when:** every mode that runs a container refuses to start until the preflight passes,
   and the SAST bring-up doc (`docs/case-studies/sast-driven-bringup.md`) points at it as step 0.
+
+
+## AI-agent profile backlog (2026-10-04) — from the live-target confirmation run
+
+ROI-ordered. These close L61–L66 and the one remaining maturity gap. `[Ln]` = lesson closed.
+
+| Item | Lands in | Done-when |
+| --- | --- | --- |
+| **AGENT-LAB-PRIMITIVES** `[L61]` — entry-type adapter library + stock mocks (LLM/MCP/ACP/SSRF-canary/redirector) + runtime modes (`internal-lan`) | new `lab-primitives/` + profile runtime | a new same-stack target reuses an adapter + mocks with only a scenario + target-contract (no bespoke adapter) |
+| **REPLAY-REACHABILITY-CONTROL** `[L62]` — a positive "attack reached the sink" control per scenario; split not-observed into `refuted` vs `inconclusive` | `runtime.replay` + `evidence.assess` | evidence carries a `reachability` control; a not-observed with it failing is emitted as `inconclusive`, not `refuted`; unit test |
+| **GRADE-PROVENANCE-GATE** `[L63]` — byte-identity of the finding's path between tested artifact and analyzed commit, pre-measurement | `grade` / `runtime.replay` | evidence carries `provenance:{analyzed_commit, tested_artifact, identical|drift}`; drift blocks or flags |
+| **REDACTION-LINTER** `[L64]` — fail-closed block on `user@ip` / server IP / local-path / cred in any tracked or packaged artifact | `scripts/check_repo_hygiene.py` (extend) + pre-commit/CI + the report/package step | CI rejects a planted `user@ip`; profile docs carry only a host placeholder |
+| **AGENT-DISPOSITIONS** `[L65]` — add `edition_gated`/`infra_pending`/`config_gated` + per-sub-claim verdicts | `harness/build_profile.py` + `aggregate.py` witness vocab | `assess()` can emit the new dispositions; a finding can carry `subclaims[]`; tests |
+| **REFUTE-SOURCE-GATE** `[L66]` — require a cited source line for a REFUTE; down-weight same-model agreement | `grade`/`judge` admissibility | judge rejects an un-sourced refute (test); same-model lens agreement is down-weighted |
+| **WIRED-E2E-RUN** (maturity) — run ONE target fully `find→grade→judge→aggregate→report→scorecard` against the live canary; only `grade→replay→assess` is proven so far | pipeline run + status doc | a scorecard artifact exists from a from-scratch harness run; the README status is generated from it |
