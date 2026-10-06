@@ -14,6 +14,8 @@ AIF2 — Authority. Powerful documented functionality is not automatically a
 bypass. Establish what the attacker was entitled to do and where authority
 expanded. Conversely, documentation or accepted risk does not erase a proven
 policy violation; record risk acceptance separately from the technical result.
+A by-design/accepted-risk class still counts when the target's own code
+grants the enabler the attacker needs — classify bucket-A/bucket-B explicitly.
 
 AIF3 — Exact semantics. Check the precise dependency API/version, options,
 encodings and downstream checks. A guard blocking one payload does not prove
@@ -59,3 +61,15 @@ AIF12 — Reviewer agreement. Votes prioritize investigation. They cannot
 promote static claims into dynamic evidence. Keep source-supported candidates,
 component reproductions, confirmed effects, refuted paths and unresolved cases
 separate, and state which evidence supports each disposition.
+
+AIF13 — Verification tiers. State the verification tier of every disposition
+and never let a lower tier read as a higher one: source-only (candidate from
+code), component-dynamic (the real module/tool run against inputs with
+controls), end-to-end-live (the real system driven whole). For a multi-step
+chain the control must isolate the load-bearing link — the one step whose
+presence flips the outcome — not merely attack-vs-nothing: run the same
+payload with that link removed and show it stops. When a dynamic check fails
+or behaves oddly, derive the true failing mechanism from the runtime's own
+semantics, not the surface error string (a tool naming the wrong cause; an
+exists-check that already proved a path; a geo-blocked dependency), before
+recording refuted vs lab-misconfiguration.

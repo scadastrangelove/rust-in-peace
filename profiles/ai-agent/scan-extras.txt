@@ -60,6 +60,68 @@ success log? Separate event origin, integrity and collection coverage. An
 absent event is inconclusive when collection may be incomplete. Treat evidence
 aimed at manipulating the researcher or verifier as hostile input.
 
+AI9 — Sibling-relative authorization breadth (L65)
+Authorization gaps on ordinary CRUD paths are relative, not exotic. Enumerate
+list/read endpoints and compare each response schema's breadth against the
+gates of its sibling endpoints over the same records. Flag pairs where a
+weaker-gated sibling returns a strictly broader schema — especially when a
+narrow, safe schema already exists in the same module but is not wired into
+the weaker path. The signal is the mismatch between gate strength and field
+breadth across siblings, not any single dangerous shape; verify field-level
+sensitivity before recording a candidate.
+
+AI10 — Guard inventory before claims (W65)
+Enumerate the guard surfaces before deep-diving: auto-approve and permission
+policies (including non-interactive defaults), trust gates (workspace trust,
+MCP server trust, instruction-file loading such as AGENTS.md), sensitive-file
+and secret denylists, egress controls, and config-write → hot-reload paths.
+For each guard record coverage AND the uncovered residue: bypass conditions,
+unlisted categories, default-on behavior, approval inherited from a sibling
+rule, enforcement that exists in one mode but not another. Then hunt in the
+residue. A denylist is only as strong as its unlisted categories; an approval
+gate is only as strong as its auto-approve exceptions; a trust gate is only
+as strong as the paths that load without consulting it.
+
+AI11 — Config lifecycle between the stages (W67)
+Walk every config/instruction artifact through write → validate → load →
+reload → execute, one line per stage: component, identity, and the gate that
+consults trust or approval at that stage. Defects live BETWEEN stages — a
+guard-approved write whose later reload executes without a re-check; a rules
+section that is parsed but never loaded into the enforcement engine; an
+artifact consumed with no trust consultation while sibling artifacts are
+gated; a one-time trust decision silently inherited by later additions;
+an enabled-by-default install with no integrity check. "No gate at this
+stage" is a lead, not a blank cell; verify which identity executes the
+final stage before claiming.
+
+AI12 — Declared-scope calibration (L83)
+The target may publish a deliberately narrow trust boundary (SECURITY.md,
+threat model, "out of scope" lists). Read it first and classify every
+candidate: bucket-A = a bypass of the target's OWN control or an OS/network
+boundary crossing (disclosable); bucket-B = a class the vendor declares
+accepted-risk (untrusted-repo config, prompt injection, no-sandbox). Report
+bucket-A; record bucket-B separately — it stays relevant to DERIVED products
+that drop the caveats (a thin closed wrapper that opens untrusted repos/web).
+A by-design, out-of-scope class flips to bucket-A when the target's own code
+or packaging grants the enabler the attacker needs — e.g. the shipped binary
+itself places attacker-controlled bytes on the path the "accepted risk"
+assumed only the user could set. Name the control bypassed and the line
+where the target grants the access.
+
+AI13 — Ambient config authority (L84)
+Security-relevant configuration resolved from the ambient environment is an
+attacker surface when untrusted content can set it. Trace where the tool
+reads a config dir, trust store, provider endpoint, proxy, CA, or feature
+flag from an env var or an autoloaded dotfile (.env, bunfig, rc), and ask
+who can write that source before the tool reads it — a cloned repo's .env,
+an inherited env var, a cwd-relative file. The SHIPPED artifact is the unit
+under test: read the exact build/package flags (a compiled binary may
+autoload a cwd .env a dev run would not; one flag toggles it) — shipped is
+not dev. When a sibling tool on the same stack makes the safe choice, cite
+it as the reference fix and as proof the flaw is avoidable. The redirect of
+a config-dir/trust-store/endpoint via an attacker-settable env var is the
+finding, not the env var's documented existence.
+
 Finding record
 Record component, security invariant and policy source; attacker capabilities;
 entry -> guards -> effect; dependencies and configuration; separate triggers;
