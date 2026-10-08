@@ -277,7 +277,7 @@ Software maintenance continues to obey gravity.
 | Review and remediation | [Triage](docs/triage.md), [patching](docs/patching.md) |
 | Experiments and failure analysis | [DVRA benchmark](targets/dvra3-parser/README.md), [lessons](LESSONS.md), [SAST bring-up](docs/case-studies/sast-driven-bringup.md) |
 | Design and development | [Decisions](docs/DECISIONS.md), [extending](docs/extending.md), [backlog](IMPROVEMENTS.md), [changelog](CHANGELOG.md) |
-| Research questions, reusable packs, and agent selection (proposal) | [Research orchestration design](docs/research-orchestration.md) |
+| Research questions, reusable packs, and agent selection (proposal) | Research orchestration design (private; not in the public tree) — `docs/research-orchestration.md` |
 | Operational problems | [Troubleshooting](docs/troubleshooting.md) |
 
 The profile registry defaults to `rust`. The inherited C/C++ + ASan examples
