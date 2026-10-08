@@ -51,8 +51,11 @@ resource and lifecycle defects remain in scope.
 | [integration.patch](integration.patch) | Unapplied target-config integration saved for resumption |
 
 The full design is [docs/extending-ai-agents.md](../../docs/extending-ai-agents.md).
-The product-specific campaign shortlist is
-[AI and agent-system research targets](../../targets/ai-agent-research-targets.md).
+The proposed shared question ledger and reusable pack catalog are described in a
+separate orchestration design (private; not in the public tree), kept as
+`docs/research-orchestration.md`.
+The product-specific campaign shortlist (private; not in the public tree) is
+maintained separately as `targets/ai-agent-research-targets.md`.
 Reusable guidance contains generalized mechanisms. Named product findings,
 campaign statistics, disclosure records and embargoed material stay in separate
 target/campaign records and do not become finder hints.

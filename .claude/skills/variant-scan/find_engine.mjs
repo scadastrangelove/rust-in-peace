@@ -45,7 +45,7 @@ async function tryAgent(prompt, opts, tries = 3) {
 
 phase('Find')
 const findResults = await parallel(A.lenses.map(L => () =>
-  tryAgent(`${A.context}\n\n${L.p}`, { schema: FIND_SCHEMA, phase:'Find', label:`find:${A.name}:${L.id}` })
+  tryAgent(`${A.context}\n\n${L.p}`, { schema: FIND_SCHEMA, phase:'Find', label:`find:${A.name}:${L.id}`, ...(L.model?{model:L.model}:{}) })
     .then(r => ((r&&r.findings)||[]).map(f => ({...f, lens:L.id})))))
 const allF = findResults.filter(Boolean).flat()
 const keyOf = f => `${(f.bug_class||'').toLowerCase().split(/[\s(]/)[0]}@${f.file}:${f.symbol}`
