@@ -51,11 +51,11 @@ RustDesk's 8 still-private findings share one coordinated email and appear as 1 
 row-count is 10, not 15. The summary above counts by **distinct finding** instead, matching how
 Resolved/Open/Closed are counted elsewhere on this page. Both are correct; they're answering different
 questions ("how many advisories are open" vs "how many distinct bugs are still private"). Also excluded
-from the 78: `rustls-fix-pr` and `fdeflate`'s withdrawn PR#84 (both are supporting-artifact rows for an
+from the 85: `rustls-fix-pr` and `fdeflate`'s withdrawn PR#84 (both are supporting-artifact rows for an
 already-counted finding, not separate bugs), and the `http2` fork's courtesy notification (same
 technical finding as h2 GHSA-8r6j, sent to a second maintainer — tracked, but not a second distinct bug)._
 
-_The Rust-crate row and its status breakdown (Resolved / Open / Closed / Private) cover the open-source-crate campaign across 27 projects. The Linux kernel findings are a separate email disclosure, tracked by subsystem and count only (see Pending disclosures). The two sum to the 94 total._
+_The Rust-crate row and its status breakdown (Resolved / Open / Closed / Private) cover the open-source-crate campaign across 28 projects. The Linux kernel findings are a separate email disclosure, tracked by subsystem and count only (see Pending disclosures). The two sum to the 101 total._
 
 _**AI coding-agent & protocol campaign (separate pipeline — reproof + the rust-in-peace ai-agent profile).** A second wave of coordinated disclosures went out in October 2026 — ZCode, Pi, goose, OmniRoute, kimi-code/Moonshot, and the EasyCwmp TR-069 client. These are private-channel reports that are unfixed and unpublished, so they are listed by channel/advisory-ID and status only (see the Pending table) and are **not** included in the Rust-crate counts above — a different pipeline, mostly non-Rust targets._
 
@@ -317,4 +317,9 @@ Chromium's 2 stay excluded from the total per existing convention. **New grand t
   unpublished → listed by channel/ID and status only, no mechanism, in a new Pending sub-table; **excluded
   from the Rust-crate counts** (separate pipeline, mostly non-Rust). icwmp, RuDesktop, and the Rocket.Chat
   server findings remain internal drafts (not yet sent) and are not listed.
+- **2026-10-08** — **Summary-note reconciliation.** Two carryover figures in the Summary notes still
+  reflected the pre-backfill state and disagreed with the authoritative table: "across 27 projects" → **28**,
+  "sum to the 94 total" → **101**, and "excluded from the 78" → **85** (the current distinct Rust-crate
+  count). Table values (85 Rust / 16 kernel / 101) were already correct; only the prose lagged. The dated
+  2026-08-18 audit-log figures (78/94/27) are left intact as the historical record of that recount.
 - This list is updated as reports change status. Last updated: 2026-10-08.
