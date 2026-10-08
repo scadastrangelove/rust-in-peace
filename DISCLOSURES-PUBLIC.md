@@ -57,6 +57,8 @@ technical finding as h2 GHSA-8r6j, sent to a second maintainer — tracked, but 
 
 _The Rust-crate row and its status breakdown (Resolved / Open / Closed / Private) cover the open-source-crate campaign across 27 projects. The Linux kernel findings are a separate email disclosure, tracked by subsystem and count only (see Pending disclosures). The two sum to the 94 total._
 
+_**AI coding-agent & protocol campaign (separate pipeline — reproof + the rust-in-peace ai-agent profile).** A second wave of coordinated disclosures went out in October 2026 — ZCode, Pi, goose, OmniRoute, kimi-code/Moonshot, and the EasyCwmp TR-069 client. These are private-channel reports that are unfixed and unpublished, so they are listed by channel/advisory-ID and status only (see the Pending table) and are **not** included in the Rust-crate counts above — a different pipeline, mostly non-Rust targets._
+
 ## Public disclosures
 
 Findings sent as (or since converted to) a public issue, pull request, or vendor-published advisory.
@@ -162,6 +164,21 @@ here by advisory ID and status only — no technical detail is disclosed before 
 | Linux kernel — Android Binder IPC (`drivers/android/binder`) | 2026-08-17 | direct email to maintainers (no advisory ID) | Sent — **6 findings** (Rust + C driver); awaiting acknowledgement; technical detail withheld per policy |
 | Linux kernel — IP-TFS / IPsec (`net/xfrm/xfrm_iptfs.c`) | 2026-08-17 | direct email to maintainers (no advisory ID) | Sent — **4 findings**; awaiting acknowledgement; technical detail withheld per policy |
 | Linux kernel — nova-core GPU driver (`drivers/gpu/nova-core`) | 2026-08-17 | direct email to maintainers (no advisory ID) | Sent — **6 findings**; awaiting acknowledgement; technical detail withheld per policy |
+
+### AI coding-agent & protocol campaign — October 2026 wave
+
+A second campaign (reproof + the rust-in-peace ai-agent profile) covering AI coding agents / gateways and a TR-069 CPE client. Each was reported through a private channel (GitHub private vulnerability reporting or a vendor security email), is unfixed and unpublished, and is listed here by channel/advisory-ID and status only — no vulnerability class, mechanism, or PoC — under the same policy as above. Tracked separately from the Rust-crate counts in the Summary.
+
+| Target | Reported | Channel / Advisory ID | Status |
+|---|---|---|---|
+| ZCode CLI (zai-org/ZCode) | 2026-10-08 | [GHSA-85m2-c246-958r](https://github.com/zai-org/ZCode/security/advisories/GHSA-85m2-c246-958r) (private advisory) | Filed — under vendor triage |
+| Pi (earendil-works/pi) | 2026-10-08 | direct email — security@earendil.com | Sent — awaiting acknowledgement; technical detail withheld per policy |
+| goose (Block / AAIF, aaif-goose/goose) | 2026-10-05 | GitHub private advisory + open-source-governance@block.xyz | Sent — awaiting acknowledgement; technical detail withheld per policy |
+| OmniRoute (diegosouzapw/OmniRoute) | 2026-10-05 | private GitHub advisory + vendor email | Sent — awaiting acknowledgement; technical detail withheld per policy |
+| kimi-code (MoonshotAI / Moonshot) | 2026-10-05 | direct email — security@moonshot.ai | Acknowledged 2026-10-05 (auto-reply; forwarded to a specialist team); technical detail withheld per policy |
+| EasyCwmp (pivasoftware/easycwmp) | 2026-10-07 | direct email — maintainers + CERT | Sent — awaiting acknowledgement; technical detail withheld per policy |
+
+_Not yet sent (internal draft, excluded from the table): the icwmp TR-069 client, RuDesktop, and the Rocket.Chat server findings._
 
 ## Notes
 
@@ -292,4 +309,12 @@ Chromium's 2 stay excluded from the total per existing convention. **New grand t
   the #1 key-exchange split is robust, with the usual old↔old back-compat caveat). #5/#7/#8 remain, withheld.
   Counts updated: Resolved 41→42, Private-awaiting 11→10, actively-fixing 4→3. A fixed-only public advisory
   is drafted at `rustdesk-coordinated-disclosure/PUBLIC-ADVISORY.md`. Still none in a released build (1.4.9).
+- **2026-10-08** — **Second disclosure wave added (AI coding-agent & protocol campaign).** Six coordinated
+  disclosures from the reproof + rust-in-peace ai-agent pipeline, sent 2026-10-05 … 2026-10-08: ZCode
+  ([GHSA-85m2-c246-958r](https://github.com/zai-org/ZCode/security/advisories/GHSA-85m2-c246-958r)), Pi
+  (email security@earendil.com), goose (GitHub advisory + AAIF), OmniRoute (private GHSA + email),
+  kimi-code/Moonshot (email, auto-ack 2026-10-05), EasyCwmp (maintainers + CERT). All private, unfixed and
+  unpublished → listed by channel/ID and status only, no mechanism, in a new Pending sub-table; **excluded
+  from the Rust-crate counts** (separate pipeline, mostly non-Rust). icwmp, RuDesktop, and the Rocket.Chat
+  server findings remain internal drafts (not yet sent) and are not listed.
 - This list is updated as reports change status. Last updated: 2026-10-08.
