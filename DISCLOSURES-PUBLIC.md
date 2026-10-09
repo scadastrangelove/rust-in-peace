@@ -177,8 +177,9 @@ A second campaign (reproof + the rust-in-peace ai-agent profile) covering AI cod
 | OmniRoute (diegosouzapw/OmniRoute) | 2026-10-05 | private GitHub advisory + vendor email | Sent — awaiting acknowledgement; technical detail withheld per policy |
 | kimi-code (MoonshotAI / Moonshot) | 2026-10-05 | direct email — security@moonshot.ai | Acknowledged 2026-10-05 (auto-reply; forwarded to a specialist team); technical detail withheld per policy |
 | EasyCwmp (pivasoftware/easycwmp) | 2026-10-07 | direct email — maintainers + CERT | Sent — awaiting acknowledgement; technical detail withheld per policy |
+| icwmp (iopsys/BBF, dev.iopsys.eu/bbf/icwmp) | 2026-10 | direct email — IOPSYS (suvendhu.hansa / vivek.dutta / info@iopsys.se) | **Acknowledged 2026-10-09** — vendor reviewing and working on fixes (vendor ETA ~2 weeks), embargo in effect; technical detail withheld per policy |
 
-_Not yet sent (internal draft, excluded from the table): the icwmp TR-069 client, RuDesktop, and the Rocket.Chat server findings._
+_Not yet sent (internal draft, excluded from the table): RuDesktop and the Rocket.Chat server findings._
 
 ## Notes
 
@@ -322,4 +323,8 @@ Chromium's 2 stay excluded from the total per existing convention. **New grand t
   "sum to the 94 total" → **101**, and "excluded from the 78" → **85** (the current distinct Rust-crate
   count). Table values (85 Rust / 16 kernel / 101) were already correct; only the prose lagged. The dated
   2026-08-18 audit-log figures (78/94/27) are left intact as the historical record of that recount.
-- This list is updated as reports change status. Last updated: 2026-10-08.
+- **2026-10-09** — **icwmp acknowledged; status corrected.** The icwmp (iopsys/BBF TR-069 client) report
+  had been mislabeled here as "not yet sent"; it was in fact emailed to IOPSYS, and on 2026-10-09 Vivek Dutta
+  (iopsys) acknowledged it — findings reviewed, fixes under way (vendor ETA ~2 weeks), embargo in effect.
+  Added to the agent/protocol Pending sub-table and removed from the "not yet sent" note.
+- This list is updated as reports change status. Last updated: 2026-10-09.
