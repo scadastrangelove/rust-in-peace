@@ -167,7 +167,7 @@ here by advisory ID and status only — no technical detail is disclosed before 
 
 ### AI coding-agent & protocol campaign — October 2026 wave
 
-A second campaign (reproof + the rust-in-peace ai-agent profile) covering AI coding agents / gateways and a TR-069 CPE client. Each was reported through a private channel (GitHub private vulnerability reporting or a vendor security email), is unfixed and unpublished, and is listed here by channel/advisory-ID and status only — no vulnerability class, mechanism, or PoC — under the same policy as above. Tracked separately from the Rust-crate counts in the Summary.
+A second campaign (reproof + the rust-in-peace ai-agent profile) covering AI coding agents / gateways, TR-069 CPE clients, and a C SOAP/XML runtime (gSOAP). Each was reported through a private channel (GitHub private vulnerability reporting or a vendor security email), is unfixed and unpublished, and is listed here by channel/advisory-ID and status only — no vulnerability class, mechanism, or PoC — under the same policy as above. Tracked separately from the Rust-crate counts in the Summary.
 
 | Target | Reported | Channel / Advisory ID | Status |
 |---|---|---|---|
@@ -178,6 +178,7 @@ A second campaign (reproof + the rust-in-peace ai-agent profile) covering AI cod
 | kimi-code (MoonshotAI / Moonshot) | 2026-10-05 | direct email — security@moonshot.ai | Acknowledged 2026-10-05 (auto-reply; forwarded to a specialist team); technical detail withheld per policy |
 | EasyCwmp (pivasoftware/easycwmp) | 2026-10-07 | direct email — maintainers + CERT | Sent — awaiting acknowledgement; technical detail withheld per policy |
 | icwmp (iopsys/BBF, dev.iopsys.eu/bbf/icwmp) | 2026-10 | direct email — IOPSYS (suvendhu.hansa / vivek.dutta / info@iopsys.se) | **Acknowledged 2026-10-09** — vendor reviewing and working on fixes (vendor ETA ~2 weeks), embargo in effect; technical detail withheld per policy |
+| gSOAP (Genivia) | 2026-10-09 | direct email — engelen@genivia.com + contact@genivia.com | Sent — 90-day embargo proposed; awaiting acknowledgement; technical detail withheld per policy |
 
 _Not yet sent (internal draft, excluded from the table): RuDesktop and the Rocket.Chat server findings._
 
@@ -327,4 +328,7 @@ Chromium's 2 stay excluded from the total per existing convention. **New grand t
   had been mislabeled here as "not yet sent"; it was in fact emailed to IOPSYS, and on 2026-10-09 Vivek Dutta
   (iopsys) acknowledged it — findings reviewed, fixes under way (vendor ETA ~2 weeks), embargo in effect.
   Added to the agent/protocol Pending sub-table and removed from the "not yet sent" note.
+- **2026-10-09** — **gSOAP (Genivia) disclosure sent.** Coordinated report emailed to engelen@genivia.com
+  + contact@genivia.com with a proposed 90-day embargo; added to the agent/protocol Pending sub-table,
+  status only (no mechanism). Awaiting vendor acknowledgement.
 - This list is updated as reports change status. Last updated: 2026-10-09.
