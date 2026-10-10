@@ -57,7 +57,7 @@ technical finding as h2 GHSA-8r6j, sent to a second maintainer — tracked, but 
 
 _The Rust-crate row and its status breakdown (Resolved / Open / Closed / Private) cover the open-source-crate campaign across 28 projects. The Linux kernel findings are a separate email disclosure, tracked by subsystem and count only (see Pending disclosures). The two sum to the 101 total._
 
-_**AI coding-agent & protocol campaign (separate pipeline — reproof + the rust-in-peace ai-agent profile).** A second wave of coordinated disclosures went out in October 2026 — ZCode, Pi, goose, OmniRoute, kimi-code/Moonshot, and the EasyCwmp TR-069 client. These are private-channel reports that are unfixed and unpublished, so they are listed by channel/advisory-ID and status only (see the Pending table) and are **not** included in the Rust-crate counts above — a different pipeline, mostly non-Rust targets._
+_**October 2026 wave (separate pipeline — reproof + the rust-in-peace ai-agent profile).** Two campaigns of coordinated disclosures went out in October 2026, tracked in their own Pending sub-tables: an **AI coding-agent campaign** (ZCode, Pi, goose, OmniRoute, kimi-code/Moonshot) and a **TR-069/CWMP & embedded-SOAP campaign** (EasyCwmp, icwmp, CcspTr069Pa, gSOAP). All are private-channel reports, unfixed and unpublished, so they are listed by channel/advisory-ID and status only and are **not** included in the Rust-crate counts above — a different pipeline, mostly non-Rust targets._
 
 ## Public disclosures
 
@@ -166,9 +166,9 @@ here by advisory ID and status only — no technical detail is disclosed before 
 | Linux kernel — IP-TFS / IPsec (`net/xfrm/xfrm_iptfs.c`) | 2026-08-17 | direct email to maintainers (no advisory ID) | Sent — **4 findings**; awaiting acknowledgement; technical detail withheld per policy |
 | Linux kernel — nova-core GPU driver (`drivers/gpu/nova-core`) | 2026-08-17 | direct email to maintainers (no advisory ID) | Sent — **6 findings**; awaiting acknowledgement; technical detail withheld per policy |
 
-### AI coding-agent & protocol campaign — October 2026 wave
+### AI coding-agent campaign — October 2026 wave
 
-A second campaign (reproof + the rust-in-peace ai-agent profile) covering AI coding agents / gateways, TR-069 CPE clients, and a C SOAP/XML runtime (gSOAP). Each was reported through a private channel (GitHub private vulnerability reporting or a vendor security email), is unfixed and unpublished, and is listed here by channel/advisory-ID and status only — no vulnerability class, mechanism, or PoC — under the same policy as above. Tracked separately from the Rust-crate counts in the Summary.
+AI coding agents / gateways reviewed by the reproof + rust-in-peace ai-agent profile pipeline. Each was reported through a private channel (GitHub private vulnerability reporting or a vendor security email), is unfixed and unpublished, and is listed here by channel/advisory-ID and status only — no vulnerability class, mechanism, or PoC — under the same policy as above. Tracked separately from the Rust-crate counts in the Summary.
 
 | Target | Reported | Channel / Advisory ID | Status |
 |---|---|---|---|
@@ -177,10 +177,17 @@ A second campaign (reproof + the rust-in-peace ai-agent profile) covering AI cod
 | goose (Block / AAIF, aaif-goose/goose) | 2026-10-05 | GitHub private advisory + open-source-governance@block.xyz | Sent — awaiting acknowledgement; technical detail withheld per policy |
 | OmniRoute (diegosouzapw/OmniRoute) | 2026-10-05 | private GitHub advisory + vendor email | Sent — awaiting acknowledgement; technical detail withheld per policy |
 | kimi-code (MoonshotAI / Moonshot) | 2026-10-05 | direct email — security@moonshot.ai | Acknowledged 2026-10-05 (auto-reply; forwarded to a specialist team); technical detail withheld per policy |
+
+### TR-069 / CWMP & embedded-SOAP campaign — October 2026 wave
+
+TR-069/CWMP CPE agents and the embedded C SOAP/XML runtime (gSOAP) they build on, same pipeline and same policy (channel/advisory-ID and status only; no mechanism). Tracked separately from the Rust-crate counts in the Summary.
+
+| Target | Reported | Channel / Advisory ID | Status |
+|---|---|---|---|
 | EasyCwmp (pivasoftware/easycwmp) | 2026-10-07 | direct email — maintainers + CERT | Sent — awaiting acknowledgement; technical detail withheld per policy |
 | icwmp (iopsys/BBF, dev.iopsys.eu/bbf/icwmp) | 2026-10 | direct email — IOPSYS (suvendhu.hansa / vivek.dutta / info@iopsys.se) | **Acknowledged 2026-10-09** — vendor reviewing and working on fixes (vendor ETA ~2 weeks), embargo in effect; technical detail withheld per policy |
-| gSOAP (Genivia) | 2026-10-09 | direct email — engelen@genivia.com + contact@genivia.com | Sent — 90-day embargo proposed; awaiting acknowledgement; technical detail withheld per policy |
 | CcspTr069Pa (RDK-B, code.rdkcentral.com) | 2026-10-10 | direct email — security@rdkcentral.com + support | Sent — 90-day embargo proposed; awaiting acknowledgement; technical detail withheld per policy |
+| gSOAP (Genivia) | 2026-10-09 | direct email — engelen@genivia.com + contact@genivia.com | Sent — 90-day embargo proposed; awaiting acknowledgement; technical detail withheld per policy |
 
 _Not yet sent (internal draft, excluded from the table): RuDesktop and the Rocket.Chat server findings._
 
@@ -344,4 +351,7 @@ Chromium's 2 stay excluded from the total per existing convention. **New grand t
 - **2026-10-10** — **RDK-B CcspTr069Pa disclosure sent.** Coordinated report (preauth CR + STUN + ACS-side
   memory-safety; plus a "silently-fixed-2023, still-deployed" set) emailed to security@rdkcentral.com +
   support with a proposed 90-day embargo; added to the agent/protocol Pending sub-table, status only.
+- **2026-10-10** — **Split the October-2026 wave into two sub-tables:** an *AI coding-agent campaign*
+  (ZCode, Pi, goose, OmniRoute, kimi-code) and a *TR-069/CWMP & embedded-SOAP campaign* (EasyCwmp, icwmp,
+  CcspTr069Pa, gSOAP). No status changes — regrouping only; Summary pointer updated to match.
 - This list is updated as reports change status. Last updated: 2026-10-10.
