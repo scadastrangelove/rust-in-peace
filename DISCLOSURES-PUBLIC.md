@@ -180,6 +180,7 @@ A second campaign (reproof + the rust-in-peace ai-agent profile) covering AI cod
 | EasyCwmp (pivasoftware/easycwmp) | 2026-10-07 | direct email — maintainers + CERT | Sent — awaiting acknowledgement; technical detail withheld per policy |
 | icwmp (iopsys/BBF, dev.iopsys.eu/bbf/icwmp) | 2026-10 | direct email — IOPSYS (suvendhu.hansa / vivek.dutta / info@iopsys.se) | **Acknowledged 2026-10-09** — vendor reviewing and working on fixes (vendor ETA ~2 weeks), embargo in effect; technical detail withheld per policy |
 | gSOAP (Genivia) | 2026-10-09 | direct email — engelen@genivia.com + contact@genivia.com | Sent — 90-day embargo proposed; awaiting acknowledgement; technical detail withheld per policy |
+| CcspTr069Pa (RDK-B, code.rdkcentral.com) | 2026-10-10 | direct email — security@rdkcentral.com + support | Sent — 90-day embargo proposed; awaiting acknowledgement; technical detail withheld per policy |
 
 _Not yet sent (internal draft, excluded from the table): RuDesktop and the Rocket.Chat server findings._
 
@@ -340,4 +341,7 @@ Chromium's 2 stay excluded from the total per existing convention. **New grand t
   Moved to the Public disclosures table; counts Resolved 42→43, Private-awaiting 10→9 (awaiting-first-
   response 7→6: now 2 BoxLite, the egress finding being published). The second BoxLite advisory
   (GHSA-gcpm, resource-exhaustion DoS) remains in vendor triage.
+- **2026-10-10** — **RDK-B CcspTr069Pa disclosure sent.** Coordinated report (preauth CR + STUN + ACS-side
+  memory-safety; plus a "silently-fixed-2023, still-deployed" set) emailed to security@rdkcentral.com +
+  support with a proposed 90-day embargo; added to the agent/protocol Pending sub-table, status only.
 - This list is updated as reports change status. Last updated: 2026-10-10.
