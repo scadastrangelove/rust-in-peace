@@ -36,12 +36,12 @@ methodology. Counts below are now mechanically derived from the reconciled CSV, 
 | | |
 |---|---:|
 | Reports filed — Rust open-source crates (across 28 projects) | 85 |
-| Resolved (fixed / merged) | 42 |
+| Resolved (fixed / merged) | 43 |
 | Open — awaiting vendor action (public issue/PR) | 22 |
 | Closed — disputed, not a vulnerability, or declined | 11 |
-| Private, still awaiting vendor action (not yet resolved or rejected) | 10 |
+| Private, still awaiting vendor action (not yet resolved or rejected) | 9 |
 | — of which vendor has acknowledged and is actively fixing | 3 (RustDesk's remaining 3 of 9 — six are now fixed in `master` and counted above, incl. #4 Linux-clipboard via merged PR #16329 (2026-09-26); #5/#7/#8 confirmed and pending) |
-| — of which still awaiting a first vendor response | 7 (4 ciborium, 3 BoxLite) |
+| — of which still awaiting a first vendor response | 6 (4 ciborium, 2 BoxLite — the 3rd BoxLite finding, egress, is now published GHSA-c7v3 and counted under Resolved) |
 | Linux kernel findings (separate email disclosure, 2026-08-17) | 16 across 3 subsystems (Android Binder IPC 6, net/xfrm IP-TFS 4, nova-core GPU 6) |
 | **Total vulnerabilities reported (all campaigns)** | **101** (85 Rust crates + 16 Linux kernel) |
 
@@ -105,6 +105,7 @@ Findings sent as (or since converted to) a public issue, pull request, or vendor
 | Chromium / Skia (vendored `image` fork) | 2026-07-22 | [issue 537617325](https://issues.chromium.org/issues/537617325) | Low | **Fixed (2026-09-07)** — root cause fixed upstream ([image-rs/image#3095](https://github.com/image-rs/image/pull/3095), 2026-08-03) and Chromium's vendored roll landed ([CL 8183991](https://chromium-review.googlesource.com/8183991), commit [685d6eac](https://chromiumdash.appspot.com/commit/685d6eac6a9cd2eea74ea50589447ad809093634), 2026-08-05) | Unbounded allocation while parsing an embedded BMP color-profile size field |
 | gitoxide | 2026-07-22 | [GHSA-pmm9-4h7q-24c8](https://github.com/GitoxideLabs/gitoxide/security/advisories/GHSA-pmm9-4h7q-24c8) | Medium | **Resolved (2026-08-02) — published as a public advisory**, CVSS 5.3 | `checkout()` follows an existing terminal symlink on Windows during non-exclusive (incremental) materialization, writing outside the intended worktree |
 | quinn-proto | 2026-07-23 | [GHSA-hmxj-32vh-65vr](https://github.com/quinn-rs/quinn/security/advisories/GHSA-hmxj-32vh-65vr) | Medium | **Resolved — published as a public advisory** (2026-08-17); fixed in **quinn-proto 0.11.17** | Handling an already-retired `NEW_CONNECTION_ID` frame pushes into `pending.retire_cids` with no cap or de-duplication (the sibling code path that handles new CIDs is capped) — remote, post-handshake memory-exhaustion DoS |
+| BoxLite | 2026-08-06 | [GHSA-c7v3-78jq-x45m](https://github.com/boxlite-ai/boxlite/security/advisories/GHSA-c7v3-78jq-x45m) | High | **Resolved — published as a public advisory** (2026-08-26). **Independent rediscovery:** original reporter @alcls01111; reported later independently by @scadastrangelove (this project) and @arpitjain099 — all three credited. Our private GHSA-fj94-x2qq-2qmq was consolidated into this and closed. | `allow_net` egress allow-list bypass by domain-fronting — the gvproxy-bridge TCP forwarder gates on the guest-supplied SNI/`Host` but dials the guest-chosen destination IP, so an allowed hostname authorizes a connection to an arbitrary IP |
 | rmp-serde | 2026-07-20 | [#381](https://github.com/3Hren/msgpack-rust/issues/381) / [PR #382](https://github.com/3Hren/msgpack-rust/pull/382) | Medium | Open | Recursion-depth guard doesn't cover all deserialization entry points |
 | ttf-parser | 2026-07-20 | [#218](https://github.com/harfbuzz/ttf-parser/issues/218) / [PR #222](https://github.com/harfbuzz/ttf-parser/pull/222) | Medium | Resolved (PR #222 merged 2026-08-05) | CFF2 operand-stack underflow |
 | ttf-parser | 2026-07-20 | [#219](https://github.com/harfbuzz/ttf-parser/issues/219) / [PR #223](https://github.com/harfbuzz/ttf-parser/pull/223) | Low | Resolved (PR #223 merged 2026-08-05) | Variation-axis-mapping integer overflow |
@@ -151,7 +152,7 @@ here by advisory ID and status only — no technical detail is disclosed before 
 | Target | Reported | Advisory ID | Status |
 |---|---|---|---|
 | actix-web | 2026-07-23 | [GHSA-rmg3-w467-r3hg](https://github.com/actix/actix-web/security/advisories/GHSA-rmg3-w467-r3hg) | Closed by vendor — advisory not published |
-| BoxLite | 2026-08-06 | [GHSA-fj94-x2qq-2qmq](https://github.com/boxlite-ai/boxlite/security/advisories/GHSA-fj94-x2qq-2qmq) | Under vendor triage |
+| BoxLite | 2026-08-06 | [GHSA-fj94-x2qq-2qmq](https://github.com/boxlite-ai/boxlite/security/advisories/GHSA-fj94-x2qq-2qmq) | Resolved — consolidated into the published advisory [GHSA-c7v3-78jq-x45m](https://github.com/boxlite-ai/boxlite/security/advisories/GHSA-c7v3-78jq-x45m) and closed (see Public disclosures); independent rediscovery, co-credited |
 | BoxLite | 2026-08-06 | [GHSA-gcpm-8w8q-gp9v](https://github.com/boxlite-ai/boxlite/security/advisories/GHSA-gcpm-8w8q-gp9v) | Under vendor triage |
 | ciborium | 2026-07-19 | [GHSA-gg22-wcqw-grr3](https://github.com/enarx/ciborium/security/advisories/GHSA-gg22-wcqw-grr3) | Under vendor review |
 | ciborium | 2026-07-19 | [GHSA-5857-62v3-27wr](https://github.com/enarx/ciborium/security/advisories/GHSA-5857-62v3-27wr) | Under vendor review |
@@ -331,4 +332,12 @@ Chromium's 2 stay excluded from the total per existing convention. **New grand t
 - **2026-10-09** — **gSOAP (Genivia) disclosure sent.** Coordinated report emailed to engelen@genivia.com
   + contact@genivia.com with a proposed 90-day embargo; added to the agent/protocol Pending sub-table,
   status only (no mechanism). Awaiting vendor acknowledgement.
-- This list is updated as reports change status. Last updated: 2026-10-09.
+- **2026-10-10** — **BoxLite egress resolved & published.** Our private GHSA-fj94-x2qq-2qmq (allow_net
+  domain-fronting egress bypass) was consolidated by the BoxLite maintainer into the **published advisory
+  [GHSA-c7v3-78jq-x45m](https://github.com/boxlite-ai/boxlite/security/advisories/GHSA-c7v3-78jq-x45m)**
+  (High, published 2026-08-26). An independent rediscovery: original reporter @alcls01111, with
+  @scadastrangelove (this project) and @arpitjain099 reporting later independently — all three credited.
+  Moved to the Public disclosures table; counts Resolved 42→43, Private-awaiting 10→9 (awaiting-first-
+  response 7→6: now 2 BoxLite, the egress finding being published). The second BoxLite advisory
+  (GHSA-gcpm, resource-exhaustion DoS) remains in vendor triage.
+- This list is updated as reports change status. Last updated: 2026-10-10.
