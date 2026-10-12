@@ -214,7 +214,7 @@ Broadband-CPE (ONT / home-gateway) device firmware reviewed from publicly obtain
 | ZTE ZXHN F670L (TR-069 / web stack) | 2026-10-12 | ZTE PSIRT | Sent — coordinated disclosure; awaiting acknowledgement; technical detail withheld per policy |
 | Huawei EchoLife HG8145V5 / EG8145V5 (TR-069 CWMP) | 2026-10-12 | Huawei PSIRT | Sent — 90-day embargo proposed; awaiting acknowledgement; technical detail withheld per policy |
 
-_Not yet sent (internal draft, excluded from the tables above): RuDesktop and the Rocket.Chat server findings._
+_A few additional reviews are complete but not yet in a disclosure process; their targets are deliberately withheld here until coordinated disclosure with the vendor has begun._
 
 ## Notes
 
@@ -351,8 +351,8 @@ Chromium's 2 stay excluded from the total per existing convention. **New grand t
   (email security@earendil.com), goose (GitHub advisory + AAIF), OmniRoute (private GHSA + email),
   kimi-code/Moonshot (email, auto-ack 2026-10-05), EasyCwmp (maintainers + CERT). All private, unfixed and
   unpublished → listed by channel/ID and status only, no mechanism, in a new Pending sub-table; **excluded
-  from the Rust-crate counts** (separate pipeline, mostly non-Rust). icwmp, RuDesktop, and the Rocket.Chat
-  server findings remain internal drafts (not yet sent) and are not listed.
+  from the Rust-crate counts** (separate pipeline, mostly non-Rust). A few other reviews remained internal
+  drafts (not yet sent) at that point and were not listed (targets withheld).
 - **2026-10-08** — **Summary-note reconciliation.** Two carryover figures in the Summary notes still
   reflected the pre-backfill state and disagreed with the authoritative table: "across 27 projects" → **28**,
   "sum to the 94 total" → **101**, and "excluded from the 78" → **85** (the current distinct Rust-crate
