@@ -25,6 +25,13 @@ Reporter of record: Sergey Gordeychik ([@scadastrangelove](https://github.com/sc
 
 ## Summary
 
+**This page tracks several distinct disclosure campaigns, run by different pipelines and counted separately — read the counts per campaign, not as one running total:**
+
+1. **Rust open-source crates** — 85 findings across 28 projects. The status breakdown (Resolved / Open / Closed / Private) in the table below *is* this campaign.
+2. **Linux kernel** — 16 findings across 3 subsystems, a separate email disclosure (2026-08-17), tracked by subsystem and count only.
+   &nbsp;&nbsp;↳ Campaigns **1 + 2** are the mechanically-reconciled **101** total in the table below.
+3. **October 2026 wave** — a *separate pipeline* (reproof + the rust-in-peace ai-agent profile), in three sub-campaigns: **AI coding-agents** (ZCode, Pi, goose, OmniRoute, kimi-code), **TR-069/CWMP & embedded-SOAP** (EasyCwmp, icwmp, CcspTr069Pa, gSOAP), and **broadband-CPE device firmware** (ZTE F670L, Huawei HG8145V5). All private-channel, unfixed and unpublished → listed in the **Pending disclosures** sub-tables by **channel/ID and status only** (no mechanism), and deliberately **not** rolled into the 101 above (different pipeline, mostly non-Rust).
+
 _As of 2026-08-18 — **full ground-up recount**, done after a user question surfaced real drift between
 this file and the internal `DISCLOSURES.csv`/`.json` tracker. RustDesk (9 findings) and BoxLite (3
 findings) had never been added to the internal CSV/JSON at all; the Linux kernel binder (6) and nova (6)
@@ -43,7 +50,7 @@ methodology. Counts below are now mechanically derived from the reconciled CSV, 
 | — of which vendor has acknowledged and is actively fixing | 3 (RustDesk's remaining 3 of 9 — six are now fixed in `master` and counted above, incl. #4 Linux-clipboard via merged PR #16329 (2026-09-26); #5/#7/#8 confirmed and pending) |
 | — of which still awaiting a first vendor response | 6 (4 ciborium, 2 BoxLite — the 3rd BoxLite finding, egress, is now published GHSA-c7v3 and counted under Resolved) |
 | Linux kernel findings (separate email disclosure, 2026-08-17) | 16 across 3 subsystems (Android Binder IPC 6, net/xfrm IP-TFS 4, nova-core GPU 6) |
-| **Total vulnerabilities reported (all campaigns)** | **101** (85 Rust crates + 16 Linux kernel) |
+| **Total — Rust-crate + Linux-kernel campaigns** (campaigns 1 + 2; the October-2026 wave is tracked separately below, status-only) | **101** (85 Rust crates + 16 Linux kernel) |
 
 _Note: the Pending disclosures table below counts by **advisory/row** (BoxLite has 3 distinct findings
 but only 2 GHSA filings — two of the three share one bundled advisory — so it shows 2 rows there;
@@ -369,4 +376,9 @@ Chromium's 2 stay excluded from the total per existing convention. **New grand t
   90-day embargo. Both private-channel, unfixed and unpublished → a new *Broadband CPE device firmware*
   Pending sub-table, channel/status only, no mechanism; excluded from the Rust-crate counts (separate
   pipeline, non-Rust targets). Summary pointer updated to name three October sub-campaigns.
+- **2026-10-12** — **Summary clarified (user flagged the "all campaigns = 101" label as confusing).** Added
+  a per-campaign orientation at the top of the Summary (1. Rust crates, 2. Linux kernel → 101 total;
+  3. the October-2026 wave, tracked separately, status-only) and relabelled the total row from "all
+  campaigns" to "Rust-crate + Linux-kernel campaigns" so the 101 is no longer read as including the
+  October wave. No counts changed — wording only.
 - This list is updated as reports change status. Last updated: 2026-10-12.
