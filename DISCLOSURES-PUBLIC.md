@@ -30,7 +30,7 @@ Reporter of record: Sergey Gordeychik ([@scadastrangelove](https://github.com/sc
 1. **Rust open-source crates** — 85 findings across 28 projects. The status breakdown (Resolved / Open / Closed / Private) in the table below *is* this campaign.
 2. **Linux kernel** — 16 findings across 3 subsystems, a separate email disclosure (2026-08-17), tracked by subsystem and count only.
    &nbsp;&nbsp;↳ Campaigns **1 + 2** are the mechanically-reconciled **101** total in the table below.
-3. **October 2026 wave** — a *separate pipeline* (reproof + the rust-in-peace ai-agent profile), in three sub-campaigns: **AI coding-agents** (ZCode, Pi, goose, OmniRoute, kimi-code), **TR-069/CWMP & embedded-SOAP** (EasyCwmp, icwmp, CcspTr069Pa, gSOAP), and **broadband-CPE device firmware** (ZTE F670L, Huawei HG8145V5). All private-channel, unfixed and unpublished → listed in the **Pending disclosures** sub-tables by **channel/ID and status only** (no mechanism), and deliberately **not** rolled into the 101 above (different pipeline, mostly non-Rust).
+3. **October 2026 wave** — a *separate pipeline* (reproof + the rust-in-peace ai-agent profile): an **AI coding-agent** sub-campaign (ZCode, Pi, goose, OmniRoute, kimi-code), plus a **TR-069 stack** sweep across all three layers — **CWMP CPE-agents & embedded-SOAP** (EasyCwmp, icwmp, CcspTr069Pa, gSOAP), **ACS servers** (GenieACS, FreeACS), and **CPE device firmware** (ZTE F670L, Huawei HG8145V5). All private-channel, unfixed and unpublished → listed in the **Pending disclosures** sub-tables by **channel/ID and status only** (no mechanism), and deliberately **not** rolled into the 101 above (different pipeline, mostly non-Rust).
 
 _As of 2026-08-18 — **full ground-up recount**, done after a user question surfaced real drift between
 this file and the internal `DISCLOSURES.csv`/`.json` tracker. RustDesk (9 findings) and BoxLite (3
@@ -64,7 +64,7 @@ technical finding as h2 GHSA-8r6j, sent to a second maintainer — tracked, but 
 
 _The Rust-crate row and its status breakdown (Resolved / Open / Closed / Private) cover the open-source-crate campaign across 28 projects. The Linux kernel findings are a separate email disclosure, tracked by subsystem and count only (see Pending disclosures). The two sum to the 101 total._
 
-_**October 2026 wave (separate pipeline — reproof + the rust-in-peace ai-agent profile).** Three campaigns of coordinated disclosures went out in October 2026, tracked in their own Pending sub-tables: an **AI coding-agent campaign** (ZCode, Pi, goose, OmniRoute, kimi-code/Moonshot), a **TR-069/CWMP & embedded-SOAP campaign** (EasyCwmp, icwmp, CcspTr069Pa, gSOAP), and a **broadband-CPE device-firmware campaign** (ZTE ZXHN F670L, Huawei EchoLife HG8145V5/EG8145V5 — reported to the vendors' PSIRTs). All are private-channel reports, unfixed and unpublished, so they are listed by channel/advisory-ID and status only and are **not** included in the Rust-crate counts above — a different pipeline, mostly non-Rust targets._
+_**October 2026 wave (separate pipeline — reproof + the rust-in-peace ai-agent profile).** Coordinated disclosures went out in October 2026 across an **AI coding-agent campaign** (ZCode, Pi, goose, OmniRoute, kimi-code/Moonshot) and a **TR-069 stack** campaign spanning three layers — **CWMP CPE-agents & embedded-SOAP** (EasyCwmp, icwmp, CcspTr069Pa, gSOAP), **ACS servers** (GenieACS, FreeACS), and **broadband-CPE device firmware** (ZTE ZXHN F670L, Huawei EchoLife HG8145V5/EG8145V5 — vendor PSIRTs), each in its own Pending sub-table. All are private-channel reports, unfixed and unpublished, so they are listed by channel/advisory-ID and status only and are **not** included in the Rust-crate counts above — a different pipeline, mostly non-Rust targets._
 
 ## Public disclosures
 
@@ -196,6 +196,15 @@ TR-069/CWMP CPE agents and the embedded C SOAP/XML runtime (gSOAP) they build on
 | CcspTr069Pa (RDK-B, code.rdkcentral.com) | 2026-10-10 | direct email — security@rdkcentral.com + support | Sent — 90-day embargo proposed; awaiting acknowledgement; technical detail withheld per policy |
 | gSOAP (Genivia) | 2026-10-09 | direct email — engelen@genivia.com + contact@genivia.com | Sent — 90-day embargo proposed; awaiting acknowledgement; technical detail withheld per policy |
 
+### TR-069 ACS servers — October 2026 wave
+
+Open-source TR-069 ACS *servers* (the ACS side, opposite the CPE-client agents above), same pipeline and policy — channel and status only; no mechanism. Tracked separately from the Rust-crate counts.
+
+| Target | Reported | Channel | Status |
+|---|---|---|---|
+| GenieACS (genieacs/genieacs) | 2026-10-11 | direct email — support@genieacs.com + security + CERT/CC (GitHub private reporting disabled) | Sent — 45-day embargo suggested; awaiting acknowledgement; technical detail withheld per policy |
+| FreeACS (freeacs/freeacs) | — | internal draft (project dormant; SECURITY.md routes to a public GitHub issue) | Not yet sent — review complete, disclosure pending |
+
 ### Broadband CPE device firmware — October 2026 wave
 
 Broadband-CPE (ONT / home-gateway) device firmware reviewed from publicly obtainable images by the reproof + rust-in-peace pipeline and reported to the vendors' PSIRTs under the same policy — channel and status only; no vulnerability class, mechanism, or PoC. Tracked separately from the Rust-crate counts in the Summary.
@@ -205,7 +214,7 @@ Broadband-CPE (ONT / home-gateway) device firmware reviewed from publicly obtain
 | ZTE ZXHN F670L (TR-069 / web stack) | 2026-10-12 | ZTE PSIRT | Sent — coordinated disclosure; awaiting acknowledgement; technical detail withheld per policy |
 | Huawei EchoLife HG8145V5 / EG8145V5 (TR-069 CWMP) | 2026-10-12 | Huawei PSIRT | Sent — 90-day embargo proposed; awaiting acknowledgement; technical detail withheld per policy |
 
-_Not yet sent (internal draft, excluded from the table): RuDesktop, the Rocket.Chat server findings, and the GenieACS / FreeACS ACS-server reviews._
+_Not yet sent (internal draft, excluded from the tables above): RuDesktop and the Rocket.Chat server findings._
 
 ## Notes
 
@@ -381,4 +390,10 @@ Chromium's 2 stay excluded from the total per existing convention. **New grand t
   3. the October-2026 wave, tracked separately, status-only) and relabelled the total row from "all
   campaigns" to "Rust-crate + Linux-kernel campaigns" so the 101 is no longer read as including the
   October wave. No counts changed — wording only.
+- **2026-10-12** — **Added the TR-069 ACS-server layer (user flagged it was missing).** **GenieACS** was
+  sent 2026-10-11 (email to support@genieacs.com + security + CERT/CC; GitHub private reporting is disabled
+  on that repo) — new *TR-069 ACS servers* Pending sub-table, status only. **FreeACS** (sibling ACS server,
+  review complete) listed there as not-yet-sent, and both removed from the generic "not yet sent" line. The
+  October wave is now framed as an AI coding-agent campaign plus a TR-069-stack campaign across three layers
+  (CWMP agents, ACS servers, CPE firmware). Status/wording only.
 - This list is updated as reports change status. Last updated: 2026-10-12.
