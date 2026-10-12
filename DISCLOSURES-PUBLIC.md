@@ -57,7 +57,7 @@ technical finding as h2 GHSA-8r6j, sent to a second maintainer — tracked, but 
 
 _The Rust-crate row and its status breakdown (Resolved / Open / Closed / Private) cover the open-source-crate campaign across 28 projects. The Linux kernel findings are a separate email disclosure, tracked by subsystem and count only (see Pending disclosures). The two sum to the 101 total._
 
-_**October 2026 wave (separate pipeline — reproof + the rust-in-peace ai-agent profile).** Two campaigns of coordinated disclosures went out in October 2026, tracked in their own Pending sub-tables: an **AI coding-agent campaign** (ZCode, Pi, goose, OmniRoute, kimi-code/Moonshot) and a **TR-069/CWMP & embedded-SOAP campaign** (EasyCwmp, icwmp, CcspTr069Pa, gSOAP). All are private-channel reports, unfixed and unpublished, so they are listed by channel/advisory-ID and status only and are **not** included in the Rust-crate counts above — a different pipeline, mostly non-Rust targets._
+_**October 2026 wave (separate pipeline — reproof + the rust-in-peace ai-agent profile).** Three campaigns of coordinated disclosures went out in October 2026, tracked in their own Pending sub-tables: an **AI coding-agent campaign** (ZCode, Pi, goose, OmniRoute, kimi-code/Moonshot), a **TR-069/CWMP & embedded-SOAP campaign** (EasyCwmp, icwmp, CcspTr069Pa, gSOAP), and a **broadband-CPE device-firmware campaign** (ZTE ZXHN F670L, Huawei EchoLife HG8145V5/EG8145V5 — reported to the vendors' PSIRTs). All are private-channel reports, unfixed and unpublished, so they are listed by channel/advisory-ID and status only and are **not** included in the Rust-crate counts above — a different pipeline, mostly non-Rust targets._
 
 ## Public disclosures
 
@@ -189,7 +189,16 @@ TR-069/CWMP CPE agents and the embedded C SOAP/XML runtime (gSOAP) they build on
 | CcspTr069Pa (RDK-B, code.rdkcentral.com) | 2026-10-10 | direct email — security@rdkcentral.com + support | Sent — 90-day embargo proposed; awaiting acknowledgement; technical detail withheld per policy |
 | gSOAP (Genivia) | 2026-10-09 | direct email — engelen@genivia.com + contact@genivia.com | Sent — 90-day embargo proposed; awaiting acknowledgement; technical detail withheld per policy |
 
-_Not yet sent (internal draft, excluded from the table): RuDesktop and the Rocket.Chat server findings._
+### Broadband CPE device firmware — October 2026 wave
+
+Broadband-CPE (ONT / home-gateway) device firmware reviewed from publicly obtainable images by the reproof + rust-in-peace pipeline and reported to the vendors' PSIRTs under the same policy — channel and status only; no vulnerability class, mechanism, or PoC. Tracked separately from the Rust-crate counts in the Summary.
+
+| Target | Reported | Channel | Status |
+|---|---|---|---|
+| ZTE ZXHN F670L (TR-069 / web stack) | 2026-10-12 | ZTE PSIRT | Sent — coordinated disclosure; awaiting acknowledgement; technical detail withheld per policy |
+| Huawei EchoLife HG8145V5 / EG8145V5 (TR-069 CWMP) | 2026-10-12 | Huawei PSIRT | Sent — 90-day embargo proposed; awaiting acknowledgement; technical detail withheld per policy |
+
+_Not yet sent (internal draft, excluded from the table): RuDesktop, the Rocket.Chat server findings, and the GenieACS / FreeACS ACS-server reviews._
 
 ## Notes
 
@@ -354,4 +363,10 @@ Chromium's 2 stay excluded from the total per existing convention. **New grand t
 - **2026-10-10** — **Split the October-2026 wave into two sub-tables:** an *AI coding-agent campaign*
   (ZCode, Pi, goose, OmniRoute, kimi-code) and a *TR-069/CWMP & embedded-SOAP campaign* (EasyCwmp, icwmp,
   CcspTr069Pa, gSOAP). No status changes — regrouping only; Summary pointer updated to match.
-- This list is updated as reports change status. Last updated: 2026-10-10.
+- **2026-10-12** — **Broadband-CPE device-firmware disclosures sent (ZTE, Huawei).** Two vendor-PSIRT
+  coordinated reports from the reproof + rust-in-peace pipeline: **ZTE ZXHN F670L** (TR-069 / web stack) to
+  ZTE PSIRT, and **Huawei EchoLife HG8145V5 / EG8145V5** (TR-069 CWMP) to Huawei PSIRT with a proposed
+  90-day embargo. Both private-channel, unfixed and unpublished → a new *Broadband CPE device firmware*
+  Pending sub-table, channel/status only, no mechanism; excluded from the Rust-crate counts (separate
+  pipeline, non-Rust targets). Summary pointer updated to name three October sub-campaigns.
+- This list is updated as reports change status. Last updated: 2026-10-12.
