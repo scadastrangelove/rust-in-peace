@@ -198,12 +198,12 @@ TR-069/CWMP CPE agents and the embedded C SOAP/XML runtime (gSOAP) they build on
 
 ### TR-069 ACS servers — October 2026 wave
 
-Open-source TR-069 ACS *servers* (the ACS side, opposite the CPE-client agents above), same pipeline and policy — channel and status only; no mechanism. Tracked separately from the Rust-crate counts.
+Open-source TR-069 ACS *servers* (the ACS side, opposite the CPE-client agents above), same pipeline and policy — channel and status only; no mechanism — _except FreeACS, whose upstream is archived read-only, so there is no private channel or coordinated-fix path and its technical detail is therefore already public (see its row)._ Tracked separately from the Rust-crate counts.
 
 | Target | Reported | Channel | Status |
 |---|---|---|---|
 | GenieACS (genieacs/genieacs) | 2026-10-11 | direct email — support@genieacs.com + security + CERT/CC (GitHub private reporting disabled) | Sent — 45-day embargo suggested; awaiting acknowledgement; technical detail withheld per policy |
-| FreeACS (freeacs/freeacs) | — | internal draft (project dormant; SECURITY.md routes to a public GitHub issue) | Not yet sent — review complete, disclosure pending |
+| FreeACS (freeacs/freeacs) | 2026-10-12 | **upstream archived read-only since 2024-09-04** — its SECURITY.md "open an issue" channel is dead — so disclosed as public issues on the fork [scadastrangelove/freeacs](https://github.com/scadastrangelove/freeacs/issues) | **Published** — 8 findings + index ([#1](https://github.com/scadastrangelove/freeacs/issues/1)–[#9](https://github.com/scadastrangelove/freeacs/issues/9); 1 Critical, 5 High, 2 Medium). Technical detail is public (archived upstream = no coordinated-fix path) |
 
 ### Broadband CPE device firmware — October 2026 wave
 
@@ -396,4 +396,9 @@ Chromium's 2 stay excluded from the total per existing convention. **New grand t
   review complete) listed there as not-yet-sent, and both removed from the generic "not yet sent" line. The
   October wave is now framed as an AI coding-agent campaign plus a TR-069-stack campaign across three layers
   (CWMP agents, ACS servers, CPE firmware). Status/wording only.
+- **2026-10-12** — **FreeACS published; ACS campaign closed.** Upstream `freeacs/freeacs` is archived
+  read-only (2024-09-04) — its SECURITY.md channel ("open an issue") is physically dead — so the review
+  was disclosed as public issues on the fork `scadastrangelove/freeacs` ([#1](https://github.com/scadastrangelove/freeacs/issues/1)–[#9](https://github.com/scadastrangelove/freeacs/issues/9):
+  1 Critical, 5 High, 2 Medium + index). Its ACS-servers row moved from not-yet-sent to **Published** with
+  links. GenieACS remains the one ACS-server report still private (awaiting acknowledgement).
 - This list is updated as reports change status. Last updated: 2026-10-12.
