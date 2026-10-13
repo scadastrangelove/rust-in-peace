@@ -194,7 +194,7 @@ TR-069/CWMP CPE agents and the embedded C SOAP/XML runtime (gSOAP) they build on
 | EasyCwmp (pivasoftware/easycwmp) | 2026-10-07 | direct email — maintainers + CERT | Sent — awaiting acknowledgement; technical detail withheld per policy |
 | icwmp (iopsys/BBF, dev.iopsys.eu/bbf/icwmp) | 2026-10 | direct email — IOPSYS (suvendhu.hansa / vivek.dutta / info@iopsys.se) | **Acknowledged 2026-10-09** — vendor reviewing and working on fixes (vendor ETA ~2 weeks), embargo in effect; technical detail withheld per policy |
 | CcspTr069Pa (RDK-B, code.rdkcentral.com) | 2026-10-10 | direct email — security@rdkcentral.com + support | Sent — 90-day embargo proposed; awaiting acknowledgement; technical detail withheld per policy |
-| gSOAP (Genivia) | 2026-10-09 | direct email — engelen@genivia.com + contact@genivia.com | Sent — 90-day embargo proposed; awaiting acknowledgement; technical detail withheld per policy |
+| gSOAP (Genivia) | 2026-10-09 | direct email — engelen@genivia.com + contact@genivia.com | **Acknowledged 2026-10-13** — vendor reviewing, timeline to follow; 90-day embargo proposed; technical detail withheld per policy |
 
 ### TR-069 ACS servers — October 2026 wave
 
