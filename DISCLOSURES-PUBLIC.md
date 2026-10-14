@@ -43,8 +43,8 @@ methodology. Counts below are now mechanically derived from the reconciled CSV, 
 | | |
 |---|---:|
 | Reports filed — Rust open-source crates (across 28 projects) | 85 |
-| Resolved (fixed / merged) | 43 |
-| Open — awaiting vendor action (public issue/PR) | 22 |
+| Resolved (fixed / merged) | 44 |
+| Open — awaiting vendor action (public issue/PR) | 21 |
 | Closed — disputed, not a vulnerability, or declined | 11 |
 | Private, still awaiting vendor action (not yet resolved or rejected) | 9 |
 | — of which vendor has acknowledged and is actively fixing | 3 (RustDesk's remaining 3 of 9 — six are now fixed in `master` and counted above, incl. #4 Linux-clipboard via merged PR #16329 (2026-09-26); #5/#7/#8 confirmed and pending) |
@@ -133,7 +133,7 @@ Findings sent as (or since converted to) a public issue, pull request, or vendor
 | lopdf | 2026-07-19 | [#532](https://github.com/J-F-Liu/lopdf/issues/532) / [PR #533](https://github.com/J-F-Liu/lopdf/pull/533) | Low | Resolved (2026-07-20) | Four reachable panics decoding crafted PDFs |
 | lopdf | 2026-07-19 | [#530](https://github.com/J-F-Liu/lopdf/issues/530) / [PR #531](https://github.com/J-F-Liu/lopdf/pull/531) | Low | Resolved (2026-07-20) | Unbounded recursion walking the post-load document graph |
 | miniz_oxide | 2026-07-19 | [#198](https://github.com/Frommi/miniz_oxide/issues/198) / [PR #199](https://github.com/Frommi/miniz_oxide/pull/199) | Medium-High | Open | Huffman-table-rebuild cost decoupled from decompressed output size |
-| miniz_oxide | 2026-07-19 | [#200](https://github.com/Frommi/miniz_oxide/issues/200) | Low | Open | Logic error in a bounds comparison (performance-only) |
+| miniz_oxide | 2026-07-19 | [#200](https://github.com/Frommi/miniz_oxide/issues/200) / [PR #204](https://github.com/Frommi/miniz_oxide/pull/204) | Low | Resolved (PR #204 "Fix inflate match output bound check" merged 2026-10-13; issue closed as completed) | Logic error in a bounds comparison (performance-only) |
 | miniz_oxide | 2026-07-19 | [#201](https://github.com/Frommi/miniz_oxide/issues/201) | Medium | Open | Non-default feature bypasses decoder state-machine invariants |
 | miniz_oxide | 2026-07-19 | [#202](https://github.com/Frommi/miniz_oxide/issues/202) | Low | Open | Documentation and integer-truncation hardening notes |
 | png | 2026-07-19 | [#696](https://github.com/image-rs/image-png/issues/696) / [PR #697](https://github.com/image-rs/image-png/pull/697) | Medium-High | Open | Decompression-bomb hardening for zTXt/iTXt chunks |
@@ -401,4 +401,5 @@ Chromium's 2 stay excluded from the total per existing convention. **New grand t
   was disclosed as public issues on the fork `scadastrangelove/freeacs` ([#1](https://github.com/scadastrangelove/freeacs/issues/1)–[#9](https://github.com/scadastrangelove/freeacs/issues/9):
   1 Critical, 5 High, 2 Medium + index). Its ACS-servers row moved from not-yet-sent to **Published** with
   links. GenieACS remains the one ACS-server report still private (awaiting acknowledgement).
-- This list is updated as reports change status. Last updated: 2026-10-12.
+- **2026-10-14** — **miniz_oxide #200 resolved** (gh-verified). Maintainer `oyvindln` closed #200 as completed via merged **[PR #204](https://github.com/Frommi/miniz_oxide/pull/204)** "Fix inflate match output bound check" (2026-10-13). Moved Open→Resolved (Resolved 43→44, Open 22→21). Siblings #198/#199/#201/#202 re-verified still open.
+- This list is updated as reports change status. Last updated: 2026-10-14.
