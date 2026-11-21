@@ -30,7 +30,7 @@ Reporter of record: Sergey Gordeychik ([@scadastrangelove](https://github.com/sc
 1. **Rust open-source crates** — 85 findings across 28 projects. The status breakdown (Resolved / Open / Closed / Private) in the table below *is* this campaign.
 2. **Linux kernel** — 16 findings across 3 subsystems, a separate email disclosure (2026-08-17), tracked by subsystem and count only.
    &nbsp;&nbsp;↳ Campaigns **1 + 2** are the mechanically-reconciled **101** total in the table below.
-3. **October 2026 wave** — a *separate pipeline* (reproof + the rust-in-peace ai-agent profile): an **AI coding-agent** sub-campaign (ZCode, Pi, goose, OmniRoute, kimi-code), plus a **TR-069 stack** sweep across all three layers — **CWMP CPE-agents & embedded-SOAP** (EasyCwmp, icwmp, CcspTr069Pa, gSOAP), **ACS servers** (GenieACS, FreeACS), and **CPE device firmware** (ZTE F670L, Huawei HG8145V5). All private-channel, unfixed and unpublished → listed in the **Pending disclosures** sub-tables by **channel/ID and status only** (no mechanism), and deliberately **not** rolled into the 101 above (different pipeline, mostly non-Rust).
+3. **October 2026 wave** — a *separate pipeline* (reproof + the rust-in-peace ai-agent profile): an **AI coding-agent** sub-campaign (ZCode, Pi, goose, OmniRoute, kimi-code), plus a **TR-069 stack** sweep across all three layers — **CWMP CPE-agents & embedded-SOAP** (EasyCwmp, icwmp, CcspTr069Pa, gSOAP), **ACS servers** (GenieACS, FreeACS), and **CPE device firmware** (ZTE F670L, Huawei HG8145V5). See the [TR-069 disclosure update](#tr-069-disclosure-update) for published findings and the pending tables for reports under coordination. This wave is counted separately from the 101 above.
 
 _As of 2026-08-18 — **full ground-up recount**, done after a user question surfaced real drift between
 this file and the internal `DISCLOSURES.csv`/`.json` tracker. RustDesk (9 findings) and BoxLite (3
@@ -64,7 +64,36 @@ technical finding as h2 GHSA-8r6j, sent to a second maintainer — tracked, but 
 
 _The Rust-crate row and its status breakdown (Resolved / Open / Closed / Private) cover the open-source-crate campaign across 28 projects. The Linux kernel findings are a separate email disclosure, tracked by subsystem and count only (see Pending disclosures). The two sum to the 101 total._
 
-_**October 2026 wave (separate pipeline — reproof + the rust-in-peace ai-agent profile).** Coordinated disclosures went out in October 2026 across an **AI coding-agent campaign** (ZCode, Pi, goose, OmniRoute, kimi-code/Moonshot) and a **TR-069 stack** campaign spanning three layers — **CWMP CPE-agents & embedded-SOAP** (EasyCwmp, icwmp, CcspTr069Pa, gSOAP), **ACS servers** (GenieACS, FreeACS), and **broadband-CPE device firmware** (ZTE ZXHN F670L, Huawei EchoLife HG8145V5/EG8145V5 — vendor PSIRTs), each in its own Pending sub-table. All are private-channel reports, unfixed and unpublished, so they are listed by channel/advisory-ID and status only and are **not** included in the Rust-crate counts above — a different pipeline, mostly non-Rust targets._
+_**October 2026 wave (separate pipeline — reproof + the rust-in-peace ai-agent profile).** Coordinated disclosures went out in October 2026 across an **AI coding-agent campaign** (ZCode, Pi, goose, OmniRoute, kimi-code/Moonshot) and a **TR-069 stack** campaign spanning three layers — **CWMP CPE-agents & embedded-SOAP** (EasyCwmp, icwmp, CcspTr069Pa, gSOAP), **ACS servers** (GenieACS, FreeACS), and **broadband-CPE device firmware** (ZTE ZXHN F670L, Huawei EchoLife HG8145V5/EG8145V5 — vendor PSIRTs). The [TR-069 disclosure update](#tr-069-disclosure-update) lists published reports. The pending tables track ongoing coordination. This wave is counted separately from the Rust-crate campaign._
+
+## TR-069 disclosure update
+
+**EasyCwmp 1.8.6.** We reported the findings to Piva Software on 8 October.
+We published the advisory on 22 November 2026. At publication we had received
+no vendor reply or confirmation of a fix. We will publish the technical details
+on **1 December 2026**. [EasyCwmp advisory](https://github.com/scadastrangelove/TRON-069/blob/main/EASY-CWMP-ADVISORY.md).
+
+**icwmp (IOPSYS).** On 15 October, IOPSYS confirmed fixes for all six reported
+vulnerabilities on its `devel` branch. The 22 November update links the seven
+fix commits so operators can check their downstream firmware.
+[icwmp bulletin and backport guidance](https://github.com/scadastrangelove/TRON-069/blob/main/PUBLIC-DISCLOSURES.md#icwmp-20261122).
+
+**ZTE ZXHN F670L (partial disclosure).** Four findings from our review of stock
+firmware **V1.1.20P3N4D** are public. The numbers follow our report to ZTE PSIRT.
+
+| Finding | Public scope |
+| --- | --- |
+| #1 | Factory-mode access to a privileged shell, reproduced in isolated emulation |
+| #3 | Storage of embedded secrets in the firmware |
+| #7 | Static TLS key material in the firmware |
+| #8 | An embedded key used to protect configuration backups |
+
+We reported these findings on **12 October 2026** and received a technical
+response from ZTE PSIRT on **14 October**. On **27 October**, varun935 published
+an independent teardown covering the same four areas on **V9.0.10P1N12A**.
+The remaining findings are under coordination. The August CVE records list
+F689 and F680V9 builds. Their applicability to F670L remains unconfirmed.
+[ZTE disclosure scope and sources](https://github.com/scadastrangelove/TRON-069/blob/main/PUBLIC-DISCLOSURES.md#zte-f670l-public-scope).
 
 ## Public disclosures
 
@@ -191,8 +220,6 @@ TR-069/CWMP CPE agents and the embedded C SOAP/XML runtime (gSOAP) they build on
 
 | Target | Reported | Channel / Advisory ID | Status |
 |---|---|---|---|
-| EasyCwmp (pivasoftware/easycwmp) | 2026-10-07 | direct email — maintainers + CERT | Sent — awaiting acknowledgement; technical detail withheld per policy |
-| icwmp (iopsys/BBF, dev.iopsys.eu/bbf/icwmp) | 2026-10 | direct email — IOPSYS (suvendhu.hansa / vivek.dutta / info@iopsys.se) | **Acknowledged 2026-10-09** — vendor reviewing and working on fixes (vendor ETA ~2 weeks), embargo in effect; technical detail withheld per policy |
 | CcspTr069Pa (RDK-B, code.rdkcentral.com) | 2026-10-10 | direct email — security@rdkcentral.com + support | Sent — 90-day embargo proposed; awaiting acknowledgement; technical detail withheld per policy |
 | gSOAP (Genivia) | 2026-10-09 | direct email — engelen@genivia.com + contact@genivia.com | **Acknowledged 2026-10-13** — vendor reviewing, timeline to follow; 90-day embargo proposed; technical detail withheld per policy |
 
@@ -211,7 +238,7 @@ Broadband-CPE (ONT / home-gateway) device firmware reviewed from publicly obtain
 
 | Target | Reported | Channel | Status |
 |---|---|---|---|
-| ZTE ZXHN F670L (TR-069 / web stack) | 2026-10-12 | ZTE PSIRT | Sent — coordinated disclosure; awaiting acknowledgement; technical detail withheld per policy |
+| ZTE ZXHN F670L (TR-069 / web stack) | 2026-10-12 | ZTE PSIRT | Technical response received 14 October. [Four findings are public](#tr-069-disclosure-update). Remaining findings under coordination. |
 | Huawei EchoLife HG8145V5 / EG8145V5 (TR-069 CWMP) | 2026-10-12 | Huawei PSIRT | Sent — 90-day embargo proposed; awaiting acknowledgement; technical detail withheld per policy |
 
 _A few additional reviews are complete but not yet in a disclosure process; their targets are deliberately withheld here until coordinated disclosure with the vendor has begun._
